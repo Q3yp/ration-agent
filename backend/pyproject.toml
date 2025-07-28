@@ -1,0 +1,31 @@
+[project]
+name = "ration-agent-backend"
+version = "0.1.0"
+description = "LangGraph ReAct Agent Backend"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.12",
+    "uvicorn[standard]>=0.32.1",
+    "langgraph>=0.2.74",
+    "langchain-openai>=0.2.14",
+    "langchain-core>=0.3.29",
+    "langchain-community>=0.3.12",
+    "langchain-postgres>=0.0.12",
+    "psycopg[binary]>=3.1.0",
+    "python-dotenv>=1.0.1",
+    "python-multipart>=0.0.20",
+    "pandas>=2.3.1",
+    "numpy>=2.3.1",
+    "scipy>=1.16.0",
+    "openpyxl>=3.1.5",
+    "duckduckgo-search>=6.3.11",
+    "jinja2>=3.1.0",
+    "langgraph-checkpoint-postgres>=2.0.23",
+    "psycopg-pool>=3.2.6",
+]
+
+[tool.uv]
+dev-dependencies = []
+
+[project.scripts]
+start = "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
