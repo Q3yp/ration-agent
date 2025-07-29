@@ -5,7 +5,7 @@ Ensures consistent formatting between real-time chat and chat history retrieval.
 
 from typing import Dict, Any, List, Optional
 from langchain_core.messages import BaseMessage, AIMessage
-from nodes import StreamingResponseParser
+from agents.nodes import StreamingResponseParser
 
 
 class MessageParser:

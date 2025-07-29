@@ -48,7 +48,7 @@ class SessionManager:
     async def initialize(self):
         """Initialize database connection and load existing sessions"""
         # Use the shared connection pool for all database operations
-        from agent import _connection_manager
+        from core.agent import _connection_manager
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         
         # Get the shared psycopg pool (compatible with both session management and LangGraph)

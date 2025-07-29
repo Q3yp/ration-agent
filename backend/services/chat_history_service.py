@@ -6,7 +6,7 @@ from typing import List, Dict, Optional, Any
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 import asyncio
-from message_parser import message_parser
+from utils.message_parser import message_parser
 
 
 class ChatHistoryService:
@@ -20,7 +20,7 @@ class ChatHistoryService:
         """Get session history from LangGraph checkpointer with full message data including tool calls"""
         try:
             # Get connection for AsyncPostgresSaver
-            from agent import _connection_manager
+            from core.agent import _connection_manager
             pool = await _connection_manager.get_shared_pool()
             
             checkpointer = AsyncPostgresSaver(pool)
@@ -85,7 +85,7 @@ class ChatHistoryService:
         """Get summary statistics for a session from LangGraph checkpointer"""
         try:
             # Get connection for AsyncPostgresSaver
-            from agent import _connection_manager
+            from core.agent import _connection_manager
             pool = await _connection_manager.get_shared_pool()
             
             checkpointer = AsyncPostgresSaver(pool)
