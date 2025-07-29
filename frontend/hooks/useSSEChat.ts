@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Message, MessageType } from '@/types/chat'
+import { Message, MessageType, AttachedFile } from '@/types/chat'
 
 interface UseSSEChatProps {
   sessionId: string
@@ -13,8 +13,9 @@ interface UseSSEChatReturn {
   isConnected: boolean
   isTyping: boolean
   connectionError: string | null
-  sendMessage: (message: string) => Promise<void>
+  sendMessage: (message: string, filesToShow?: AttachedFile[]) => Promise<void>
   retryConnection: () => void
+  setInitialMessages: (messages: Message[]) => void
 }
 
 export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: UseSSEChatProps): UseSSEChatReturn {
@@ -164,7 +165,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
     }
   }, [])
 
-  const sendMessage = useCallback(async (message: string) => {
+  const sendMessage = useCallback(async (message: string, filesToShow?: AttachedFile[]) => {
     if (!message.trim()) return
 
     try {
@@ -178,6 +179,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
         type: 'user' as MessageType,
         content: message.trim(),
         timestamp: Date.now(),
+        attachedFiles: filesToShow,
       }
       setMessages(prev => [...prev, userMessage])
       setIsTyping(true)
@@ -266,6 +268,10 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
     console.log('SSE: Ready to send messages')
   }, [])
 
+  const setInitialMessages = useCallback((initialMessages: Message[]) => {
+    setMessages(initialMessages)
+  }, [])
+
   useEffect(() => {
     // SSE connections are established per message, so we just set initial state
     setIsConnected(true)
@@ -281,5 +287,6 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
     connectionError,
     sendMessage,
     retryConnection,
+    setInitialMessages,
   }
 }

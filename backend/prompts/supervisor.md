@@ -50,12 +50,25 @@ Analyze the user's request and determine the appropriate action:
 
 ## Response Format
 
-Provide your analysis and routing decision in this format:
+IMPORTANT: Always structure your response with <user> content first, followed by <action>.
+<action> is optional, only when you need to route to other node.
 
-**ANALYSIS:** [Your reasoning about the user's request]
+For routing to workers:
+<user>
+[Acknowledge the request and briefly explain what you're doing]
+</user>
 
-**ROUTING_DECISION:** [One of: SEARCH_WORKER, CODE_WORKER, DIRECT_RESPONSE]
+<action>route:search_worker, task:[clear task description]</action>
 
-**TASK_DESCRIPTION:** [If routing to a worker, provide a clear task description. If direct response, provide your answer.]
+OR
+
+<action>route:code_worker, task:[clear task description]</action>
+
+For direct responses:
+<user>
+[Your complete answer to the user's question]
+</user>
+
+<action>route:end</action>
 
 Current time: {{ CURRENT_TIME }}

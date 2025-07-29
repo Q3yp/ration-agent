@@ -9,6 +9,12 @@ export type MessageType =
   | 'agent_thinking'
   | 'agent_complete'
 
+export interface AttachedFile {
+  name: string
+  size: number
+  path: string
+}
+
 export interface Message {
   id: number | string
   type: MessageType
@@ -20,4 +26,41 @@ export interface Message {
   messageId?: string
   fullContent?: string
   isStreaming?: boolean
+  attachedFiles?: AttachedFile[]
+}
+
+export interface Session {
+  session_id: string
+  workspace_path?: string
+  created_at: string
+  last_accessed?: string
+  active_connections?: number
+  agent_ready?: boolean
+  exists?: boolean
+}
+
+export interface SessionHistoryMessage {
+  type: string
+  content: string
+  full_content?: string
+  tool_calls?: Array<{
+    id: string
+    name: string
+    args: Record<string, any>
+  }>
+  tool_call_id?: string  // For tool result messages
+  timestamp?: string
+}
+
+export interface SessionHistory {
+  session_id: string
+  messages: SessionHistoryMessage[]
+  summary: {
+    session_id: string
+    total_messages: number
+    human_messages: number
+    ai_messages: number
+    system_messages: number
+    has_history: boolean
+  }
 }

@@ -18,31 +18,30 @@ export default function MarkdownMessage({ content, isStreaming = false }: Markdo
   const displayContent = isStreaming ? `${content}▋` : content
 
   return (
-    <div className="prose prose-sm max-w-none dark:prose-invert">
+    <div className="prose prose-sm max-w-none prose-slate dark:prose-invert">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={{
-          code({ node, inline, className, children, ...props }) {
+          code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '')
-            return !inline && match ? (
-              <SyntaxHighlighter
-                style={oneDark}
-                language={match[1]}
-                PreTag="div"
-                className="rounded-lg"
-                {...props}
-              >
-                {String(children).replace(/\n$/, '')}
-              </SyntaxHighlighter>
-            ) : (
-              <code className="bg-gray-100 px-1 py-0.5 rounded text-sm" {...props}>
+            const isInline = !className || !match
+            return isInline ? (
+              <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono" {...props}>
                 {children}
               </code>
+            ) : (
+              <div className="relative my-4">
+                <pre className="bg-muted p-4 rounded-lg overflow-x-auto">
+                  <code className="font-mono text-sm" {...props}>
+                    {String(children).replace(/\n$/, '')}
+                  </code>
+                </pre>
+              </div>
             )
           },
           // Custom styling for math blocks
-          div({ node, className, children, ...props }) {
+          div({ className, children, ...props }) {
             if (className === 'math math-display') {
               return (
                 <div className="math-display my-4 text-center overflow-x-auto" {...props}>
@@ -53,7 +52,7 @@ export default function MarkdownMessage({ content, isStreaming = false }: Markdo
             return <div className={className} {...props}>{children}</div>
           },
           // Custom styling for inline math
-          span({ node, className, children, ...props }) {
+          span({ className, children, ...props }) {
             if (className === 'math math-inline') {
               return (
                 <span className="math-inline" {...props}>
@@ -67,7 +66,7 @@ export default function MarkdownMessage({ content, isStreaming = false }: Markdo
           table({ children }) {
             return (
               <div className="overflow-x-auto my-4">
-                <table className="min-w-full border-collapse border border-gray-300">
+                <table className="min-w-full border-collapse border border-border">
                   {children}
                 </table>
               </div>
@@ -75,14 +74,14 @@ export default function MarkdownMessage({ content, isStreaming = false }: Markdo
           },
           th({ children }) {
             return (
-              <th className="border border-gray-300 bg-gray-50 px-4 py-2 text-left font-semibold">
+              <th className="border border-border bg-muted px-4 py-2 text-left font-semibold">
                 {children}
               </th>
             )
           },
           td({ children }) {
             return (
-              <td className="border border-gray-300 px-4 py-2">
+              <td className="border border-border px-4 py-2">
                 {children}
               </td>
             )
@@ -90,7 +89,7 @@ export default function MarkdownMessage({ content, isStreaming = false }: Markdo
           // Better blockquote styling
           blockquote({ children }) {
             return (
-              <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-4 bg-blue-50 italic">
+              <blockquote className="border-l-4 border-primary pl-4 py-2 my-4 bg-muted/50 italic">
                 {children}
               </blockquote>
             )

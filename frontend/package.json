@@ -10,10 +10,16 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.1.0",
+    "@radix-ui/react-avatar": "^1.1.10",
+    "@radix-ui/react-scroll-area": "^1.2.9",
+    "@radix-ui/react-separator": "^1.1.7",
+    "@radix-ui/react-slot": "^1.2.3",
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.20",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.0",
     "katex": "^0.16.11",
+    "lucide-react": "^0.528.0",
     "next": "15.1.0",
     "postcss": "^8.5.0",
     "react": "19.0.0",
@@ -23,7 +29,10 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
+    "tailwind-merge": "^3.3.1",
+    "tailwind-scrollbar": "^3.1.0",
     "tailwindcss": "^3.4.1",
+    "tailwindcss-animate": "^1.0.7",
     "uuid": "^11.1.0"
   },
   "devDependencies": {

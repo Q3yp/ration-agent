@@ -1,10 +1,16 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { PaperAirplaneIcon, ExclamationTriangleIcon, DocumentArrowUpIcon } from '@heroicons/react/24/outline'
+import { Send, AlertTriangle, Upload, Loader2 } from 'lucide-react'
 import MessageList from './MessageList'
 import FileUpload from './FileUpload'
 import { useSSEChat } from '@/hooks/useSSEChat'
+import { useSessionHistory } from '@/hooks/useSessionHistory'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { AttachedFile } from '@/types/chat'
 
 interface ChatInterfaceProps {
   sessionId: string
@@ -14,6 +20,8 @@ interface ChatInterfaceProps {
 export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState('')
   const [showFileUpload, setShowFileUpload] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true)
+  const [uploadedFiles, setUploadedFiles] = useState<AttachedFile[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -24,7 +32,28 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
     connectionError,
     sendMessage,
     retryConnection,
+    setInitialMessages,
   } = useSSEChat({ sessionId, endpoint })
+
+  const {
+    sessionHistory,
+    isLoading: historyLoading,
+    error: historyError,
+    convertHistoryToMessages
+  } = useSessionHistory({ sessionId, endpoint })
+
+  // Load session history when component mounts or session changes
+  useEffect(() => {
+    if (sessionHistory) {
+      const historyMessages = convertHistoryToMessages(sessionHistory.messages)
+      setInitialMessages(historyMessages)
+      setIsLoadingHistory(false)
+    } else if (!historyLoading && !historyError) {
+      // No history found, start with empty messages
+      setInitialMessages([])
+      setIsLoadingHistory(false)
+    }
+  }, [sessionHistory, historyLoading, historyError, convertHistoryToMessages, setInitialMessages])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -38,16 +67,21 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
     if (!inputValue.trim()) return
 
     const messageToSend = inputValue.trim()
+    const filesToShow = uploadedFiles.length > 0 ? [...uploadedFiles] : undefined
+    
+    // Clear input and files immediately
     setInputValue('')
+    setUploadedFiles([])
+    setShowFileUpload(false)
     
     try {
-      await sendMessage(messageToSend)
+      await sendMessage(messageToSend, filesToShow)
     } catch (error) {
       console.error('Failed to send message:', error)
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
@@ -55,90 +89,105 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
   }
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg shadow-lg overflow-hidden">
+    <Card className="flex flex-col h-full max-h-full overflow-hidden">
       {/* Connection Status */}
-      <div className={`px-4 py-2 text-sm ${
-        isConnected 
-          ? 'bg-green-100 text-green-800' 
-          : 'bg-red-100 text-red-800'
-      }`}>
+      <div className="px-4 py-3 border-b">
         <div className="flex items-center justify-between">
-          <span>
-            {isConnected ? '🟢 SSE 已连接' : '🔴 SSE 连接错误'}
-          </span>
-          {connectionError && (
-            <button
+          <Badge 
+            variant={isLoadingHistory || historyLoading 
+              ? "secondary" 
+              : isConnected 
+              ? "default" 
+              : "destructive"
+            }
+            className="flex items-center gap-1"
+          >
+            {isLoadingHistory || historyLoading ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                正在加载对话...
+              </>
+            ) : isConnected ? (
+              <>已连接</>
+            ) : (
+              <>连接错误</>
+            )}
+          </Badge>
+          {connectionError && !historyLoading && (
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={retryConnection}
-              className="text-sm underline hover:no-underline"
+              className="text-xs"
             >
               重试
-            </button>
+            </Button>
           )}
         </div>
-        {connectionError && (
-          <div className="mt-1 flex items-center">
-            <ExclamationTriangleIcon className="h-4 w-4 mr-1" />
-            {connectionError}
+        {(connectionError && !historyLoading) || historyError ? (
+          <div className="mt-2 flex items-center text-sm text-muted-foreground">
+            <AlertTriangle className="h-4 w-4 mr-1" />
+            {connectionError || historyError}
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
         <MessageList 
           messages={messages} 
           isTyping={isTyping} 
         />
         <div ref={messagesEndRef} />
-      </div>
+      </CardContent>
 
       {/* File Upload Section */}
       {showFileUpload && (
-        <div className="border-t border-gray-200 p-4">
+        <div className="border-t p-4">
           <FileUpload 
             sessionId={sessionId} 
             endpoint={endpoint}
+            onFilesChange={setUploadedFiles}
           />
         </div>
       )}
 
       {/* Input */}
-      <div className="border-t border-gray-200 p-4">
+      <div className="border-t p-4">
         <div className="flex space-x-2">
-          <button
+          <Button
+            variant={showFileUpload ? "default" : "outline"}
+            size="icon"
             onClick={() => setShowFileUpload(!showFileUpload)}
-            disabled={!isConnected}
-            className={`px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed transition-colors ${
-              showFileUpload 
-                ? 'bg-primary-500 text-white hover:bg-primary-600' 
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-            title="Toggle file upload"
+            disabled={!isConnected || isLoadingHistory || historyLoading}
+            title="切换文件上传"
           >
-            <DocumentArrowUpIcon className="h-5 w-5" />
-          </button>
-          <input
+            <Upload className="h-4 w-4" />
+          </Button>
+          <Input
             ref={inputRef}
-            type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             placeholder="输入您的消息..."
-            disabled={!isConnected || isTyping}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+            disabled={!isConnected || isTyping || isLoadingHistory || historyLoading}
+            className="flex-1"
           />
-          <button
+          <Button
             onClick={handleSendMessage}
-            disabled={!inputValue.trim() || !isConnected || isTyping}
-            className="px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            disabled={!inputValue.trim() || !isConnected || isTyping || isLoadingHistory || historyLoading}
+            size="icon"
           >
-            <PaperAirplaneIcon className="h-5 w-5" />
-          </button>
+            <Send className="h-4 w-4" />
+          </Button>
         </div>
-        <div className="mt-2 text-xs text-gray-500">
-          按回车键发送 • Shift+回车键换行 • {showFileUpload ? '文件上传已启用' : '点击 📁 上传文件'} • 使用服务器推送事件
+        <div className="mt-2 text-xs text-muted-foreground">
+          按 Enter 发送 • Shift+Enter 换行 • {showFileUpload ? '文件上传已启用' : '点击 📁 上传文件'} • 使用服务器发送事件
+          {uploadedFiles.length > 0 && (
+            <span className="ml-2 text-primary">• 已附加 {uploadedFiles.length} 个文件</span>
+          )}
         </div>
       </div>
-    </div>
+    </Card>
   )
 }

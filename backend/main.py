@@ -3,7 +3,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from routes import router
+from api.routes import router
+from services.session_manager import session_manager
+from core.agent import cleanup_shared_resources
 
 load_dotenv()
 
@@ -11,8 +13,24 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
     print("🚀 Starting LangGraph ReAct Agent API...")
+    
+    # Initialize SessionManager with database connection
+    try:
+        await session_manager.initialize()
+        print("✅ SessionManager initialized successfully")
+    except Exception as e:
+        print(f"❌ Failed to initialize SessionManager: {e}")
+        raise
+    
     yield
+    
     print("🛑 Shutting down...")
+    # Clean up shared resources
+    try:
+        await cleanup_shared_resources()
+        print("✅ Cleaned up shared resources")
+    except Exception as e:
+        print(f"❌ Error during cleanup: {e}")
 
 app = FastAPI(
     title="LangGraph ReAct Agent API",
@@ -31,6 +49,10 @@ app.add_middleware(
 
 app.include_router(router)
 
-if __name__ == "__main__":
+def start():
+    """Entry point for uv run start command"""
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+if __name__ == "__main__":
+    start()

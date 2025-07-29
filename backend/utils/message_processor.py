@@ -6,7 +6,7 @@ Handles serialization of tool calls, results, and filtering of non-serializable 
 import logging
 from typing import Dict, Any, Union, List
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from chat_history_service import chat_history_service
+from services.chat_history_service import chat_history_service
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +23,9 @@ def clean_tool_args_for_frontend(args: Any) -> Any:
     for key, value in args.items():
         # Skip message objects (HumanMessage, AIMessage, etc.)
         if hasattr(value, '__class__') and 'Message' in value.__class__.__name__:
-            logger.debug(f"Filtering out {value.__class__.__name__} from tool args")
             continue
         elif key == 'state' and isinstance(value, dict):
             # Skip state objects that contain messages
-            logger.debug("Filtering out 'state' parameter from tool args")
             continue
         elif isinstance(value, dict):
             cleaned[key] = clean_tool_args_for_frontend(value)
@@ -101,8 +99,6 @@ def save_conversation_messages(session_id: str, user_message: str, ai_response: 
         
         # Save AI response
         chat_history_service.add_ai_message(session_id, ai_response)
-        
-        logger.info(f"Saved conversation messages for session {session_id}")
     except Exception as e:
         logger.error(f"Failed to save conversation messages for session {session_id}: {e}")
 
