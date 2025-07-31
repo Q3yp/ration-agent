@@ -231,6 +231,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
             const artifactData = parseArtifactData(data.content);
             
             // If artifact data is found, update the artifact panel (auto-open for live session)
+            // This will replace any loading state that was shown earlier
             if (artifactData && onArtifactUpdate) {
               onArtifactUpdate(artifactData);
             }
@@ -265,6 +266,81 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
           if (data.type === 'title_update') {
             // Call the title update callback if provided
             onTitleUpdate?.(data.session_id, data.title)
+          }
+          break
+
+        case 'artifact_loading':
+          if (data.type === 'artifact_loading') {
+            // Open artifact panel with loading state
+            onArtifactUpdate?.({ 
+              title: '正在创建内容...', 
+              description: '请稍候，正在生成内容中...', 
+              html_content: `
+                <!DOCTYPE html>
+                <html lang="zh">
+                <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>正在创建内容</title>
+                  <style>
+                    body {
+                      margin: 0;
+                      padding: 0;
+                      display: flex;
+                      justify-content: center;
+                      align-items: center;
+                      min-height: 100vh;
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+                    }
+                    .loading-container {
+                      text-align: center;
+                      color: white;
+                    }
+                    .spinner {
+                      width: 60px;
+                      height: 60px;
+                      border: 4px solid rgba(255, 255, 255, 0.3);
+                      border-top: 4px solid white;
+                      border-radius: 50%;
+                      animation: spin 1s linear infinite;
+                      margin: 0 auto 24px;
+                    }
+                    @keyframes spin {
+                      0% { transform: rotate(0deg); }
+                      100% { transform: rotate(360deg); }
+                    }
+                    .loading-text {
+                      font-size: 18px;
+                      font-weight: 500;
+                      margin-bottom: 8px;
+                    }
+                    .loading-subtitle {
+                      font-size: 14px;
+                      opacity: 0.8;
+                    }
+                    .dots {
+                      animation: dots 1.5s steps(4, end) infinite;
+                    }
+                    @keyframes dots {
+                      0%, 20% { content: ''; }
+                      40% { content: '.'; }
+                      60% { content: '..'; }
+                      80%, 100% { content: '...'; }
+                    }
+                  </style>
+                </head>
+                <body>
+                  <div class="loading-container">
+                    <div class="spinner"></div>
+                    <div class="loading-text">正在创建内容</div>
+                    <div class="loading-subtitle">请稍候<span class="dots"></span></div>
+                  </div>
+                </body>
+                </html>
+              `,
+              isLoading: true 
+            })
           }
           break
 

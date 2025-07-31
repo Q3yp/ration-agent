@@ -277,6 +277,7 @@ async def stream_chat(session_id: str, request: ChatRequest):
         current_message_id = f"{session_id}_{int(asyncio.get_event_loop().time() * 1000000)}"
         accumulated_content = ""
         tool_calls_processed = set()
+        artifact_loading_sent = False
 
         try:
             yield f"event: connected\ndata: {json.dumps({'message_id': current_message_id, 'session_id': session_id})}\n\n"
@@ -310,6 +311,20 @@ async def stream_chat(session_id: str, request: ChatRequest):
                     if chunk_content:
                         accumulated_content += chunk_content
                         
+                        # Check for create_artifact tool mention in accumulated content
+                        try:
+                            if "create_artifact" in accumulated_content and not artifact_loading_sent:
+                                artifact_loading_sent = True
+                                artifact_loading_data = {
+                                    "type": "artifact_loading",
+                                    "message_id": current_message_id,
+                                    "timestamp": asyncio.get_event_loop().time()
+                                }
+                                yield f"event: artifact_loading\ndata: {json.dumps(artifact_loading_data, ensure_ascii=False)}\n\n"
+                        except Exception as e:
+                            logger.error(f"Error in artifact loading detection: {e}")
+                            # Continue processing without failing the stream
+                        
                         # Parse the chunk using unified message parser
                         parsed_result = message_parser.parse_streaming_chunk(chunk_content)
                         
@@ -340,6 +355,7 @@ async def stream_chat(session_id: str, request: ChatRequest):
                         event_with_timestamp = {**event, "timestamp": asyncio.get_event_loop().time()}
                         tool_data = process_tool_start_event(event_with_timestamp)
                         
+                        # Send regular tool_call event
                         json_str = json.dumps(tool_data, ensure_ascii=False)
                         yield f"event: tool_call\ndata: {json_str}\n\n"
                     except Exception as e:

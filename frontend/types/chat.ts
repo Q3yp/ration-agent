@@ -20,6 +20,7 @@ export interface ArtifactData {
   title: string
   description: string
   html_content: string
+  isLoading?: boolean
 }
 
 export interface Message {

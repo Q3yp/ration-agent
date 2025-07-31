@@ -210,11 +210,9 @@ async def create_html_artifact(
         if not session:
             return f"Error: Session '{session_id}' not found"
         
-        # Sanitize the HTML content first
-        sanitized_content = sanitize_html_content(html_content)
-        
+        # Use HTML content directly without sanitization
         # Wrap content in a complete HTML document if it's not already
-        if not sanitized_content.strip().lower().startswith('<!doctype') and not sanitized_content.strip().lower().startswith('<html'):
+        if not html_content.strip().lower().startswith('<!doctype') and not html_content.strip().lower().startswith('<html'):
             full_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -235,13 +233,13 @@ async def create_html_artifact(
 </head>
 <body>
     <div class="artifact-container">
-        {sanitized_content}
+        {html_content}
     </div>
 </body>
 </html>"""
         else:
-            # If it's already a complete HTML document, sanitize the whole thing
-            full_html = sanitize_html_content(sanitized_content)
+            # If it's already a complete HTML document, use as-is
+            full_html = html_content
         
         logger.info(f"Created HTML artifact for session {session_id}: {title}")
         

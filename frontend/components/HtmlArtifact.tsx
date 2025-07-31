@@ -18,17 +18,20 @@ export default function HtmlArtifact({ title = "HTML Artifact", description, htm
 
   useEffect(() => {
     if (iframeRef.current && htmlContent) {
-      // Use data URL for more reliable rendering
-      const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`;
-      iframeRef.current.src = dataUrl;
+      // Use srcdoc instead of data URL to avoid security restrictions
+      iframeRef.current.srcdoc = htmlContent;
     }
   }, [htmlContent]);
 
   const openInNewTab = () => {
-    const newWindow = window.open();
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const newWindow = window.open(url, '_blank');
     if (newWindow) {
-      newWindow.document.write(htmlContent);
-      newWindow.document.close();
+      // Clean up the object URL after a short delay
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 1000);
     }
   };
 

@@ -1,12 +1,10 @@
 'use client'
 
+import React from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-// Temporarily simplify to debug
-// import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-// import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 interface MarkdownMessageProps {
   content: string
@@ -14,8 +12,6 @@ interface MarkdownMessageProps {
 }
 
 export default function MarkdownMessage({ content, isStreaming = false }: MarkdownMessageProps) {
-  // Add cursor for streaming effect
-  const displayContent = isStreaming ? `${content}▋` : content
 
   return (
     <div className="prose prose-sm max-w-none prose-slate dark:prose-invert break-words overflow-wrap-anywhere">
@@ -96,7 +92,7 @@ export default function MarkdownMessage({ content, isStreaming = false }: Markdo
           }
         }}
       >
-        {displayContent}
+        {content}
       </ReactMarkdown>
     </div>
   )

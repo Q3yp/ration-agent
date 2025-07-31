@@ -92,7 +92,8 @@ class SessionManager:
                         last_accessed=row['last_accessed'],
                         active=row['active'],
                         deleted=row.get('deleted', False),
-                        title=metadata.get('title', 'New Conversation')
+                        title=metadata.get('title', 'New Conversation'),
+                        title_generated=metadata.get('title_generated', False)
                     )
 
                     self._sessions[row['session_id']] = session_context
@@ -109,9 +110,10 @@ class SessionManager:
 
         try:
             from psycopg.types.json import Jsonb
-            # Create metadata with title as JSONB
+            # Create metadata with title and title_generated flag as JSONB
             metadata = Jsonb({
-                'title': session_context.title
+                'title': session_context.title,
+                'title_generated': session_context.title_generated
             })
 
             async with self._db_pool.connection() as conn:
