@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 
 from utils.prompt_loader import apply_prompt_template
 from utils.tools import get_tools
-from utils.tools import get_search_tools
+from utils.tools import get_search_tools, get_supervisor_tools
 from utils.model_config import get_model_config
 from core.agent import OrchestratorState
 
@@ -124,9 +124,11 @@ async def supervisor_node(state: OrchestratorState, config: RunnableConfig = Non
     # Get model using centralized configuration
     model = get_model_config("supervisor")
     
-    # For now, supervisor has no working tools (will be added later)
-    # It uses create_react_agent for consistency but focuses on analysis
-    supervisor_tools = []  # TODO: Add actual supervisor tools when implemented
+    # Get session_id from config to create session-bound artifact tools
+    session_id = config["configurable"]["thread_id"]
+    
+    # Get supervisor tools (artifact creation and listing)
+    supervisor_tools = get_supervisor_tools(session_id)
     
     supervisor = create_react_agent(
         model,
@@ -141,7 +143,6 @@ async def supervisor_node(state: OrchestratorState, config: RunnableConfig = Non
     if result.get("messages"):
         last_message = result["messages"][-1]
         if hasattr(last_message, 'content'):
-            logger.debug(f"Supervisor parsing message: {last_message.content[:200]}...")
             parser = StreamingResponseParser()
             parsed = parser.parse_chunk(last_message.content)
             
@@ -149,8 +150,6 @@ async def supervisor_node(state: OrchestratorState, config: RunnableConfig = Non
             if action_data is None:
                 action_data = {}
             route = action_data.get("route", "").lower()
-            
-            logger.debug(f"Supervisor parsed - user_message: {parsed['user_message'][:100] if parsed['user_message'] else 'None'}..., action_data: {action_data}, route: {route}")
             
             # Store parsed response for frontend
             result["parsed_response"] = {
@@ -224,7 +223,6 @@ async def search_worker_node(state: OrchestratorState, config: RunnableConfig = 
     if result.get("messages"):
         last_message = result["messages"][-1]
         if hasattr(last_message, 'content'):
-            logger.debug(f"Search worker parsing message: {last_message.content[:200]}...")
             parser = StreamingResponseParser()
             # For non-streaming use, process full content at once
             parsed = parser.parse_chunk(last_message.content)
@@ -233,8 +231,6 @@ async def search_worker_node(state: OrchestratorState, config: RunnableConfig = 
             action_data = parsed.get("action_data")
             if action_data is None:
                 action_data = {}
-            
-            logger.debug(f"Search worker parsed - user_message: {parsed['user_message'][:100] if parsed['user_message'] else 'None'}..., action_data: {action_data}")
             
             return {
                 **result,
@@ -276,7 +272,6 @@ async def code_worker_node(state: OrchestratorState, config: RunnableConfig = No
     if result.get("messages"):
         last_message = result["messages"][-1]
         if hasattr(last_message, 'content'):
-            logger.debug(f"Code worker parsing message: {last_message.content[:200]}...")
             parser = StreamingResponseParser()
             # For non-streaming use, process full content at once
             parsed = parser.parse_chunk(last_message.content)
@@ -285,8 +280,6 @@ async def code_worker_node(state: OrchestratorState, config: RunnableConfig = No
             action_data = parsed.get("action_data")
             if action_data is None:
                 action_data = {}
-            
-            logger.debug(f"Code worker parsed - user_message: {parsed['user_message'][:100] if parsed['user_message'] else 'None'}..., action_data: {action_data}")
             
             return {
                 **result,

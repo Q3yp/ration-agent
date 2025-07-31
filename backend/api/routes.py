@@ -5,7 +5,7 @@ import logging
 import traceback
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from langchain_core.messages import HumanMessage
 from models import (
     ChatRequest, FileUploadResponse, FileListResponse, FileDeleteResponse,
@@ -26,7 +26,7 @@ from utils.prompt_loader import env
 router = APIRouter()
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

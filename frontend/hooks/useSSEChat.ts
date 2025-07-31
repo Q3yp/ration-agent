@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useReducer } from 'react'
-import { Message, MessageType, AttachedFile } from '@/types/chat'
+import { Message, MessageType, AttachedFile, ArtifactData } from '@/types/chat'
 import { getRoleInfo } from '@/utils/roleMapping'
+import { parseArtifactData, cleanContentForDisplay } from '@/utils/artifactParser'
 
 interface MessageState {
   messages: Message[]
@@ -133,6 +134,7 @@ interface UseSSEChatProps {
   sessionId: string
   endpoint?: string
   onTitleUpdate?: (sessionId: string, title: string) => void
+  onArtifactUpdate?: (artifactData: ArtifactData | null) => void
 }
 
 interface UseSSEChatReturn {
@@ -145,7 +147,7 @@ interface UseSSEChatReturn {
   setInitialMessages: (messages: Message[]) => void
 }
 
-export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTitleUpdate }: UseSSEChatProps): UseSSEChatReturn {
+export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTitleUpdate, onArtifactUpdate }: UseSSEChatProps): UseSSEChatReturn {
   const [messageState, dispatch] = useReducer(messageReducer, {
     messages: [],
     shouldCreateNewBubble: false,
@@ -165,7 +167,6 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
         eventSourceRef.current.close()
       } catch (error) {
         // Ignore errors during cleanup
-        console.debug('Error during EventSource cleanup:', error)
       }
       eventSourceRef.current = null
     }
@@ -174,7 +175,6 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
         abortControllerRef.current.abort()
       } catch (error) {
         // Ignore abort errors during cleanup
-        console.debug('Error during abort cleanup:', error)
       }
       abortControllerRef.current = null
     }
@@ -190,7 +190,6 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
         case 'connected':
           setIsConnected(true)
           setConnectionError(null)
-          console.log('SSE Connected:', data)
           break
 
         case 'thinking':
@@ -228,10 +227,19 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
 
         case 'tool_result':
           if (data.type === 'tool_result') {
+            // Check if the tool result contains artifact data
+            const artifactData = parseArtifactData(data.content);
+            
+            // If artifact data is found, update the artifact panel (auto-open for live session)
+            if (artifactData && onArtifactUpdate) {
+              onArtifactUpdate(artifactData);
+            }
+            
+            // Keep the original content (including artifact data) so MessageBubble can detect it
             const message: Message = {
               id: `${Date.now()}_${Math.random()}`,
               type: 'tool_result' as MessageType,
-              content: data.content,
+              content: data.content, // Keep original content with artifact data
               timestamp: data.timestamp || Date.now(),
               toolCallId: data.tool_call_id,
             }
@@ -284,7 +292,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
           break
 
         default:
-          console.log('Unknown SSE event type:', eventType, data)
+          // Ignore unknown event types
       }
     } catch (error) {
       console.error('Error parsing SSE message:', error, 'Raw data:', event.data)
@@ -364,7 +372,6 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
 
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        console.log('Request aborted')
         return
       }
       
@@ -387,7 +394,6 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
     setConnectionError(null)
     setIsConnected(false)
     // For SSE, connection is established per message, so we don't need to do anything here
-    console.log('SSE: Ready to send messages')
   }, [])
 
   const setInitialMessages = useCallback((initialMessages: Message[]) => {

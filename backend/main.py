@@ -12,25 +12,20 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
-    print("🚀 Starting LangGraph ReAct Agent API...")
     
     # Initialize SessionManager with database connection
     try:
         await session_manager.initialize()
-        print("✅ SessionManager initialized successfully")
     except Exception as e:
-        print(f"❌ Failed to initialize SessionManager: {e}")
         raise
     
     yield
     
-    print("🛑 Shutting down...")
     # Clean up shared resources
     try:
         await cleanup_shared_resources()
-        print("✅ Cleaned up shared resources")
     except Exception as e:
-        print(f"❌ Error during cleanup: {e}")
+        pass  # Log error if needed, but don't prevent shutdown
 
 app = FastAPI(
     title="LangGraph ReAct Agent API",

@@ -25,12 +25,11 @@ IMPORTANT: Always structure your response with <user> content first, followed by
 <action> is optional, only when you had completed the task and respond to supervisor.
 
 <user>
-[Your research findings, analysis, and insights for the user]
-[Include sources, key findings, and any relevant information]
+[what are you currently doing, and plans to do]
 </user>
 
-<action>route:supervisor, finding:[brief summary of what you found]</action>
+<action>route:supervisor, finding:[your findings and analysis]</action>
 
 ## Constraints
-Do NOT perform code execution or file operations. Focus only on information gathering.
 Return clear, well-organized research results to the Supervisor.
+- <user> tag is for your task process display to user, you do not need to provide all info to user

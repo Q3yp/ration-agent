@@ -1,10 +1,18 @@
 import os
 import subprocess
+import uuid
+import json
 from pathlib import Path
 from typing import Optional, List
 from langchain_core.tools import tool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from duckduckgo_search import DDGS
+
+try:
+    import bleach
+    BLEACH_AVAILABLE = True
+except ImportError:
+    BLEACH_AVAILABLE = False
 
 try:
     from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, BrowserConfig
@@ -16,6 +24,112 @@ except ImportError:
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_html_content(html_content: str) -> str:
+    """
+    Sanitize HTML content to prevent XSS attacks while preserving safe elements.
+    
+    Args:
+        html_content: Raw HTML content to sanitize
+        
+    Returns:
+        Sanitized HTML content
+    """
+    if not BLEACH_AVAILABLE:
+        logger.warning("Bleach not available - HTML content will not be sanitized")
+        return html_content
+    
+    # Define allowed tags and attributes for HTML artifacts
+    allowed_tags = [
+        # Structure
+        'html', 'head', 'body', 'title', 'meta',
+        # Content
+        'div', 'span', 'p', 'br', 'hr',
+        # Headers
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        # Lists
+        'ul', 'ol', 'li',
+        # Tables
+        'table', 'thead', 'tbody', 'tr', 'th', 'td',
+        # Forms (for interactive content)
+        'form', 'input', 'button', 'select', 'option', 'textarea', 'label',
+        # Media
+        'img', 'svg', 'canvas',
+        # Text formatting
+        'strong', 'b', 'em', 'i', 'u', 'code', 'pre',
+        # Links (with restrictions)
+        'a',
+        # Style
+        'style'
+    ]
+    
+    allowed_attributes = {
+        '*': ['class', 'id', 'style', 'data-*'],
+        'a': ['href', 'target', 'rel'],
+        'img': ['src', 'alt', 'width', 'height'],
+        'input': ['type', 'name', 'value', 'placeholder', 'min', 'max', 'step'],
+        'button': ['type', 'onclick'],
+        'select': ['name', 'multiple'],
+        'option': ['value', 'selected'],
+        'textarea': ['name', 'rows', 'cols', 'placeholder'],
+        'form': ['method', 'action'],
+        'meta': ['charset', 'name', 'content', 'viewport'],
+        'canvas': ['width', 'height'],
+        'svg': ['width', 'height', 'viewBox', 'xmlns'],
+        'table': ['border', 'cellpadding', 'cellspacing'],
+        'th': ['colspan', 'rowspan'],
+        'td': ['colspan', 'rowspan']
+    }
+    
+    # Define allowed CSS properties
+    allowed_css_properties = [
+        'color', 'background-color', 'font-size', 'font-family', 'font-weight',
+        'text-align', 'margin', 'padding', 'border', 'width', 'height',
+        'display', 'position', 'top', 'left', 'right', 'bottom',
+        'flex', 'grid', 'justify-content', 'align-items', 'gap',
+        'border-radius', 'box-shadow', 'opacity', 'transform',
+        'transition', 'animation'
+    ]
+    
+    def css_sanitizer(style):
+        """Custom CSS sanitizer"""
+        if not style:
+            return ''
+        
+        # Simple CSS property filtering
+        safe_styles = []
+        for declaration in style.split(';'):
+            if ':' in declaration:
+                prop, value = declaration.split(':', 1)
+                prop = prop.strip().lower()
+                if prop in allowed_css_properties:
+                    # Basic value sanitization - remove javascript: and other dangerous protocols
+                    value = value.strip()
+                    if not any(dangerous in value.lower() for dangerous in ['javascript:', 'data:', 'vbscript:', 'expression(']):
+                        safe_styles.append(f"{prop}: {value}")
+        
+        return '; '.join(safe_styles)
+    
+    try:
+        # Sanitize the HTML
+        sanitized = bleach.clean(
+            html_content,
+            tags=allowed_tags,
+            attributes=allowed_attributes,
+            css_sanitizer=css_sanitizer,
+            strip=True,  # Remove disallowed tags completely
+            strip_comments=True  # Remove HTML comments
+        )
+        
+        logger.info("HTML content sanitized successfully")
+        return sanitized
+        
+    except Exception as e:
+        logger.error(f"HTML sanitization failed: {e}")
+        # Fallback to basic escaping if sanitization fails
+        import html
+        return html.escape(html_content)
 
 
 async def bash_command(command: str, session_id: str) -> str:
@@ -66,6 +180,106 @@ def create_bash_command_tool(session_id: str):
         return await bash_command(command, session_id)
     
     return bash_command_for_session
+
+
+# Artifact tools
+async def create_html_artifact(
+    html_content: str, 
+    title: str, 
+    description: Optional[str] = None,
+    session_id: str = None
+) -> str:
+    """
+    Create an HTML artifact that can be displayed in the frontend.
+    
+    Args:
+        html_content: The HTML content to save as an artifact
+        title: A title for the artifact
+        description: Optional description of what the artifact contains
+        session_id: Session ID for file storage (injected by tool creation)
+    
+    Returns:
+        String with artifact info for the agent to reference
+    """
+    try:
+        # Import here to avoid circular imports
+        from services.session_manager import session_manager
+        
+        # Get session context
+        session = await session_manager.get_session(session_id)
+        if not session:
+            return f"Error: Session '{session_id}' not found"
+        
+        # Sanitize the HTML content first
+        sanitized_content = sanitize_html_content(html_content)
+        
+        # Wrap content in a complete HTML document if it's not already
+        if not sanitized_content.strip().lower().startswith('<!doctype') and not sanitized_content.strip().lower().startswith('<html'):
+            full_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }}
+        .artifact-container {{
+            max-width: 100%;
+            margin: 0 auto;
+        }}
+    </style>
+</head>
+<body>
+    <div class="artifact-container">
+        {sanitized_content}
+    </div>
+</body>
+</html>"""
+        else:
+            # If it's already a complete HTML document, sanitize the whole thing
+            full_html = sanitize_html_content(sanitized_content)
+        
+        logger.info(f"Created HTML artifact for session {session_id}: {title}")
+        
+        # Return structured data that includes the HTML content for frontend display
+        # No file saving needed - content is embedded in tool result and persisted via LangGraph checkpointing
+        return f"✅ HTML artifact created successfully!\n- Title: {title}\n- Description: {description or 'No description'}\n\n[ARTIFACT_DATA]\n{json.dumps({'title': title, 'description': description or '', 'html_content': full_html}, ensure_ascii=False)}\n[/ARTIFACT_DATA]\n\nThe artifact is now available for display in the frontend."
+        
+    except Exception as e:
+        logger.error(f"Failed to create HTML artifact: {e}")
+        return f"❌ Error creating HTML artifact: {str(e)}"
+
+
+def create_artifact_tool(session_id: str):
+    """Create an artifact tool bound to a specific session"""
+    
+    @tool
+    async def create_artifact(
+        html_content: str, 
+        title: str, 
+        description: Optional[str] = None
+    ) -> str:
+        """
+        Create an HTML artifact that can be displayed in the frontend.
+        
+        Use this tool when you want to create interactive HTML content, charts, 
+        visualizations, or any other HTML-based content that the user can interact with.
+        
+        Args:
+            html_content: The HTML content to save as an artifact (can include CSS and JavaScript)
+            title: A descriptive title for the artifact
+            description: Optional description of what the artifact contains
+        
+        Returns:
+            Confirmation message with artifact details
+        """
+        return await create_html_artifact(html_content, title, description, session_id)
+    
+    return create_artifact
 
 
 
@@ -304,6 +518,11 @@ def get_search_tools():
     ]
 
 
+def get_supervisor_tools(session_id: str):
+    """Get supervisor-specific tools"""
+    return []
+
+
 async def get_tools(session_id: str):
     """Get all available tools for a session."""
     # Create session-bound bash tool
@@ -312,4 +531,7 @@ async def get_tools(session_id: str):
     # Get file management tools for the session
     file_tools = await get_file_management_tools(session_id)
     
-    return [session_bash_tool] + file_tools
+    # Create session-bound artifact tool
+    artifact_tool = create_artifact_tool(session_id)
+    
+    return [session_bash_tool, artifact_tool] + file_tools

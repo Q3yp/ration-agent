@@ -44,7 +44,6 @@ async def run_migration():
     
     try:
         await pool.open()
-        print("✅ Connected to database")
         
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
@@ -59,17 +58,14 @@ async def run_migration():
                 existing_column = await cur.fetchone()
                 
                 if existing_column:
-                    print("⚠️  Column 'deleted' already exists in user_sessions table")
                     return
                 
                 # Add the deleted column with default value FALSE
-                print("🔄 Adding 'deleted' column to user_sessions table...")
                 await cur.execute("""
                     ALTER TABLE user_sessions 
                     ADD COLUMN deleted BOOLEAN NOT NULL DEFAULT FALSE
                 """)
                 
-                print("✅ Successfully added 'deleted' column to user_sessions table")
                 
                 # Verify the column was added
                 await cur.execute("""
@@ -80,20 +76,14 @@ async def run_migration():
                 """)
                 
                 result = await cur.fetchone()
-                if result:
-                    print(f"✅ Verified column: {result[0]} ({result[1]}) with default: {result[2]}")
-                else:
-                    print("❌ Failed to verify column addition")
+                if not result:
+                    raise Exception("Failed to verify column addition")
                     
     except Exception as e:
-        print(f"❌ Migration failed: {e}")
         raise
     finally:
         await pool.close()
-        print("🔌 Database connection closed")
 
 
 if __name__ == "__main__":
-    print("🚀 Running migration: Add deleted column to user_sessions table")
     asyncio.run(run_migration())
-    print("✅ Migration completed")

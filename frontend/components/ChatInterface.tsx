@@ -4,13 +4,14 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, AlertTriangle, Upload, Loader2 } from 'lucide-react'
 import MessageList from './MessageList'
 import FileUpload from './FileUpload'
+import HtmlArtifact from './HtmlArtifact'
 import { useSSEChat } from '@/hooks/useSSEChat'
 import { useSessionHistory } from '@/hooks/useSessionHistory'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { AttachedFile } from '@/types/chat'
+import { AttachedFile, ArtifactData } from '@/types/chat'
 
 interface ChatInterfaceProps {
   sessionId: string
@@ -24,6 +25,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
   const [uploadedFiles, setUploadedFiles] = useState<AttachedFile[]>([])
   const [pendingFileNotifications, setPendingFileNotifications] = useState<string[]>([])
   const [historyInitialized, setHistoryInitialized] = useState(false)
+  const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -35,7 +37,12 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
     sendMessage,
     retryConnection,
     setInitialMessages,
-  } = useSSEChat({ sessionId, endpoint, onTitleUpdate })
+  } = useSSEChat({ 
+    sessionId, 
+    endpoint, 
+    onTitleUpdate,
+    onArtifactUpdate: setCurrentArtifact
+  })
 
   const {
     sessionHistory,
@@ -49,6 +56,13 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
     if (sessionHistory && !historyInitialized) {
       const historyMessages = convertHistoryToMessages(sessionHistory.messages)
       setInitialMessages(historyMessages)
+      
+      // Don't auto-open artifacts from history - let user click to open them
+      // const latestArtifact = getLatestArtifact(sessionHistory.messages)
+      // if (latestArtifact) {
+      //   setCurrentArtifact(latestArtifact)
+      // }
+      
       setHistoryInitialized(true)
     } else if (!historyLoading && !historyError && !sessionHistory && !historyInitialized) {
       // No history found, start with empty messages
@@ -60,6 +74,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
   // Reset history initialized when session changes
   useEffect(() => {
     setHistoryInitialized(false)
+    setCurrentArtifact(null) // Clear artifact when switching sessions
   }, [sessionId])
 
   const scrollToBottom = () => {
@@ -114,106 +129,124 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
   }
 
   return (
-    <Card className="flex flex-col h-full max-h-full overflow-hidden">
-      {/* Connection Status */}
-      <div className="px-4 py-3 border-b">
-        <div className="flex items-center justify-between">
-          <Badge
-            variant={historyLoading || !historyInitialized
-              ? "secondary"
-              : isConnected
-              ? "default"
-              : "destructive"
-            }
-            className="flex items-center gap-1"
-          >
-            {historyLoading || !historyInitialized ? (
-              <>
-                <Loader2 className="h-3 w-3 animate-spin" />
-                正在加载对话...
-              </>
-            ) : isConnected ? (
-              <>已连接</>
-            ) : (
-              <>连接错误</>
-            )}
-          </Badge>
-          {connectionError && !historyLoading && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={retryConnection}
-              className="text-xs"
+    <div className="flex h-full max-h-full overflow-hidden gap-4">
+      {/* Chat Panel */}
+      <Card className={`flex flex-col overflow-hidden transition-all duration-300 ${
+        currentArtifact ? 'w-1/2' : 'w-full'
+      }`}>
+        {/* Connection Status */}
+        <div className="px-4 py-3 border-b">
+          <div className="flex items-center justify-between">
+            <Badge
+              variant={historyLoading || !historyInitialized
+                ? "secondary"
+                : isConnected
+                ? "default"
+                : "destructive"
+              }
+              className="flex items-center gap-1"
             >
-              重试
-            </Button>
-          )}
-        </div>
-        {(connectionError && !historyLoading) || historyError ? (
-          <div className="mt-2 flex items-center text-sm text-muted-foreground">
-            <AlertTriangle className="h-4 w-4 mr-1" />
-            {connectionError || historyError}
+              {historyLoading || !historyInitialized ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  正在加载对话...
+                </>
+              ) : isConnected ? (
+                <>已连接</>
+              ) : (
+                <>连接错误</>
+              )}
+            </Badge>
+            {connectionError && !historyLoading && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={retryConnection}
+                className="text-xs"
+              >
+                重试
+              </Button>
+            )}
           </div>
-        ) : null}
-      </div>
+          {(connectionError && !historyLoading) || historyError ? (
+            <div className="mt-2 flex items-center text-sm text-muted-foreground">
+              <AlertTriangle className="h-4 w-4 mr-1" />
+              {connectionError || historyError}
+            </div>
+          ) : null}
+        </div>
 
-      {/* Messages */}
-      <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
-        <MessageList
-          messages={messages}
-          isTyping={isTyping}
-        />
-        <div ref={messagesEndRef} />
-      </CardContent>
+        {/* Messages */}
+        <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
+          <MessageList
+            messages={messages}
+            isTyping={isTyping}
+            onArtifactOpen={setCurrentArtifact}
+          />
+          <div ref={messagesEndRef} />
+        </CardContent>
 
-      {/* File Upload Section */}
-      {showFileUpload && (
+        {/* File Upload Section */}
+        {showFileUpload && (
+          <div className="border-t p-4">
+            <FileUpload 
+              sessionId={sessionId} 
+              endpoint={endpoint}
+              onFilesChange={setUploadedFiles}
+              onFileUploaded={handleFileUploaded}
+            />
+          </div>
+        )}
+
+        {/* Input */}
         <div className="border-t p-4">
-          <FileUpload 
-            sessionId={sessionId} 
-            endpoint={endpoint}
-            onFilesChange={setUploadedFiles}
-            onFileUploaded={handleFileUploaded}
+          <div className="flex space-x-2">
+            <Button
+              variant={showFileUpload ? "default" : "outline"}
+              size="icon"
+              onClick={() => setShowFileUpload(!showFileUpload)}
+              disabled={!isConnected || historyLoading || !historyInitialized}
+              title="切换文件上传"
+            >
+              <Upload className="h-4 w-4" />
+            </Button>
+            <Input
+              ref={inputRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="输入您的消息..."
+              disabled={!isConnected || isTyping || historyLoading || !historyInitialized}
+              className="flex-1"
+            />
+            <Button
+              onClick={handleSendMessage}
+              disabled={!inputValue.trim() || !isConnected || isTyping || historyLoading || !historyInitialized}
+              size="icon"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="mt-2 text-xs text-muted-foreground">
+            按 Enter 发送 • Shift+Enter 换行 • {showFileUpload ? '文件上传已启用' : '点击 📁 上传文件'} • 使用服务器发送事件
+            {uploadedFiles.length > 0 && (
+              <span className="ml-2 text-primary">• 已附加 {uploadedFiles.length} 个文件</span>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* Artifact Panel */}
+      {currentArtifact && (
+        <div className="w-1/2 h-full transition-all duration-300">
+          <HtmlArtifact
+            title={currentArtifact.title}
+            description={currentArtifact.description}
+            htmlContent={currentArtifact.html_content}
+            onClose={() => setCurrentArtifact(null)}
           />
         </div>
       )}
-
-      {/* Input */}
-      <div className="border-t p-4">
-        <div className="flex space-x-2">
-          <Button
-            variant={showFileUpload ? "default" : "outline"}
-            size="icon"
-            onClick={() => setShowFileUpload(!showFileUpload)}
-            disabled={!isConnected || historyLoading || !historyInitialized}
-            title="切换文件上传"
-          >
-            <Upload className="h-4 w-4" />
-          </Button>
-          <Input
-            ref={inputRef}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="输入您的消息..."
-            disabled={!isConnected || isTyping || historyLoading || !historyInitialized}
-            className="flex-1"
-          />
-          <Button
-            onClick={handleSendMessage}
-            disabled={!inputValue.trim() || !isConnected || isTyping || historyLoading || !historyInitialized}
-            size="icon"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="mt-2 text-xs text-muted-foreground">
-          按 Enter 发送 • Shift+Enter 换行 • {showFileUpload ? '文件上传已启用' : '点击 📁 上传文件'} • 使用服务器发送事件
-          {uploadedFiles.length > 0 && (
-            <span className="ml-2 text-primary">• 已附加 {uploadedFiles.length} 个文件</span>
-          )}
-        </div>
-      </div>
-    </Card>
+    </div>
   )
 }

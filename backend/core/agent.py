@@ -14,7 +14,7 @@ if os.name == 'nt':  # Windows
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +28,9 @@ class OrchestratorState(AgentState):
     # Worker findings (accumulate results)
     search_findings: Annotated[list, lambda x, y: x + y] = []
     code_results: Annotated[list, lambda x, y: x + y] = []
+    
+    # Artifacts (accumulate results)
+    artifacts: Annotated[list, lambda x, y: x + y] = []
     
     # Workflow control
     workflow_stage: str = "analyzing"  # analyzing -> delegating -> working -> synthesizing

@@ -16,6 +16,12 @@ export interface AttachedFile {
   path: string
 }
 
+export interface ArtifactData {
+  title: string
+  description: string
+  html_content: string
+}
+
 export interface Message {
   id: string
   type: MessageType
@@ -29,6 +35,7 @@ export interface Message {
   isStreaming?: boolean
   attachedFiles?: AttachedFile[]
   toRole?: string
+  artifactData?: ArtifactData
 }
 
 export interface Session {

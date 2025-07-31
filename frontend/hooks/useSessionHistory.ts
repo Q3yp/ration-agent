@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { SessionHistory, Message, SessionHistoryMessage } from '@/types/chat'
+import { SessionHistory, Message, SessionHistoryMessage, ArtifactData } from '@/types/chat'
 import { getRoleInfo } from '@/utils/roleMapping'
+import { parseArtifactData } from '@/utils/artifactParser'
 
 interface UseSessionHistoryProps {
   sessionId: string | null
@@ -15,6 +16,7 @@ interface UseSessionHistoryReturn {
   error: string | null
   loadSessionHistory: () => Promise<void>
   convertHistoryToMessages: (historyMessages: SessionHistoryMessage[]) => Message[]
+  getLatestArtifact: (historyMessages: SessionHistoryMessage[]) => ArtifactData | null
 }
 
 export function useSessionHistory({ 
@@ -122,6 +124,28 @@ export function useSessionHistory({
     return messages
   }, [sessionId]) // sessionId is used for stable ID generation, getRoleInfo is from utils and should be stable
 
+  const getLatestArtifact = useCallback((historyMessages: SessionHistoryMessage[]): ArtifactData | null => {
+    if (!historyMessages || historyMessages.length === 0) {
+      return null
+    }
+
+    // Look through history messages in reverse order (most recent first)
+    // to find the latest artifact data in tool results
+    for (let i = historyMessages.length - 1; i >= 0; i--) {
+      const msg = historyMessages[i]
+      
+      // Check tool result messages for artifact data
+      if (msg.type === 'tool' && msg.content) {
+        const artifactData = parseArtifactData(msg.content)
+        if (artifactData) {
+          return artifactData
+        }
+      }
+    }
+
+    return null
+  }, [])
+
   useEffect(() => {
     if (sessionId) {
       loadSessionHistory()
@@ -136,6 +160,7 @@ export function useSessionHistory({
     isLoading,
     error,
     loadSessionHistory,
-    convertHistoryToMessages
+    convertHistoryToMessages,
+    getLatestArtifact
   }
 }

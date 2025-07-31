@@ -73,13 +73,13 @@ class ChatHistoryService:
                     return message_parser.parse_messages_for_frontend(message_objects)
                 
             except Exception as e:
-                print(f"Error getting LangGraph state: {e}")
+                pass
                 
             # Return empty list if no state found
             return []
             
         except Exception as e:
-            print(f"Error accessing LangGraph checkpointer: {e}")
+            pass
             return []
     
     def get_session_history_for_frontend(self, session_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -129,7 +129,7 @@ class ChatHistoryService:
             }
             
         except Exception as e:
-            print(f"Error getting session summary: {e}")
+            pass
             return {
                 "session_id": session_id,
                 "total_messages": 0,
@@ -149,10 +149,9 @@ class ChatHistoryService:
         try:
             # Note: LangGraph doesn't provide a direct way to clear checkpoints
             # This would require custom implementation or recreating the thread
-            print(f"Warning: Cannot clear LangGraph checkpoint history for session {session_id}")
-            print("LangGraph checkpoints are immutable - consider using a new session ID")
+            pass
         except Exception as e:
-            print(f"Error clearing session history: {e}")
+            pass
     
     def clear_session_history(self, session_id: str):
         """Sync wrapper for clearing session history"""

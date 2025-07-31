@@ -1,6 +1,6 @@
 'use client'
 
-import { Message } from '@/types/chat'
+import { Message, ArtifactData } from '@/types/chat'
 import {
   Settings,
   CheckCircle,
@@ -20,13 +20,16 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
+import { ExternalLink } from 'lucide-react'
+import { parseArtifactData } from '@/utils/artifactParser'
 
 
 interface MessageBubbleProps {
   message: Message
+  onArtifactOpen?: (artifactData: ArtifactData) => void
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({ message, onArtifactOpen }: MessageBubbleProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Parse file upload tags from message content
@@ -77,37 +80,66 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
     </Card>
   )
 
-  const renderToolResult = () => (
-    <Card className="max-w-[80%] min-w-0 overflow-hidden border-green-200 bg-green-50">
-      <CardContent className="p-3">
-        <div
-          className="flex items-center justify-between cursor-pointer"
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          <div className="flex items-center min-w-0">
-            <ChevronRight className={cn(
-              "h-4 w-4 mr-1 transition-transform flex-shrink-0",
-              isExpanded && "rotate-90"
-            )} />
-            <CheckCircle className="h-4 w-4 mr-2 text-green-600 flex-shrink-0" />
-            <span className="font-semibold truncate">工具结果</span>
+  const renderToolResult = () => {
+    const artifactData = parseArtifactData(message.content)
+    const isArtifactTool = artifactData !== null
+    
+    return (
+      <Card className={cn(
+        "max-w-[80%] min-w-0 overflow-hidden border-green-200 bg-green-50",
+        isArtifactTool && onArtifactOpen && "cursor-pointer hover:bg-green-100 transition-colors"
+      )}>
+        <CardContent className="p-3">
+          <div
+            className="flex items-center justify-between"
+            onClick={() => {
+              if (isArtifactTool && onArtifactOpen && artifactData) {
+                onArtifactOpen(artifactData)
+              } else {
+                setIsExpanded(!isExpanded)
+              }
+            }}
+          >
+            <div className="flex items-center min-w-0">
+              {isArtifactTool ? (
+                <ExternalLink className="h-4 w-4 mr-2 text-green-600 flex-shrink-0" />
+              ) : (
+                <>
+                  <ChevronRight className={cn(
+                    "h-4 w-4 mr-1 transition-transform flex-shrink-0",
+                    isExpanded && "rotate-90"
+                  )} />
+                  <CheckCircle className="h-4 w-4 mr-2 text-green-600 flex-shrink-0" />
+                </>
+              )}
+              <span className="font-semibold truncate">
+                {isArtifactTool ? artifactData.title : "工具结果"}
+              </span>
+            </div>
+            <Badge variant="outline" className="text-xs text-green-600 flex-shrink-0 ml-2">
+              {formatTimestamp(message.timestamp)}
+            </Badge>
           </div>
-          <Badge variant="outline" className="text-xs text-green-600 flex-shrink-0 ml-2">
-            {formatTimestamp(message.timestamp)}
-          </Badge>
-        </div>
 
-        {/* Expandable Content */}
-        {isExpanded && (
-          <div className="mt-3 bg-green-100 p-3 rounded-md text-sm max-h-64 overflow-auto w-full min-w-0">
-            <pre className="whitespace-pre-wrap font-mono break-all word-break-all overflow-wrap-anywhere min-w-0">
-              {message.content}
-            </pre>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
+          {/* Show description for artifacts */}
+          {isArtifactTool && artifactData.description && (
+            <div className="mt-2 text-sm text-green-700">
+              {artifactData.description}
+            </div>
+          )}
+
+          {/* Expandable Content - only for non-artifact tools */}
+          {!isArtifactTool && isExpanded && (
+            <div className="mt-3 bg-green-100 p-3 rounded-md text-sm max-h-64 overflow-auto w-full min-w-0">
+              <pre className="whitespace-pre-wrap font-mono break-all word-break-all overflow-wrap-anywhere min-w-0">
+                {message.content}
+              </pre>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
 
   const renderSystemMessage = () => (
     <div className="flex justify-center">

@@ -9,7 +9,7 @@ from psycopg_pool import AsyncConnectionPool
 from core.agent import create_agent_for_session, cleanup_agent_session
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -60,11 +60,9 @@ class SessionManager:
         # Create a temporary checkpointer to initialize tables
         temp_checkpointer = AsyncPostgresSaver(self._db_pool)
         await temp_checkpointer.setup()
-        logger.info("Initialized LangGraph checkpoint tables")
         
         # Load existing sessions from database
         await self.load_sessions_from_database()
-        logger.info(f"SessionManager initialized with {len(self._sessions)} sessions")
     
     async def load_sessions_from_database(self):
         """Load all active, non-deleted sessions from database into memory cache"""
@@ -100,7 +98,6 @@ class SessionManager:
                     self._sessions[row['session_id']] = session_context
                     self._active_sessions.add(row['session_id'])
 
-                    logger.debug(f"Loaded session {row['session_id']} from database")
 
         except Exception as e:
             logger.error(f"Failed to load sessions from database: {e}")
@@ -135,7 +132,6 @@ class SessionManager:
                             metadata
                         )
                     )
-                logger.debug(f"Persisted session {session_context.session_id} to database")
 
         except Exception as e:
             logger.error(f"Failed to persist session {session_context.session_id}: {e}")
@@ -167,7 +163,6 @@ class SessionManager:
                         "UPDATE user_sessions SET active = FALSE WHERE session_id = %s",
                         (session_id,)
                     )
-                logger.debug(f"Deactivated session {session_id} in database")
         except Exception as e:
             logger.error(f"Failed to deactivate session {session_id}: {e}")
 
@@ -183,7 +178,6 @@ class SessionManager:
                         "UPDATE user_sessions SET deleted = TRUE WHERE session_id = %s",
                         (session_id,)
                     )
-                logger.debug(f"Marked session {session_id} as deleted in database")
         except Exception as e:
             logger.error(f"Failed to mark session {session_id} as deleted: {e}")
     
