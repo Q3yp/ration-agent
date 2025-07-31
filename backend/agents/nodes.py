@@ -10,7 +10,8 @@ from langchain_openai import ChatOpenAI
 
 from utils.prompt_loader import apply_prompt_template
 from utils.tools import get_tools
-from utils.search_tools import get_search_tools
+from utils.tools import get_search_tools
+from utils.model_config import get_model_config
 from core.agent import OrchestratorState
 
 # Configure logging for node message parsing
@@ -95,13 +96,15 @@ class StreamingResponseParser:
                     result["user_chunk"] = streamable_content
                     result["user_message"] = self.user_content
         
-        # Check for action when not in user block
+        # Check for action when not in user block - only emit once when </action> is detected
         if self.state == "waiting_for_user" and self.buffer:
             action_match = re.search(r'<action>(.*?)</action>', self.buffer, re.DOTALL)
             if action_match:
                 action_content = action_match.group(1).strip()
                 result["action_data"] = self._parse_action_content(action_content)
                 result["is_complete"] = True
+                # Clear action from buffer to prevent re-processing
+                self.buffer = re.sub(r'<action>.*?</action>', '', self.buffer, flags=re.DOTALL)
         
         return result
     
@@ -118,15 +121,8 @@ class StreamingResponseParser:
 
 async def supervisor_node(state: OrchestratorState, config: RunnableConfig = None) -> Command[Literal["search_worker", "code_worker", "__end__"]]:
     """Supervisor node that analyzes requests and routes to appropriate workers"""
-    # Get model
-    model = ChatOpenAI(
-        model=os.getenv("OPENROUTER_MODEL"),
-        temperature=0,
-        streaming=True,
-        openai_api_base="https://openrouter.ai/api/v1",
-        openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-        stream_usage=False
-    )
+    # Get model using centralized configuration
+    model = get_model_config("supervisor")
     
     # For now, supervisor has no working tools (will be added later)
     # It uses create_react_agent for consistency but focuses on analysis
@@ -212,14 +208,8 @@ def _parse_supervisor_response(response_content: str) -> dict:
 
 async def search_worker_node(state: OrchestratorState, config: RunnableConfig = None):
     """Search worker node that performs research tasks"""
-    model = ChatOpenAI(
-        model=os.getenv("OPENROUTER_MODEL"),
-        temperature=0,
-        streaming=True,
-        openai_api_base="https://openrouter.ai/api/v1",
-        openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-        stream_usage=False
-    )
+    # Get model using centralized configuration
+    model = get_model_config("search_worker")
     
     tools = get_search_tools()
     search_worker = create_react_agent(
@@ -267,14 +257,8 @@ async def search_worker_node(state: OrchestratorState, config: RunnableConfig = 
 
 async def code_worker_node(state: OrchestratorState, config: RunnableConfig = None):
     """Code worker node that handles code execution and analysis"""
-    model = ChatOpenAI(
-        model=os.getenv("OPENROUTER_MODEL"),
-        temperature=0,
-        streaming=True,
-        openai_api_base="https://openrouter.ai/api/v1",
-        openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-        stream_usage=False
-    )
+    # Get model using centralized configuration
+    model = get_model_config("code_worker")
     
     # Get session_id from config which is passed by the session-bound agent
     session_id = config["configurable"]["thread_id"]

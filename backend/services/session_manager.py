@@ -35,6 +35,9 @@ class SessionContext:
     agent_ready: bool = False
     active_connections: int = 0
     active: bool = True
+    deleted: bool = False
+    title: str = "New Conversation"
+    title_generated: bool = False
 
 
 class SessionManager:
@@ -64,36 +67,41 @@ class SessionManager:
         logger.info(f"SessionManager initialized with {len(self._sessions)} sessions")
     
     async def load_sessions_from_database(self):
-        """Load all active sessions from database into memory cache"""
+        """Load all active, non-deleted sessions from database into memory cache"""
         if not self._db_pool:
             return
-        
+
         try:
             async with self._db_pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
-                        "SELECT session_id, user_id, workspace_path, created_at, last_accessed, active, metadata "
-                        "FROM user_sessions WHERE active = TRUE"
+                        "SELECT session_id, user_id, workspace_path, created_at, last_accessed, active, deleted, metadata "
+                        "FROM user_sessions WHERE active = TRUE AND deleted = FALSE"
                     )
                     rows = await cur.fetchall()
                     columns = [desc[0] for desc in cur.description]
-                
+
                 for row_data in rows:
                     row = dict(zip(columns, row_data))
+                    # Get metadata - it's already a dict
+                    metadata = row.get('metadata', {})
+
                     session_context = SessionContext(
                         session_id=row['session_id'],
                         user_id=row['user_id'],
                         workspace_path=row['workspace_path'],
                         created_at=row['created_at'],
                         last_accessed=row['last_accessed'],
-                        active=row['active']
+                        active=row['active'],
+                        deleted=row.get('deleted', False),
+                        title=metadata.get('title', 'New Conversation')
                     )
-                    
+
                     self._sessions[row['session_id']] = session_context
                     self._active_sessions.add(row['session_id'])
-                    
+
                     logger.debug(f"Loaded session {row['session_id']} from database")
-        
+
         except Exception as e:
             logger.error(f"Failed to load sessions from database: {e}")
     
@@ -101,15 +109,21 @@ class SessionManager:
         """Save session to database"""
         if not self._db_pool:
             return
-        
+
         try:
+            from psycopg.types.json import Jsonb
+            # Create metadata with title as JSONB
+            metadata = Jsonb({
+                'title': session_context.title
+            })
+
             async with self._db_pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
-                        "INSERT INTO user_sessions (session_id, user_id, workspace_path, created_at, last_accessed, active, metadata) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                        "INSERT INTO user_sessions (session_id, user_id, workspace_path, created_at, last_accessed, active, deleted, metadata) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
                         "ON CONFLICT (session_id) DO UPDATE SET "
-                        "last_accessed = EXCLUDED.last_accessed, active = EXCLUDED.active, metadata = EXCLUDED.metadata",
+                        "last_accessed = EXCLUDED.last_accessed, active = EXCLUDED.active, deleted = EXCLUDED.deleted, metadata = EXCLUDED.metadata",
                         (
                             session_context.session_id,
                             session_context.user_id,
@@ -117,11 +131,12 @@ class SessionManager:
                             session_context.created_at,
                             session_context.last_accessed,
                             session_context.active,
-                            "{}"  # JSON string instead of dict
+                            session_context.deleted,
+                            metadata
                         )
                     )
                 logger.debug(f"Persisted session {session_context.session_id} to database")
-                
+
         except Exception as e:
             logger.error(f"Failed to persist session {session_context.session_id}: {e}")
     
@@ -144,7 +159,7 @@ class SessionManager:
         """Mark session as inactive in database"""
         if not self._db_pool:
             return
-        
+
         try:
             async with self._db_pool.connection() as conn:
                 async with conn.cursor() as cur:
@@ -155,18 +170,34 @@ class SessionManager:
                 logger.debug(f"Deactivated session {session_id} in database")
         except Exception as e:
             logger.error(f"Failed to deactivate session {session_id}: {e}")
+
+    async def mark_session_deleted(self, session_id: str):
+        """Mark session as deleted in database (soft delete)"""
+        if not self._db_pool:
+            return
+
+        try:
+            async with self._db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "UPDATE user_sessions SET deleted = TRUE WHERE session_id = %s",
+                        (session_id,)
+                    )
+                logger.debug(f"Marked session {session_id} as deleted in database")
+        except Exception as e:
+            logger.error(f"Failed to mark session {session_id} as deleted: {e}")
     
     async def get_all_active_sessions_from_db(self) -> List[Dict]:
-        """Get all active sessions from database with stats"""
+        """Get all active, non-deleted sessions from database with stats"""
         if not self._db_pool:
             return []
-        
+
         try:
             async with self._db_pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         "SELECT session_id, user_id, workspace_path, created_at, last_accessed, metadata "
-                        "FROM user_sessions WHERE active = TRUE ORDER BY last_accessed DESC"
+                        "FROM user_sessions WHERE active = TRUE AND deleted = FALSE ORDER BY last_accessed DESC"
                     )
                     rows = await cur.fetchall()
                     columns = [desc[0] for desc in cur.description]
@@ -174,6 +205,9 @@ class SessionManager:
                 sessions = []
                 for row_data in rows:
                     row = dict(zip(columns, row_data))
+                    # Get metadata - it's already a dict
+                    metadata = row.get('metadata', {})
+                    
                     # Get session from memory if available for active connection count
                     session_context = self._sessions.get(row['session_id'])
                     active_connections = session_context.active_connections if session_context else 0
@@ -186,7 +220,8 @@ class SessionManager:
                         "created_at": row['created_at'].isoformat(),
                         "last_accessed": row['last_accessed'].isoformat(),
                         "active_connections": active_connections,
-                        "agent_ready": True
+                        "agent_ready": True,
+                        "title": metadata.get('title', 'New Conversation')
                     })
                 
                 return sessions
@@ -250,6 +285,14 @@ class SessionManager:
         if session:
             session.active_connections = max(0, session.active_connections - 1)
     
+    async def update_session_title(self, session_id: str, title: str):
+        """Update session title both in memory and database"""
+        session = await self.get_session(session_id)
+        if session:
+            session.title = title
+            # Persist to database
+            await self.persist_session_to_database(session)
+
     async def get_session_stats(self, session_id: str) -> Dict:
         """Get session statistics and metadata"""
         session = await self.get_session(session_id)
@@ -264,7 +307,8 @@ class SessionManager:
             "created_at": session.created_at.isoformat(),
             "last_accessed": session.last_accessed.isoformat(),
             "active_connections": session.active_connections,
-            "agent_ready": True  # Agents are created on-demand
+            "agent_ready": True,  # Agents are created on-demand
+            "title": session.title
         }
     
     async def list_active_sessions(self) -> list:
@@ -275,22 +319,40 @@ class SessionManager:
         """Clean up session resources"""
         if session_id in self._sessions:
             session = self._sessions[session_id]
-            
+
             # Clean up agent connection pools first
             try:
                 await cleanup_agent_session(session_id)
             except Exception as e:
                 logger.error(f"Error cleaning up agent resources for session {session_id}: {e}")
-            
+
             if remove_files:
                 workspace_path = Path(session.workspace_path)
                 if workspace_path.exists():
                     import shutil
                     shutil.rmtree(workspace_path)
-            
+
             # Deactivate in database
             await self.deactivate_session(session_id)
-            
+
+            del self._sessions[session_id]
+            self._active_sessions.discard(session_id)
+
+    async def soft_delete_session(self, session_id: str):
+        """Soft delete a session - mark as deleted but preserve data and history"""
+        if session_id in self._sessions:
+            session = self._sessions[session_id]
+
+            # Clean up agent connection pools but keep session data
+            try:
+                await cleanup_agent_session(session_id)
+            except Exception as e:
+                logger.error(f"Error cleaning up agent resources for session {session_id}: {e}")
+
+            # Mark as deleted in database (soft delete)
+            await self.mark_session_deleted(session_id)
+
+            # Remove from memory cache but don't delete from database
             del self._sessions[session_id]
             self._active_sessions.discard(session_id)
 

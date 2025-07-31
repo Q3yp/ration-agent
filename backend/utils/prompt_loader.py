@@ -5,7 +5,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from langgraph.prebuilt.chat_agent_executor import AgentState
 
 # Initialize Jinja2 environment
-prompts_dir = Path(__file__).parent / "prompts"
+prompts_dir = Path(__file__).parent.parent / "prompts"
 env = Environment(
     loader=FileSystemLoader(str(prompts_dir)),
     autoescape=select_autoescape(),

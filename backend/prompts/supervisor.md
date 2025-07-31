@@ -52,6 +52,7 @@ Analyze the user's request and determine the appropriate action:
 
 IMPORTANT: Always structure your response with <user> content first, followed by <action>.
 <action> is optional, only when you need to route to other node.
+ONLY ONE <action> allowed for each conversation.
 
 For routing to workers:
 <user>

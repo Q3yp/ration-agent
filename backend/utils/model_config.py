@@ -1,0 +1,44 @@
+import os
+from langchain_openai import ChatOpenAI
+
+
+def get_model_config(model_name: str) -> ChatOpenAI:
+    """Get model configuration for different nodes"""
+    
+    # Model and temperature mapping
+    model_configs = {
+        "supervisor": {
+            "model": os.getenv("SUPERVISOR_MODEL", os.getenv("OPENROUTER_MODEL")),
+            "temperature": float(os.getenv("SUPERVISOR_TEMPERATURE", "0")),
+            "streaming": True
+        },
+        "search_worker": {
+            "model": os.getenv("SEARCH_WORKER_MODEL", os.getenv("OPENROUTER_MODEL")),
+            "temperature": float(os.getenv("SEARCH_WORKER_TEMPERATURE", "0")),
+            "streaming": True
+        },
+        "code_worker": {
+            "model": os.getenv("CODE_WORKER_MODEL", os.getenv("OPENROUTER_MODEL")),
+            "temperature": float(os.getenv("CODE_WORKER_TEMPERATURE", "0")),
+            "streaming": True
+        },
+        "title_generation": {
+            "model": os.getenv("TITLE_GENERATION_MODEL", os.getenv("OPENROUTER_MODEL")),
+            "temperature": float(os.getenv("TITLE_GENERATION_TEMPERATURE", "0.3")),
+            "streaming": False
+        }
+    }
+    
+    if model_name not in model_configs:
+        raise ValueError(f"Unknown model name: {model_name}. Available: {list(model_configs.keys())}")
+    
+    config = model_configs[model_name]
+    
+    return ChatOpenAI(
+        model=config["model"],
+        temperature=config["temperature"],
+        streaming=config["streaming"],
+        openai_api_base="https://openrouter.ai/api/v1",
+        openai_api_key=os.getenv("OPENROUTER_API_KEY"),
+        stream_usage=False
+    )

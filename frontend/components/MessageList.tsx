@@ -13,7 +13,7 @@ export default function MessageList({ messages, isTyping }: MessageListProps) {
   return (
     <>
       {messages.map((message) => (
-        <MessageBubble key={message.messageId || message.id} message={message} />
+        <MessageBubble key={message.id} message={message} />
       ))}
       {isTyping && <TypingIndicator />}
     </>

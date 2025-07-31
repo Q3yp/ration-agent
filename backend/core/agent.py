@@ -49,13 +49,14 @@ class SharedConnectionManager:
                 "prepare_threshold": None,
             }
             
-            # Create shared pool for all sessions  
+            # Create shared pool for all sessions
             self._shared_pool = AsyncConnectionPool(
-                db_uri, 
+                db_uri,
                 kwargs=connection_kwargs,
                 min_size=5,
                 max_size=20,  # Increased for shared usage
-                timeout=10.0
+                timeout=10.0,
+                open=False  # Prevent automatic opening in constructor
             )
             
             # Open the pool

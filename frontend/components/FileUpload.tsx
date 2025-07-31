@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 interface FileUploadProps {
   sessionId: string
   endpoint?: string
-  onFileUploaded?: (file: { name: string; size: number }) => void
+  onFileUploaded?: (file: { name: string; size: number; originalName?: string }) => void
   onFilesChange?: (files: UploadedFile[]) => void
 }
 
@@ -61,7 +61,8 @@ export default function FileUpload({ sessionId, endpoint = 'http://localhost:800
           onFilesChange?.(newFiles)
           return newFiles
         })
-        onFileUploaded?.(uploadedFile)
+        // Pass the original filename to the callback
+        onFileUploaded?.({ ...uploadedFile, originalName: file.name })
 
       } catch (error: unknown) {
         console.error('Upload error:', error)
@@ -149,7 +150,7 @@ export default function FileUpload({ sessionId, endpoint = 'http://localhost:800
         <div className="flex flex-wrap gap-2">
           {uploadedFiles.map((file, index) => (
             <div
-              key={index}
+              key={`${file.name}-${file.size}-${index}`}
               className="inline-flex items-center gap-2 px-3 py-1.5 bg-muted/80 border rounded-full text-sm max-w-xs"
             >
               <File className="h-3 w-3 text-muted-foreground flex-shrink-0" />

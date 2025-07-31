@@ -18,7 +18,7 @@ export default function MarkdownMessage({ content, isStreaming = false }: Markdo
   const displayContent = isStreaming ? `${content}▋` : content
 
   return (
-    <div className="prose prose-sm max-w-none prose-slate dark:prose-invert">
+    <div className="prose prose-sm max-w-none prose-slate dark:prose-invert break-words overflow-wrap-anywhere">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}

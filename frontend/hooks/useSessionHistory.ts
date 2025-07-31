@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { SessionHistory, Message, SessionHistoryMessage } from '@/types/chat'
+import { getRoleInfo } from '@/utils/roleMapping'
 
 interface UseSessionHistoryProps {
   sessionId: string | null
@@ -49,6 +50,12 @@ export function useSessionHistory({
   }, [sessionId, endpoint])
 
   const convertHistoryToMessages = useCallback((historyMessages: SessionHistoryMessage[]): Message[] => {
+    if (!historyMessages || historyMessages.length === 0) {
+      return []
+    }
+
+    // Create a stable ID base from the sessionId to ensure consistent IDs
+    const stableIdBase = sessionId ? sessionId.slice(-8) : 'default'
     const messages: Message[] = []
     
     historyMessages.forEach((msg, index) => {
@@ -57,7 +64,7 @@ export function useSessionHistory({
       // Handle tool result messages separately
       if (msg.type === 'tool') {
         messages.push({
-          id: `history_tool_result_${index}_${Date.now()}`,
+          id: `history_tool_result_${index}_${stableIdBase}`,
           type: 'tool_result',
           content: msg.content,
           timestamp: baseTimestamp,
@@ -71,13 +78,27 @@ export function useSessionHistory({
       // Skip AI messages with empty content (they only contain tool calls)
       if (!(msg.type === 'ai' && (!msg.content || msg.content.trim() === ''))) {
         messages.push({
-          id: `history_${index}_${Date.now()}`,
+          id: `history_${index}_${stableIdBase}`,
           type: msg.type === 'human' ? 'user' : msg.type === 'ai' ? 'agent' : 'system',
           content: msg.content,
           timestamp: baseTimestamp,
           isStreaming: false,
           fullContent: msg.full_content
         })
+        
+        // Check for role transition in AI messages with action data
+        if (msg.type === 'ai' && msg.action_data && msg.action_data.route) {
+          const toRole = msg.action_data.route
+          const roleInfo = getRoleInfo(toRole)
+          messages.push({
+            id: `history_role_transition_${index}_${stableIdBase}`,
+            type: 'role_transition',
+            content: roleInfo.transitionMessage,
+            timestamp: baseTimestamp + 0.5, // Slight offset to maintain order
+            isStreaming: false,
+            toRole: toRole
+          })
+        }
       }
       
       // Add tool call messages if they exist (for AI messages)
@@ -85,7 +106,7 @@ export function useSessionHistory({
         msg.tool_calls.forEach((toolCall, toolIndex) => {
           // Add tool call message
           messages.push({
-            id: `history_tool_call_${index}_${toolIndex}_${Date.now()}`,
+            id: `history_tool_call_${index}_${toolIndex}_${stableIdBase}`,
             type: 'tool_call',
             content: `Calling ${toolCall.name}...`,
             timestamp: baseTimestamp + toolIndex + 1, // Slight offset to maintain order
@@ -99,7 +120,7 @@ export function useSessionHistory({
     })
     
     return messages
-  }, [])
+  }, [sessionId]) // sessionId is used for stable ID generation, getRoleInfo is from utils and should be stable
 
   useEffect(() => {
     if (sessionId) {

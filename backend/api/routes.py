@@ -9,7 +9,8 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from langchain_core.messages import HumanMessage
 from models import (
     ChatRequest, FileUploadResponse, FileListResponse, FileDeleteResponse,
-    SessionCreateRequest, SessionCreateResponse, SessionStatsResponse
+    SessionCreateRequest, SessionCreateResponse, SessionStatsResponse,
+    SessionTitleRequest, SessionTitleResponse
 )
 from services.session_manager import session_manager
 from utils.message_processor import (
@@ -18,6 +19,8 @@ from utils.message_processor import (
 from services.chat_history_service import chat_history_service
 from agents.nodes import StreamingResponseParser
 from utils.message_parser import message_parser
+from utils.model_config import get_model_config
+from utils.prompt_loader import env
 
 
 router = APIRouter()
@@ -25,6 +28,47 @@ router = APIRouter()
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+
+async def generate_title_for_session(session_id: str, user_message: str, title_queue: asyncio.Queue):
+    """Background task to generate title for session based on first user message"""
+    # Truncate message if too long for title generation
+    preview = user_message[:500] if len(user_message) > 500 else user_message
+
+    # Get the title generation model
+    model = get_model_config("title_generation")
+
+    # Load and render the title generation prompt template
+    template = env.get_template("title_generation.md")
+    title_prompt = template.render(user_message=preview)
+
+    # Generate title using the model
+    response = await model.ainvoke(title_prompt)
+
+    # Extract and clean the title
+    generated_title = response.content.strip()
+
+    # Remove any quotes or extra formatting
+    generated_title = generated_title.replace('"', '').replace("'", "").strip()
+
+    # Ensure title doesn't exceed 60 characters
+    if len(generated_title) > 60:
+        generated_title = generated_title[:57] + "..."
+
+    # Fallback title if generation fails
+    if not generated_title or len(generated_title) < 3:
+        generated_title = "New Conversation"
+
+    # Update the session title
+    await session_manager.update_session_title(session_id, generated_title)
+    session_context = await session_manager.get_session(session_id)
+    if session_context:
+        session_context.title_generated = True
+
+    logger.info(f"Generated title for session {session_id}: {generated_title}")
+
+    # Send title update through the chat stream
+    await title_queue.put(generated_title)
 
 
 @router.get("/", response_class=JSONResponse)
@@ -56,7 +100,8 @@ async def create_session(request: SessionCreateRequest):
             "session_id": session_context.session_id,
             "workspace_path": session_context.workspace_path,
             "created_at": session_context.created_at.isoformat(),
-            "message": f"Session '{request.session_id}' created successfully"
+            "message": f"Session '{request.session_id}' created successfully",
+            "title": session_context.title
         }
     
     except Exception as e:
@@ -82,25 +127,31 @@ async def list_sessions():
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str, remove_files: bool = False):
-    """Delete a session and optionally its workspace files"""
+    """Soft delete a session - marks as deleted but preserves data and history"""
     session_stats = await session_manager.get_session_stats(session_id)
     if not session_stats["exists"]:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     try:
-        # Note: LangGraph checkpoints are immutable and cannot be directly cleared
-        # Consider this when implementing session deletion
-        
-        # Clean up session workspace
-        await session_manager.cleanup_session(session_id, remove_files=remove_files)
-        
+        # Use soft delete to preserve conversation history and data
+        await session_manager.soft_delete_session(session_id)
+
+        # Optionally remove workspace files if requested
+        if remove_files:
+            session = await session_manager.get_session(session_id)
+            if session:
+                workspace_path = Path(session.workspace_path)
+                if workspace_path.exists():
+                    import shutil
+                    shutil.rmtree(workspace_path)
+
         return {
             "message": f"Session '{session_id}' deleted successfully",
             "files_removed": remove_files,
-            "chat_history_cleared": False,  # LangGraph checkpoints persist
-            "note": "LangGraph conversation history persists in checkpoints"
+            "chat_history_preserved": True,  # LangGraph checkpoints and session data preserved
+            "note": "Session marked as deleted but conversation history and data are preserved"
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete session: {str(e)}")
 
@@ -148,6 +199,53 @@ async def clear_session_history(session_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to clear session history: {str(e)}")
 
 
+@router.post("/sessions/{session_id}/generate-title", response_model=SessionTitleResponse)
+async def generate_session_title(session_id: str, request: SessionTitleRequest):
+    """Generate a descriptive title for a session based on conversation content"""
+    # Verify session exists
+    session_context = await session_manager.get_session(session_id)
+    if not session_context:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    try:
+        # Get the title generation model
+        model = get_model_config("title_generation")
+        
+        # Load and render the title generation prompt template
+        template = env.get_template("title_generation.md")
+        title_prompt = template.render(user_message=request.conversation_preview)
+
+        # Generate title using the model
+        response = await model.ainvoke(title_prompt)
+        
+        # Extract and clean the title
+        generated_title = response.content.strip()
+        
+        # Remove any quotes or extra formatting
+        generated_title = generated_title.replace('"', '').replace("'", "").strip()
+        
+        # Ensure title doesn't exceed 60 characters
+        if len(generated_title) > 60:
+            generated_title = generated_title[:57] + "..."
+        
+        # Fallback title if generation fails
+        if not generated_title or len(generated_title) < 3:
+            generated_title = "New Conversation"
+        
+        return SessionTitleResponse(
+            session_id=session_id,
+            title=generated_title,
+            message="Title generated successfully"
+        )
+    
+    except Exception as e:
+        logger.error(f"Failed to generate title for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate title: {str(e)}")
+
+
+
+
+
 @router.post("/chat/stream/{session_id}")
 async def stream_chat(session_id: str, request: ChatRequest):
     """HTTP Server-Sent Events streaming endpoint for real-time chat"""
@@ -159,6 +257,13 @@ async def stream_chat(session_id: str, request: ChatRequest):
     session_context = await session_manager.get_session(session_id)
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found. Create session first.")
+    
+    # Create title queue for single stream approach
+    title_queue = asyncio.Queue()
+
+    # Start title generation immediately if this is the first message
+    if not session_context.title_generated:
+        asyncio.create_task(generate_title_for_session(session_id, user_message, title_queue))
     
     try:
         session_agent = await session_manager.get_session_agent(session_id)
@@ -172,18 +277,34 @@ async def stream_chat(session_id: str, request: ChatRequest):
         current_message_id = f"{session_id}_{int(asyncio.get_event_loop().time() * 1000000)}"
         accumulated_content = ""
         tool_calls_processed = set()
-        
-        # Use unified message parser for streaming
-        
+
         try:
             yield f"event: connected\ndata: {json.dumps({'message_id': current_message_id, 'session_id': session_id})}\n\n"
             yield f"event: thinking\ndata: {json.dumps({'type': 'agent_thinking', 'message_id': current_message_id})}\n\n"
-            
-            async for event in session_agent.astream_events(
+
+            # Create async iterator for agent events
+            agent_events = session_agent.astream_events(
                 {"messages": [HumanMessage(content=user_message)]},
                 config=config,
                 version="v2"
-            ):
+            )
+
+            # Process both agent events and title updates concurrently
+            async for event in agent_events:
+                # Check for title updates first (non-blocking)
+                try:
+                    title = title_queue.get_nowait()
+                    title_data = {
+                        "type": "title_update",
+                        "title": title,
+                        "session_id": session_id,
+                        "timestamp": asyncio.get_event_loop().time()
+                    }
+                    yield f"event: title_update\ndata: {json.dumps(title_data, ensure_ascii=False)}\n\n"
+                except asyncio.QueueEmpty:
+                    pass  # No title update available
+
+                # Process agent event
                 if event["event"] == "on_chat_model_stream":
                     chunk_content = event["data"]["chunk"].content
                     if chunk_content:
@@ -202,6 +323,16 @@ async def stream_chat(session_id: str, request: ChatRequest):
                                 "timestamp": asyncio.get_event_loop().time()
                             }
                             yield f"event: chunk\ndata: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+                        
+                        # When we detect a complete action block, emit role transition
+                        if parsed_result["action_data"] and "route" in parsed_result["action_data"]:
+                            role_data = {
+                                "type": "role_transition",
+                                "to_role": parsed_result["action_data"]["route"],
+                                "message_id": current_message_id,
+                                "timestamp": asyncio.get_event_loop().time()
+                            }
+                            yield f"event: role_transition\ndata: {json.dumps(role_data, ensure_ascii=False)}\n\n"
                 
                 elif event["event"] == "on_tool_start":
                     try:
@@ -226,10 +357,24 @@ async def stream_chat(session_id: str, request: ChatRequest):
                     except Exception as e:
                         logger.error(f"Error in on_tool_end serialization: {e}")
                         raise
+                
             
             # Note: Conversation history is automatically saved by LangGraph's checkpointer
             # No need to manually save messages as they're preserved in the graph state
-            
+
+            # Final check for title updates after agent completes
+            try:
+                title = title_queue.get_nowait()
+                title_data = {
+                    "type": "title_update",
+                    "title": title,
+                    "session_id": session_id,
+                    "timestamp": asyncio.get_event_loop().time()
+                }
+                yield f"event: title_update\ndata: {json.dumps(title_data, ensure_ascii=False)}\n\n"
+            except asyncio.QueueEmpty:
+                pass  # No title update available
+
             completion_data = {
                 "type": "agent_complete",
                 "message_id": current_message_id,

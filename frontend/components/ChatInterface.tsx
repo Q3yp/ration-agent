@@ -15,13 +15,15 @@ import { AttachedFile } from '@/types/chat'
 interface ChatInterfaceProps {
   sessionId: string
   endpoint?: string
+  onTitleUpdate?: (sessionId: string, title: string) => void
 }
 
-export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProps) {
+export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState('')
   const [showFileUpload, setShowFileUpload] = useState(false)
-  const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const [uploadedFiles, setUploadedFiles] = useState<AttachedFile[]>([])
+  const [pendingFileNotifications, setPendingFileNotifications] = useState<string[]>([])
+  const [historyInitialized, setHistoryInitialized] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -33,7 +35,7 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
     sendMessage,
     retryConnection,
     setInitialMessages,
-  } = useSSEChat({ sessionId, endpoint })
+  } = useSSEChat({ sessionId, endpoint, onTitleUpdate })
 
   const {
     sessionHistory,
@@ -44,16 +46,21 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
 
   // Load session history when component mounts or session changes
   useEffect(() => {
-    if (sessionHistory) {
+    if (sessionHistory && !historyInitialized) {
       const historyMessages = convertHistoryToMessages(sessionHistory.messages)
       setInitialMessages(historyMessages)
-      setIsLoadingHistory(false)
-    } else if (!historyLoading && !historyError) {
+      setHistoryInitialized(true)
+    } else if (!historyLoading && !historyError && !sessionHistory && !historyInitialized) {
       // No history found, start with empty messages
       setInitialMessages([])
-      setIsLoadingHistory(false)
+      setHistoryInitialized(true)
     }
-  }, [sessionHistory, historyLoading, historyError, convertHistoryToMessages, setInitialMessages])
+  }, [sessionHistory, historyLoading, historyError, convertHistoryToMessages, setInitialMessages, historyInitialized])
+
+  // Reset history initialized when session changes
+  useEffect(() => {
+    setHistoryInitialized(false)
+  }, [sessionId])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -63,10 +70,28 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
     scrollToBottom()
   }, [messages])
 
+  const handleFileUploaded = (uploadedFile: { name: string; size: number; originalName?: string }) => {
+    // Buffer the file notification instead of sending immediately
+    const fileName = uploadedFile.originalName || uploadedFile.name
+    setPendingFileNotifications(prev => [...prev, fileName])
+  }
+
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return
 
-    const messageToSend = inputValue.trim()
+    let messageToSend = inputValue.trim()
+    
+    // Prepend file notifications to the message using special format
+    if (pendingFileNotifications.length > 0) {
+      const fileNotificationText = pendingFileNotifications
+        .map(fileName => `[FILE_UPLOAD]${fileName}[/FILE_UPLOAD]`)
+        .join('\n')
+      messageToSend = `${fileNotificationText}\n\n${messageToSend}`
+      
+      // Clear pending notifications
+      setPendingFileNotifications([])
+    }
+    
     const filesToShow = uploadedFiles.length > 0 ? [...uploadedFiles] : undefined
     
     // Clear input and files immediately
@@ -93,16 +118,16 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
       {/* Connection Status */}
       <div className="px-4 py-3 border-b">
         <div className="flex items-center justify-between">
-          <Badge 
-            variant={isLoadingHistory || historyLoading 
-              ? "secondary" 
-              : isConnected 
-              ? "default" 
+          <Badge
+            variant={historyLoading || !historyInitialized
+              ? "secondary"
+              : isConnected
+              ? "default"
               : "destructive"
             }
             className="flex items-center gap-1"
           >
-            {isLoadingHistory || historyLoading ? (
+            {historyLoading || !historyInitialized ? (
               <>
                 <Loader2 className="h-3 w-3 animate-spin" />
                 正在加载对话...
@@ -134,9 +159,9 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
 
       {/* Messages */}
       <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
-        <MessageList 
-          messages={messages} 
-          isTyping={isTyping} 
+        <MessageList
+          messages={messages}
+          isTyping={isTyping}
         />
         <div ref={messagesEndRef} />
       </CardContent>
@@ -148,6 +173,7 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
             sessionId={sessionId} 
             endpoint={endpoint}
             onFilesChange={setUploadedFiles}
+            onFileUploaded={handleFileUploaded}
           />
         </div>
       )}
@@ -159,7 +185,7 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
             variant={showFileUpload ? "default" : "outline"}
             size="icon"
             onClick={() => setShowFileUpload(!showFileUpload)}
-            disabled={!isConnected || isLoadingHistory || historyLoading}
+            disabled={!isConnected || historyLoading || !historyInitialized}
             title="切换文件上传"
           >
             <Upload className="h-4 w-4" />
@@ -170,12 +196,12 @@ export default function ChatInterface({ sessionId, endpoint }: ChatInterfaceProp
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="输入您的消息..."
-            disabled={!isConnected || isTyping || isLoadingHistory || historyLoading}
+            disabled={!isConnected || isTyping || historyLoading || !historyInitialized}
             className="flex-1"
           />
           <Button
             onClick={handleSendMessage}
-            disabled={!inputValue.trim() || !isConnected || isTyping || isLoadingHistory || historyLoading}
+            disabled={!inputValue.trim() || !isConnected || isTyping || historyLoading || !historyInitialized}
             size="icon"
           >
             <Send className="h-4 w-4" />

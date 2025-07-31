@@ -1,11 +1,138 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useReducer } from 'react'
 import { Message, MessageType, AttachedFile } from '@/types/chat'
+import { getRoleInfo } from '@/utils/roleMapping'
+
+interface MessageState {
+  messages: Message[]
+  shouldCreateNewBubble: boolean
+  currentBubbleId: string | null
+}
+
+type MessageAction = 
+  | { type: 'SET_INITIAL_MESSAGES'; payload: Message[] }
+  | { type: 'ADD_USER_MESSAGE'; payload: Message }
+  | { type: 'ADD_CHUNK'; payload: { messageId: string; content: string; timestamp: number } }
+  | { type: 'ADD_TOOL_CALL'; payload: Message }
+  | { type: 'ADD_TOOL_RESULT'; payload: Message }
+  | { type: 'ADD_ROLE_TRANSITION'; payload: Message }
+  | { type: 'ADD_ERROR'; payload: Message }
+  | { type: 'MARK_COMPLETE'; payload: { messageId: string } }
+  | { type: 'SET_NEW_BUBBLE_FLAG'; payload: boolean }
+  | { type: 'RESET_FOR_NEW_MESSAGE' }
+
+function messageReducer(state: MessageState, action: MessageAction): MessageState {
+  switch (action.type) {
+    case 'SET_INITIAL_MESSAGES':
+      return {
+        ...state,
+        messages: action.payload,
+        shouldCreateNewBubble: false,
+        currentBubbleId: null
+      }
+    
+    case 'ADD_USER_MESSAGE':
+      return {
+        ...state,
+        messages: [...state.messages, action.payload],
+        shouldCreateNewBubble: true, // Next agent chunk should create new bubble
+        currentBubbleId: null
+      }
+    
+    case 'ADD_CHUNK': {
+      const { messageId, content, timestamp } = action.payload
+      const lastAgentIndex = state.messages.findLastIndex(msg => msg.type === 'agent')
+      
+      // Create new bubble if flag is set OR no existing agent message
+      if (state.shouldCreateNewBubble || lastAgentIndex < 0) {
+        const newBubbleId = `${messageId}_bubble_${Date.now()}`
+        const newBubble: Message = {
+          id: newBubbleId,
+          type: 'agent' as MessageType,
+          content: content || '',
+          timestamp: timestamp,
+          isStreaming: true,
+          messageId: messageId
+        }
+        
+        return {
+          ...state,
+          messages: [...state.messages, newBubble],
+          shouldCreateNewBubble: false, // Reset flag
+          currentBubbleId: newBubbleId
+        }
+      }
+      
+      // Update existing agent message
+      return {
+        ...state,
+        messages: state.messages.map((msg, index) => 
+          index === lastAgentIndex 
+            ? { ...msg, content: (msg.content || '') + (content || ''), isStreaming: true }
+            : msg
+        )
+      }
+    }
+    
+    case 'ADD_TOOL_CALL':
+      return {
+        ...state,
+        messages: [...state.messages, action.payload],
+        shouldCreateNewBubble: true // Next chunk should create new bubble
+      }
+    
+    case 'ADD_TOOL_RESULT':
+      return {
+        ...state,
+        messages: [...state.messages, action.payload]
+      }
+    
+    case 'ADD_ROLE_TRANSITION':
+      return {
+        ...state,
+        messages: [...state.messages, action.payload],
+        shouldCreateNewBubble: true // Next chunk should create new bubble
+      }
+    
+    case 'ADD_ERROR':
+      return {
+        ...state,
+        messages: [...state.messages, action.payload]
+      }
+    
+    case 'MARK_COMPLETE':
+      return {
+        ...state,
+        messages: state.messages.map(msg => 
+          msg.messageId === action.payload.messageId
+            ? { ...msg, isStreaming: false }
+            : msg
+        )
+      }
+    
+    case 'SET_NEW_BUBBLE_FLAG':
+      return {
+        ...state,
+        shouldCreateNewBubble: action.payload
+      }
+    
+    case 'RESET_FOR_NEW_MESSAGE':
+      return {
+        ...state,
+        shouldCreateNewBubble: true,
+        currentBubbleId: null
+      }
+    
+    default:
+      return state
+  }
+}
 
 interface UseSSEChatProps {
   sessionId: string
   endpoint?: string
+  onTitleUpdate?: (sessionId: string, title: string) => void
 }
 
 interface UseSSEChatReturn {
@@ -18,27 +145,37 @@ interface UseSSEChatReturn {
   setInitialMessages: (messages: Message[]) => void
 }
 
-export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: UseSSEChatProps): UseSSEChatReturn {
-  const [messages, setMessages] = useState<Message[]>([])
+export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTitleUpdate }: UseSSEChatProps): UseSSEChatReturn {
+  const [messageState, dispatch] = useReducer(messageReducer, {
+    messages: [],
+    shouldCreateNewBubble: false,
+    currentBubbleId: null
+  })
+  
   const [isConnected, setIsConnected] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
-  
-  // Track if we should create a new bubble for the next chunk (using ref for immediate updates)
-  const shouldCreateNewBubbleRef = useRef(false)
-  // Track the ID of the current streaming bubble to update
-  const [currentBubbleId, setCurrentBubbleId] = useState<string | null>(null)
   
   const eventSourceRef = useRef<EventSource | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const cleanup = useCallback(() => {
     if (eventSourceRef.current) {
-      eventSourceRef.current.close()
+      try {
+        eventSourceRef.current.close()
+      } catch (error) {
+        // Ignore errors during cleanup
+        console.debug('Error during EventSource cleanup:', error)
+      }
       eventSourceRef.current = null
     }
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
+      try {
+        abortControllerRef.current.abort()
+      } catch (error) {
+        // Ignore abort errors during cleanup
+        console.debug('Error during abort cleanup:', error)
+      }
       abortControllerRef.current = null
     }
     setIsConnected(false)
@@ -62,42 +199,13 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
 
         case 'chunk':
           if (data.type === 'agent_chunk') {
-            const messageId = data.message_id
-            
-            // Check flag and reset BEFORE setMessages to ensure immediate effect
-            const shouldCreateNew = shouldCreateNewBubbleRef.current
-            if (shouldCreateNew) {
-              shouldCreateNewBubbleRef.current = false // Reset flag immediately
-            }
-            
-            setMessages(prev => {
-              // Check if there's an existing agent message
-              const lastAgentIndex = prev.findLastIndex(msg => msg.type === 'agent')
-              
-              // Create new bubble if: 1) Tool flag is true, OR 2) No existing agent message
-              if (shouldCreateNew || lastAgentIndex < 0) {
-                // Create new bubble
-                const newBubbleId = `${messageId}_bubble_${Date.now()}`
-                setCurrentBubbleId(newBubbleId) // Track this bubble for updates
-                
-                const newBubble = {
-                  id: newBubbleId,
-                  type: 'agent' as MessageType,
-                  content: data.content || '',
-                  timestamp: data.timestamp || Date.now(),
-                  isStreaming: true,
-                  messageId: messageId
-                }
-                
-                return [...prev, newBubble]
+            dispatch({
+              type: 'ADD_CHUNK',
+              payload: {
+                messageId: data.message_id,
+                content: data.content || '',
+                timestamp: data.timestamp || Date.now()
               }
-              
-              // Update the existing agent message
-              return prev.map((msg, index) => 
-                index === lastAgentIndex 
-                  ? { ...msg, content: (msg.content || '') + (data.content || ''), isStreaming: true }
-                  : msg
-              )
             })
             setIsTyping(false)
           }
@@ -105,9 +213,8 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
 
         case 'tool_call':
           if (data.type === 'tool_call') {
-            shouldCreateNewBubbleRef.current = true // Next chunk should create new bubble
             const message: Message = {
-              id: data.tool_id || Date.now() + Math.random(),
+              id: data.tool_id || `${Date.now()}_${Math.random()}`,
               type: 'tool_call' as MessageType,
               content: `Calling ${data.tool_name}...`,
               timestamp: data.timestamp || Date.now(),
@@ -115,31 +222,50 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
               toolArgs: data.tool_args,
               toolCallId: data.tool_id,
             }
-            setMessages(prev => [...prev, message])
+            dispatch({ type: 'ADD_TOOL_CALL', payload: message })
           }
           break
 
         case 'tool_result':
           if (data.type === 'tool_result') {
             const message: Message = {
-              id: Date.now() + Math.random(),
+              id: `${Date.now()}_${Math.random()}`,
               type: 'tool_result' as MessageType,
               content: data.content,
               timestamp: data.timestamp || Date.now(),
               toolCallId: data.tool_call_id,
             }
-            setMessages(prev => [...prev, message])
+            dispatch({ type: 'ADD_TOOL_RESULT', payload: message })
+          }
+          break
+
+        case 'role_transition':
+          if (data.type === 'role_transition') {
+            const roleInfo = getRoleInfo(data.to_role)
+            const message: Message = {
+              id: `${Date.now()}_${Math.random()}`,
+              type: 'role_transition' as MessageType,
+              content: roleInfo.transitionMessage,
+              timestamp: data.timestamp || Date.now(),
+              toRole: data.to_role,
+            }
+            dispatch({ type: 'ADD_ROLE_TRANSITION', payload: message })
+          }
+          break
+
+        case 'title_update':
+          if (data.type === 'title_update') {
+            // Call the title update callback if provided
+            onTitleUpdate?.(data.session_id, data.title)
           }
           break
 
         case 'complete':
           if (data.type === 'agent_complete') {
-            // Mark streaming message as complete
-            setMessages(prev => prev.map(msg => 
-              msg.messageId === data.message_id
-                ? { ...msg, isStreaming: false }
-                : msg
-            ))
+            dispatch({
+              type: 'MARK_COMPLETE',
+              payload: { messageId: data.message_id }
+            })
             setIsTyping(false)
           }
           break
@@ -147,12 +273,12 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
         case 'error':
           console.error('SSE Error:', data)
           const errorMessage: Message = {
-            id: Date.now() + Math.random(),
+            id: `${Date.now()}_${Math.random()}`,
             type: 'error' as MessageType,
             content: data.content || 'An error occurred',
             timestamp: data.timestamp || Date.now(),
           }
-          setMessages(prev => [...prev, errorMessage])
+          dispatch({ type: 'ADD_ERROR', payload: errorMessage })
           setConnectionError(data.content || 'An error occurred')
           setIsTyping(false)
           break
@@ -169,19 +295,15 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
     if (!message.trim()) return
 
     try {
-      // Reset state for new user message - set flag to create new bubble for agent response
-      shouldCreateNewBubbleRef.current = true
-      setCurrentBubbleId(null)
-      
       // Add user message to messages immediately
       const userMessage: Message = {
-        id: Date.now() + Math.random(),
+        id: `${Date.now()}_${Math.random()}`,
         type: 'user' as MessageType,
         content: message.trim(),
         timestamp: Date.now(),
         attachedFiles: filesToShow,
       }
-      setMessages(prev => [...prev, userMessage])
+      dispatch({ type: 'ADD_USER_MESSAGE', payload: userMessage })
       setIsTyping(true)
       setConnectionError(null)
 
@@ -252,12 +374,12 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
       
       // Add error message to chat
       const errorMessage: Message = {
-        id: Date.now() + Math.random(),
+        id: `${Date.now()}_${Math.random()}`,
         type: 'error' as MessageType,
         content: `Failed to send message: ${error.message}`,
         timestamp: Date.now(),
       }
-      setMessages(prev => [...prev, errorMessage])
+      dispatch({ type: 'ADD_ERROR', payload: errorMessage })
     }
   }, [endpoint, sessionId, handleSSEMessage])
 
@@ -269,7 +391,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
   }, [])
 
   const setInitialMessages = useCallback((initialMessages: Message[]) => {
-    setMessages(initialMessages)
+    dispatch({ type: 'SET_INITIAL_MESSAGES', payload: initialMessages })
   }, [])
 
   useEffect(() => {
@@ -281,7 +403,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000' }: Us
   }, [cleanup])
 
   return {
-    messages,
+    messages: messageState.messages,
     isConnected,
     isTyping,
     connectionError,

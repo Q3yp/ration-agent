@@ -13,6 +13,7 @@ export default function Home() {
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [isCreatingSession, setIsCreatingSession] = useState(true)
   const [chatKey, setChatKey] = useState(0) // Force ChatInterface re-render when session changes
+  const [sessionTitles, setSessionTitles] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const createSession = async () => {
@@ -54,14 +55,22 @@ export default function Home() {
     setChatKey(prev => prev + 1) // Force ChatInterface to re-render for new session
   }
 
+  const handleTitleUpdate = (sessionId: string, title: string) => {
+    setSessionTitles(prev => ({
+      ...prev,
+      [sessionId]: title
+    }))
+  }
+
   return (
     <main className="h-screen bg-gradient-to-br from-background to-muted">
       <div className="h-full flex">
         {/* Sidebar */}
-        <ConversationSidebar 
+        <ConversationSidebar
           currentSessionId={sessionId}
           onSessionSelect={handleSessionSelect}
           onNewSession={handleNewSession}
+          sessionTitles={sessionTitles}
         />
         
         {/* Main content */}
@@ -90,7 +99,7 @@ export default function Home() {
                   <CardContent className="p-6 text-center">
                     <AlertTriangle className="h-8 w-8 mx-auto mb-4 text-destructive" />
                     <p className="text-destructive mb-4">{sessionError}</p>
-                    <Button 
+                    <Button
                       variant="destructive"
                       onClick={() => window.location.reload()}
                     >
@@ -101,9 +110,10 @@ export default function Home() {
               </div>
             ) : sessionId ? (
               <div className="h-full max-h-full">
-                <ChatInterface 
-                  key={chatKey} 
-                  sessionId={sessionId} 
+                <ChatInterface
+                  key={chatKey}
+                  sessionId={sessionId}
+                  onTitleUpdate={handleTitleUpdate}
                 />
               </div>
             ) : null}

@@ -41,6 +41,7 @@ class SessionCreateResponse(BaseModel):
     workspace_path: str
     created_at: str
     message: str
+    title: str
 
 
 class SessionStatsResponse(BaseModel):
@@ -51,3 +52,15 @@ class SessionStatsResponse(BaseModel):
     last_accessed: str = None
     active_connections: int = None
     agent_ready: bool = None
+    title: str = None
+
+
+class SessionTitleRequest(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=100, description="The session identifier")
+    conversation_preview: str = Field(..., min_length=1, max_length=2000, description="Preview of the conversation to generate title from")
+
+
+class SessionTitleResponse(BaseModel):
+    session_id: str
+    title: str
+    message: str

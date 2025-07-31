@@ -8,6 +8,7 @@ export type MessageType =
   | 'error' 
   | 'agent_thinking'
   | 'agent_complete'
+  | 'role_transition'
 
 export interface AttachedFile {
   name: string
@@ -16,7 +17,7 @@ export interface AttachedFile {
 }
 
 export interface Message {
-  id: number | string
+  id: string
   type: MessageType
   content: string
   timestamp: number
@@ -27,6 +28,7 @@ export interface Message {
   fullContent?: string
   isStreaming?: boolean
   attachedFiles?: AttachedFile[]
+  toRole?: string
 }
 
 export interface Session {
@@ -37,12 +39,14 @@ export interface Session {
   active_connections?: number
   agent_ready?: boolean
   exists?: boolean
+  title?: string
 }
 
 export interface SessionHistoryMessage {
   type: string
   content: string
   full_content?: string
+  action_data?: Record<string, string>
   tool_calls?: Array<{
     id: string
     name: string

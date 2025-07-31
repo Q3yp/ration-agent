@@ -1,29 +1,39 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, MessageCircle, Loader2 } from 'lucide-react'
 import { Session } from '@/types/chat'
 import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-
 interface ConversationSidebarProps {
   currentSessionId: string | null
   onSessionSelect: (sessionId: string) => void
   onNewSession: () => void
+  sessionTitles: Record<string, string>
   endpoint?: string
 }
 
-export default function ConversationSidebar({ 
-  currentSessionId, 
-  onSessionSelect, 
+export default function ConversationSidebar({
+  currentSessionId,
+  onSessionSelect,
   onNewSession,
+  sessionTitles,
   endpoint = 'http://localhost:8000'
 }: ConversationSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Update session titles when sessionTitles prop changes
+  useEffect(() => {
+    setSessions(prev => prev.map(session => ({
+      ...session,
+      title: sessionTitles[session.session_id] || session.title
+    })))
+  }, [sessionTitles])
+
 
   const fetchSessions = async () => {
     try {
@@ -58,7 +68,15 @@ export default function ConversationSidebar({
         throw new Error(`Failed to create session: ${response.statusText}`)
       }
       
-      await fetchSessions()
+      // Add new session to local state instead of refetching all sessions
+      await response.json() // consume response
+      const newSession: Session = {
+        session_id: newSessionId,
+        title: 'New Conversation',
+        created_at: new Date().toISOString()
+      }
+      setSessions(prev => [newSession, ...prev])
+      
       onSessionSelect(newSessionId)
       onNewSession()
     } catch (error) {
@@ -83,7 +101,8 @@ export default function ConversationSidebar({
         throw new Error(`Failed to delete session: ${response.statusText}`)
       }
       
-      await fetchSessions()
+      // Remove session from local state instead of refetching all sessions
+      setSessions(prev => prev.filter(session => session.session_id !== sessionId))
       
       // If we deleted the current session, create a new one
       if (sessionId === currentSessionId) {
@@ -95,7 +114,7 @@ export default function ConversationSidebar({
     }
   }
 
-  const formatSessionTitle = (session: Session) => {
+  const formatTimestamp = (session: Session) => {
     const date = new Date(session.created_at)
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
@@ -197,12 +216,15 @@ export default function ConversationSidebar({
                 )}
               >
                 <CardContent className="p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <MessageCircle className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start space-x-3 flex-1 min-w-0">
+                      <MessageCircle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">
-                          {formatSessionTitle(session)}
+                          {session.title || 'New Conversation'}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {formatTimestamp(session)}
                         </p>
                       </div>
                     </div>
@@ -210,7 +232,7 @@ export default function ConversationSidebar({
                       variant="ghost"
                       size="icon"
                       onClick={(e) => deleteSession(session.session_id, e)}
-                      className="opacity-0 group-hover:opacity-100 h-6 w-6 text-destructive hover:text-destructive"
+                      className="opacity-0 group-hover:opacity-100 h-6 w-6 text-destructive hover:text-destructive flex-shrink-0"
                       title="删除对话"
                     >
                       <Trash2 className="h-3 w-3" />

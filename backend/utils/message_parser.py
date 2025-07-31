@@ -14,26 +14,22 @@ class MessageParser:
     def __init__(self):
         self.streaming_parser = StreamingResponseParser()
     
-    def parse_ai_message_content(self, content: str) -> Dict[str, str]:
-        """Parse AI message content to extract user-visible portions"""
+    def parse_ai_message_content(self, content: str) -> Dict[str, Any]:
+        """Parse AI message content to extract user-visible portions and action data"""
         if not content:
-            return {"display_content": "", "full_content": content}
+            return {"display_content": "", "full_content": content, "action_data": None}
         
         # Reset parser for this message
         parser = StreamingResponseParser()
         
-        # Process the full stored content to extract user-visible parts
-        lines = content.split('\n')
-        for line in lines:
-            parser.parse_chunk(line + '\n')
-        
-        # Get the parsed user content for display
-        parsed_result = parser.parse_chunk("")  # Get final state
-        display_content = parsed_result["user_message"] if parsed_result["user_message"] else content
+        # Process the full stored content to extract user-visible parts and action data
+        parsed_result = parser.parse_chunk(content)
+        display_content = parsed_result["user_message"]
         
         return {
             "display_content": display_content,
-            "full_content": content
+            "full_content": content,
+            "action_data": parsed_result.get("action_data")
         }
     
     def extract_tool_calls(self, message: BaseMessage) -> List[Dict[str, Any]]:
@@ -55,14 +51,16 @@ class MessageParser:
         msg_type = message.__class__.__name__.lower().replace("message", "")
         content = message.content
         
-        # Parse AI messages to extract user-visible content
+        # Parse AI messages to extract user-visible content and action data
         if msg_type == "ai" and content:
             parsed_content = self.parse_ai_message_content(content)
             display_content = parsed_content["display_content"]
             full_content = parsed_content["full_content"]
+            action_data = parsed_content["action_data"]
         else:
             display_content = content
             full_content = content
+            action_data = None
         
         # Extract tool calls information
         tool_calls = self.extract_tool_calls(message)
@@ -72,6 +70,7 @@ class MessageParser:
             "content": display_content,
             "full_content": full_content,
             "tool_calls": tool_calls,
+            "action_data": action_data,
             "timestamp": getattr(message, "additional_kwargs", {}).get("timestamp")
         }
         

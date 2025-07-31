@@ -41,7 +41,12 @@ class ChatHistoryService:
                             if msg_type == "human":
                                 message_objects.append(HumanMessage(content=msg_data.get("content", "")))
                             elif msg_type == "ai":
-                                ai_msg = AIMessage(content=msg_data.get("content", ""))
+                                raw_content = msg_data.get("content", "")
+                                # Clean tool call encoding from content using message parser
+                                parsed_content = message_parser.parse_ai_message_content(raw_content)
+                                clean_content = parsed_content["display_content"]
+                                
+                                ai_msg = AIMessage(content=clean_content)
                                 # Preserve tool_calls if they exist
                                 if "tool_calls" in msg_data and msg_data["tool_calls"]:
                                     ai_msg.tool_calls = msg_data["tool_calls"]
