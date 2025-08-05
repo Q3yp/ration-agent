@@ -88,22 +88,23 @@ async def create_agent_for_session(session_id: str):
     checkpointer = AsyncPostgresSaver(pool)
     
     # Import node functions from nodes module
-    from agents.nodes import supervisor_node, search_worker_node, code_worker_node
+    from agents.nodes import supervisor_node, researcher_node, coder_node
     
     # Build the orchestrator graph
     builder = StateGraph(OrchestratorState)
     
     # Add nodes
     builder.add_node("supervisor", supervisor_node)
-    builder.add_node("search_worker", search_worker_node)
-    builder.add_node("code_worker", code_worker_node)
+    builder.add_node("researcher", researcher_node)
+    builder.add_node("coder", coder_node)
     
     # Add edges
     builder.add_edge(START, "supervisor")
-    builder.add_edge("search_worker", "supervisor")
-    builder.add_edge("code_worker", "supervisor")
+    builder.add_edge("researcher", "supervisor")
+    builder.add_edge("coder", "supervisor")
     
     # Compile with shared checkpointer
+    # Note: recursion_limit is set during invoke/stream, not compile
     agent = builder.compile(checkpointer=checkpointer)
     
     return agent

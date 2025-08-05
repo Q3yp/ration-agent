@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, File, Loader2, Paperclip, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -23,9 +23,14 @@ export default function FileUpload({ sessionId, endpoint = 'http://localhost:800
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Notify parent component when files change
+  useEffect(() => {
+    onFilesChange?.(uploadedFiles)
+  }, [uploadedFiles, onFilesChange])
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
-    if (files.length > 0) {
+    if (files.length > 0 && !uploading) {
       uploadFiles(files)
     }
   }
@@ -34,7 +39,21 @@ export default function FileUpload({ sessionId, endpoint = 'http://localhost:800
     setUploading(true)
     setError(null)
 
-    for (const file of files) {
+    // Filter out files that are already uploaded (by name and size)
+    const filesToUpload = files.filter(file => {
+      return !uploadedFiles.some(existing =>
+        existing.name === file.name && existing.size === file.size
+      )
+    })
+
+    if (filesToUpload.length === 0) {
+      setUploading(false)
+      setError('All selected files are already uploaded')
+      return
+    }
+
+    // Upload all files concurrently and collect results
+    const uploadPromises = filesToUpload.map(async (file) => {
       try {
         const formData = new FormData()
         formData.append('file', file)
@@ -56,18 +75,55 @@ export default function FileUpload({ sessionId, endpoint = 'http://localhost:800
           path: result.path
         }
 
-        setUploadedFiles(prev => {
-          const newFiles = [...prev, uploadedFile]
-          onFilesChange?.(newFiles)
-          return newFiles
-        })
-        // Pass the original filename to the callback
-        onFileUploaded?.({ ...uploadedFile, originalName: file.name })
+        // Return both the uploaded file and original file info for callback
+        return {
+          uploadedFile,
+          originalName: file.name,
+          success: true,
+          error: null
+        }
 
       } catch (error: unknown) {
         console.error('Upload error:', error)
-        setError(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        const errorMessage = `Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        return {
+          uploadedFile: null,
+          originalName: file.name,
+          success: false,
+          error: errorMessage
+        }
       }
+    })
+
+    // Wait for all uploads to complete
+    const results = await Promise.all(uploadPromises)
+
+    // Process results
+    const successfulUploads = results.filter(result => result.success && result.uploadedFile)
+    const errors = results.filter(result => !result.success).map(result => result.error)
+
+    // Update state with all successful uploads at once to avoid race conditions
+    if (successfulUploads.length > 0) {
+      setUploadedFiles(prev => {
+        // Check for duplicates based on filename to avoid adding the same file twice
+        const existingNames = new Set(prev.map(f => f.name))
+        const newFiles = successfulUploads
+          .map(result => result.uploadedFile!)
+          .filter(file => !existingNames.has(file.name))
+        return [...prev, ...newFiles]
+      })
+
+      // Notify parent about successful uploads asynchronously
+      setTimeout(() => {
+        successfulUploads.forEach(result => {
+          onFileUploaded?.({ ...result.uploadedFile!, originalName: result.originalName })
+        })
+      }, 0)
+    }
+
+    // Set error message if any uploads failed
+    if (errors.length > 0) {
+      setError(errors.join('; '))
     }
 
     setUploading(false)
@@ -87,11 +143,7 @@ export default function FileUpload({ sessionId, endpoint = 'http://localhost:800
         throw new Error(errorData.detail || 'Delete failed')
       }
 
-      setUploadedFiles(prev => {
-        const newFiles = prev.filter(f => f.name !== filename)
-        onFilesChange?.(newFiles)
-        return newFiles
-      })
+      setUploadedFiles(prev => prev.filter(f => f.name !== filename))
     } catch (error: unknown) {
       console.error('Delete error:', error)
       setError(`Failed to delete ${filename}: ${error instanceof Error ? error.message : 'Unknown error'}`)

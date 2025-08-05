@@ -88,7 +88,13 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
   const handleFileUploaded = (uploadedFile: { name: string; size: number; originalName?: string }) => {
     // Buffer the file notification instead of sending immediately
     const fileName = uploadedFile.originalName || uploadedFile.name
-    setPendingFileNotifications(prev => [...prev, fileName])
+    setPendingFileNotifications(prev => {
+      // Avoid duplicate notifications
+      if (prev.includes(fileName)) {
+        return prev
+      }
+      return [...prev, fileName]
+    })
   }
 
   const handleSendMessage = async () => {

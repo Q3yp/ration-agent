@@ -37,6 +37,7 @@ export interface Message {
   attachedFiles?: AttachedFile[]
   toRole?: string
   artifactData?: ArtifactData
+  actionData?: Record<string, string>
 }
 
 export interface Session {

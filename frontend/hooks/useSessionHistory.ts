@@ -98,7 +98,8 @@ export function useSessionHistory({
             content: roleInfo.transitionMessage,
             timestamp: baseTimestamp + 0.5, // Slight offset to maintain order
             isStreaming: false,
-            toRole: toRole
+            toRole: toRole,
+            actionData: msg.action_data
           })
         }
       }
@@ -147,13 +148,36 @@ export function useSessionHistory({
   }, [])
 
   useEffect(() => {
-    if (sessionId) {
-      loadSessionHistory()
-    } else {
-      setSessionHistory(null)
-      setError(null)
+    const loadHistory = async () => {
+      if (!sessionId) {
+        setSessionHistory(null)
+        setError(null)
+        return
+      }
+
+      try {
+        setIsLoading(true)
+        setError(null)
+        
+        const response = await fetch(`${endpoint}/sessions/${sessionId}/history?limit=50`)
+        
+        if (!response.ok) {
+          throw new Error(`Failed to load session history: ${response.statusText}`)
+        }
+        
+        const data: SessionHistory = await response.json()
+        setSessionHistory(data)
+      } catch (error) {
+        console.error('Error loading session history:', error)
+        setError(error instanceof Error ? error.message : 'Failed to load session history')
+        setSessionHistory(null)
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }, [sessionId, loadSessionHistory])
+
+    loadHistory()
+  }, [sessionId, endpoint])
 
   return {
     sessionHistory,

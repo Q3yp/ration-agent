@@ -70,6 +70,18 @@ def process_tool_end_event(event: Dict[str, Any]) -> Dict[str, Any]:
     else:
         content = str(output)
     
+    # For JSON-formatted tool outputs, ensure proper handling
+    # Remove excessive whitespace that could cause SSE issues
+    if content.strip().startswith('{') and content.strip().endswith('}'):
+        try:
+            import json
+            # Parse and re-serialize with minimal formatting to avoid SSE issues
+            parsed = json.loads(content)
+            content = json.dumps(parsed, ensure_ascii=False, separators=(',', ':'))
+        except (json.JSONDecodeError, TypeError):
+            # If not valid JSON, keep original content
+            pass
+    
     return {
         "type": "tool_result", 
         "content": content,

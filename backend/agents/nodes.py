@@ -119,7 +119,7 @@ class StreamingResponseParser:
         return action_data
 
 
-async def supervisor_node(state: OrchestratorState, config: RunnableConfig = None) -> Command[Literal["search_worker", "code_worker", "__end__"]]:
+async def supervisor_node(state: OrchestratorState, config: RunnableConfig = None) -> Command[Literal["researcher", "coder", "__end__"]]:
     """Supervisor node that analyzes requests and routes to appropriate workers"""
     # Get model using centralized configuration
     model = get_model_config("supervisor")
@@ -127,8 +127,8 @@ async def supervisor_node(state: OrchestratorState, config: RunnableConfig = Non
     # Get session_id from config to create session-bound artifact tools
     session_id = config["configurable"]["thread_id"]
     
-    # Get supervisor tools (artifact creation and listing)
-    supervisor_tools = get_supervisor_tools(session_id)
+    # Get supervisor tools (artifact creation and listing + Excel tools)
+    supervisor_tools = await get_supervisor_tools(session_id)
     
     supervisor = create_react_agent(
         model,
@@ -159,25 +159,25 @@ async def supervisor_node(state: OrchestratorState, config: RunnableConfig = Non
             }
             
             # Route based on action data
-            if route == "search_worker":
+            if route == "researcher":
                 return Command(
                     update={
                         **result,
                         "current_task": action_data.get("task", ""),
-                        "assigned_worker": "search_worker",
+                        "assigned_worker": "researcher",
                         "workflow_stage": "working"
                     },
-                    goto="search_worker"
+                    goto="researcher"
                 )
-            elif route == "code_worker":
+            elif route == "coder":
                 return Command(
                     update={
                         **result,
                         "current_task": action_data.get("task", ""),
-                        "assigned_worker": "code_worker",
+                        "assigned_worker": "coder",
                         "workflow_stage": "working"
                     },
-                    goto="code_worker"
+                    goto="coder"
                 )
     
     # Default: end the conversation with supervisor's response
@@ -205,19 +205,19 @@ def _parse_supervisor_response(response_content: str) -> dict:
     return {"action": "DIRECT_RESPONSE", "task": response_content}
 
 
-async def search_worker_node(state: OrchestratorState, config: RunnableConfig = None):
-    """Search worker node that performs research tasks"""
+async def researcher_node(state: OrchestratorState, config: RunnableConfig = None):
+    """Researcher node that performs research tasks"""
     # Get model using centralized configuration
-    model = get_model_config("search_worker")
+    model = get_model_config("researcher")
     
     tools = get_search_tools()
-    search_worker = create_react_agent(
+    researcher = create_react_agent(
         model,
         tools,
-        prompt=lambda state: apply_prompt_template("search_worker", state)
+        prompt=lambda state: apply_prompt_template("researcher", state)
     )
     
-    result = await search_worker.ainvoke(state, config)
+    result = await researcher.ainvoke(state, config)
     
     # Parse the response to extract user message and action
     if result.get("messages"):
@@ -251,22 +251,22 @@ async def search_worker_node(state: OrchestratorState, config: RunnableConfig = 
     }
 
 
-async def code_worker_node(state: OrchestratorState, config: RunnableConfig = None):
-    """Code worker node that handles code execution and analysis"""
+async def coder_node(state: OrchestratorState, config: RunnableConfig = None):
+    """Coder node that handles code execution and analysis"""
     # Get model using centralized configuration
-    model = get_model_config("code_worker")
+    model = get_model_config("coder")
     
     # Get session_id from config which is passed by the session-bound agent
     session_id = config["configurable"]["thread_id"]
     tools = await get_tools(session_id)
     
-    code_worker = create_react_agent(
+    coder = create_react_agent(
         model,
         tools,
-        prompt=lambda state: apply_prompt_template("code_worker", state)
+        prompt=lambda state: apply_prompt_template("coder", state)
     )
     
-    result = await code_worker.ainvoke(state, config)
+    result = await coder.ainvoke(state, config)
     
     # Parse the response to extract user message and action
     if result.get("messages"):

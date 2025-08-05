@@ -12,14 +12,14 @@ def get_model_config(model_name: str) -> ChatOpenAI:
             "temperature": float(os.getenv("SUPERVISOR_TEMPERATURE", "0")),
             "streaming": True
         },
-        "search_worker": {
-            "model": os.getenv("SEARCH_WORKER_MODEL", os.getenv("OPENROUTER_MODEL")),
-            "temperature": float(os.getenv("SEARCH_WORKER_TEMPERATURE", "0")),
+        "researcher": {
+            "model": os.getenv("RESEARCHER_MODEL", os.getenv("OPENROUTER_MODEL")),
+            "temperature": float(os.getenv("RESEARCHER_TEMPERATURE", "0")),
             "streaming": True
         },
-        "code_worker": {
-            "model": os.getenv("CODE_WORKER_MODEL", os.getenv("OPENROUTER_MODEL")),
-            "temperature": float(os.getenv("CODE_WORKER_TEMPERATURE", "0")),
+        "coder": {
+            "model": os.getenv("CODER_MODEL", os.getenv("OPENROUTER_MODEL")),
+            "temperature": float(os.getenv("CODER_TEMPERATURE", "0")),
             "streaming": True
         },
         "title_generation": {
@@ -28,7 +28,7 @@ def get_model_config(model_name: str) -> ChatOpenAI:
             "streaming": False
         }
     }
-    
+
     if model_name not in model_configs:
         raise ValueError(f"Unknown model name: {model_name}. Available: {list(model_configs.keys())}")
     
@@ -38,7 +38,15 @@ def get_model_config(model_name: str) -> ChatOpenAI:
         model=config["model"],
         temperature=config["temperature"],
         streaming=config["streaming"],
-        openai_api_base="https://openrouter.ai/api/v1",
+        #openai_api_base="https://openrouter.ai/api/v1",
+        openai_api_base=os.getenv("OPENAI_ENDPOINT"),
         openai_api_key=os.getenv("OPENROUTER_API_KEY"),
         stream_usage=False
     )
+
+
+def get_agent_config() -> dict:
+    """Get agent configuration including recursion limits"""
+    return {
+        "recursion_limit": int(os.getenv("LANGGRAPH_RECURSION_LIMIT", "100"))
+    }

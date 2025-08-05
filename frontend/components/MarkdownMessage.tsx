@@ -11,7 +11,7 @@ interface MarkdownMessageProps {
   isStreaming?: boolean
 }
 
-export default function MarkdownMessage({ content, isStreaming = false }: MarkdownMessageProps) {
+export default function MarkdownMessage({ content }: MarkdownMessageProps) {
 
   return (
     <div className="prose prose-sm max-w-none prose-slate dark:prose-invert break-words overflow-wrap-anywhere">

@@ -1,57 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { v4 as uuidv4 } from 'uuid'
-import { Loader2, AlertTriangle } from 'lucide-react'
+import { useState } from 'react'
+import { MessageCircle } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
 import ConversationSidebar from '@/components/ConversationSidebar'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
 export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [sessionError, setSessionError] = useState<string | null>(null)
-  const [isCreatingSession, setIsCreatingSession] = useState(true)
   const [chatKey, setChatKey] = useState(0) // Force ChatInterface re-render when session changes
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    const createSession = async () => {
-      const generatedSessionId = uuidv4()
-      
-      try {
-        const response = await fetch('http://localhost:8000/sessions/create', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ session_id: generatedSessionId }),
-        })
-        
-        if (!response.ok) {
-          throw new Error(`Failed to create session: ${response.statusText}`)
-        }
-        
-        const data = await response.json()
-        setSessionId(data.session_id)
-        setSessionError(null)
-      } catch (error) {
-        console.error('Session creation error:', error)
-        setSessionError(error instanceof Error ? error.message : 'Failed to create session')
-      } finally {
-        setIsCreatingSession(false)
-      }
-    }
-    
-    createSession()
-  }, [])
 
   const handleSessionSelect = (newSessionId: string) => {
     setSessionId(newSessionId)
     setChatKey(prev => prev + 1) // Force ChatInterface to re-render with new session
   }
 
-  const handleNewSession = () => {
+  const handleNewSession = (newSessionId: string) => {
+    setSessionId(newSessionId)
     setChatKey(prev => prev + 1) // Force ChatInterface to re-render for new session
   }
 
@@ -84,31 +50,7 @@ export default function Home() {
           </header>
           
           <div className="flex-1 p-6 min-h-0">
-            {isCreatingSession ? (
-              <div className="flex items-center justify-center h-full">
-                <Card className="w-96">
-                  <CardContent className="p-6 text-center">
-                    <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4 text-primary" />
-                    <p className="text-muted-foreground">正在创建会话...</p>
-                  </CardContent>
-                </Card>
-              </div>
-            ) : sessionError ? (
-              <div className="flex items-center justify-center h-full">
-                <Card className="w-96">
-                  <CardContent className="p-6 text-center">
-                    <AlertTriangle className="h-8 w-8 mx-auto mb-4 text-destructive" />
-                    <p className="text-destructive mb-4">{sessionError}</p>
-                    <Button
-                      variant="destructive"
-                      onClick={() => window.location.reload()}
-                    >
-                      重试
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
-            ) : sessionId ? (
+            {sessionId ? (
               <div className="h-full max-h-full">
                 <ChatInterface
                   key={chatKey}
@@ -116,7 +58,16 @@ export default function Home() {
                   onTitleUpdate={handleTitleUpdate}
                 />
               </div>
-            ) : null}
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <Card className="w-96">
+                  <CardContent className="p-6 text-center">
+                    <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                    <p className="text-muted-foreground mb-3">请选择或创建一个对话</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </div>
         </div>
       </div>

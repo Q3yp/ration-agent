@@ -7,6 +7,8 @@ from typing import Optional, List
 from langchain_core.tools import tool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from duckduckgo_search import DDGS
+from .ragflow_integration import create_ragflow_tools_for_session
+from .excel_tools import get_excel_tools
 
 try:
     import bleach
@@ -143,10 +145,12 @@ async def bash_command(command: str, session_id: str) -> str:
         if not session:
             return f"Error: Session '{session_id}' not found"
         
+        # Ensure workspace exists and get path
+        session.ensure_workspace_exists()
         session_workspace = session.workspace_path
         
         result = subprocess.run(
-            full_command,
+            command,
             shell=True,
             executable='/bin/bash',  # Force use of bash instead of sh
             cwd=session_workspace,
@@ -209,6 +213,9 @@ async def create_html_artifact(
         session = await session_manager.get_session(session_id)
         if not session:
             return f"Error: Session '{session_id}' not found"
+        
+        # Ensure workspace exists
+        session.ensure_workspace_exists()
         
         # Use HTML content directly without sanitization
         # Wrap content in a complete HTML document if it's not already
@@ -292,11 +299,14 @@ async def get_file_management_tools(session_id: str):
     if not session:
         raise RuntimeError(f"Session '{session_id}' not found")
     
-    session_workspace = session.workspace_path
+    # Ensure workspace exists
+    session.ensure_workspace_exists()
     
     # Create FileManagementToolkit with session-specific root directory
-    file_toolkit = FileManagementToolkit(root_dir=session_workspace,
-                                        selected_tools=["write_file", "list_directory"])
+    file_toolkit = FileManagementToolkit(
+        root_dir=session.workspace_path,
+        selected_tools=["write_file", "list_directory"]
+    )
     
     return file_toolkit.get_tools()
 
@@ -506,30 +516,42 @@ async def search_and_crawl(query: str, max_search_results: int = 3) -> str:
 
 def get_search_tools():
     """Get search-specific tools for the search worker"""
-    return [
+    # Import here to avoid circular imports
+    from .ragflow_integration import get_ragflow_tools
+
+    search_tools = [
         duckduckgo_search,
-        duckduckgo_news_search,
-        crawl_website,
-        crawl_multiple_urls,
-        research_topic_comprehensive,
-        search_and_crawl
+        crawl_website
     ]
 
+    # Add RAGFlow knowledge base search tool to search worker
+    ragflow_tools = get_ragflow_tools()
+    search_tools.extend(ragflow_tools)
 
-def get_supervisor_tools(session_id: str):
+    return search_tools
+
+
+async def get_supervisor_tools(session_id: str):
     """Get supervisor-specific tools"""
+    # No specific supervisor tools currently configured
     return []
 
 
+
+
 async def get_tools(session_id: str):
-    """Get all available tools for a session."""
+    """Get all available tools for a session (code worker tools)."""
     # Create session-bound bash tool
     session_bash_tool = create_bash_command_tool(session_id)
-    
+
     # Get file management tools for the session
     file_tools = await get_file_management_tools(session_id)
-    
+
     # Create session-bound artifact tool
     artifact_tool = create_artifact_tool(session_id)
-    
-    return [session_bash_tool, artifact_tool] + file_tools
+
+    # Get Excel tools for the session
+    excel_tools = await get_excel_tools(session_id)
+
+    # Note: RAGFlow tools are now only available to search worker via get_search_tools()
+    return [session_bash_tool, artifact_tool] + file_tools + excel_tools

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, MessageCircle, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, Trash2, MessageCircle, Loader2, TrashIcon } from 'lucide-react'
 import { Session } from '@/types/chat'
 import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 interface ConversationSidebarProps {
   currentSessionId: string | null
   onSessionSelect: (sessionId: string) => void
-  onNewSession: () => void
+  onNewSession: (sessionId: string) => void
   sessionTitles: Record<string, string>
   endpoint?: string
 }
@@ -24,7 +24,6 @@ export default function ConversationSidebar({
 }: ConversationSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   // Update session titles when sessionTitles prop changes
   useEffect(() => {
@@ -43,11 +42,16 @@ export default function ConversationSidebar({
         throw new Error(`Failed to fetch sessions: ${response.statusText}`)
       }
       const data = await response.json()
-      setSessions(data.active_sessions || [])
-      setError(null)
+      const sessions = data.active_sessions || []
+      setSessions(sessions)
+      
+      // If no sessions exist and no current session, create a new one
+      if (sessions.length === 0 && !currentSessionId) {
+        await createNewSession()
+      }
     } catch (error) {
       console.error('Error fetching sessions:', error)
-      setError(error instanceof Error ? error.message : 'Failed to fetch sessions')
+      alert('获取对话列表失败，请刷新页面重试')
     } finally {
       setIsLoading(false)
     }
@@ -78,10 +82,10 @@ export default function ConversationSidebar({
       setSessions(prev => [newSession, ...prev])
       
       onSessionSelect(newSessionId)
-      onNewSession()
+      onNewSession(newSessionId)
     } catch (error) {
       console.error('Error creating session:', error)
-      setError(error instanceof Error ? error.message : 'Failed to create session')
+      alert('创建新对话失败，请重试')
     }
   }
 
@@ -110,7 +114,32 @@ export default function ConversationSidebar({
       }
     } catch (error) {
       console.error('Error deleting session:', error)
-      setError(error instanceof Error ? error.message : 'Failed to delete session')
+      alert('删除对话失败，请重试')
+    }
+  }
+
+  const deleteAllSessions = async () => {
+    if (!confirm('您确定要删除所有对话吗？这个操作不可恢复。')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${endpoint}/sessions/delete-all`, {
+        method: 'DELETE',
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to delete all sessions: ${response.statusText}`)
+      }
+      
+      // Clear all sessions from local state
+      setSessions([])
+      
+      // Create a new session automatically
+      await createNewSession()
+    } catch (error) {
+      console.error('Error deleting all sessions:', error)
+      alert('删除所有对话失败，请重试')
     }
   }
 
@@ -157,36 +186,31 @@ export default function ConversationSidebar({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">对话列表</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={createNewSession}
-            title="新建对话"
-            className="h-8 w-8"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {sessions.length > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={deleteAllSessions}
+                title="删除所有对话"
+                className="h-8 w-8 text-destructive hover:text-destructive"
+              >
+                <TrashIcon className="h-4 w-4" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={createNewSession}
+              title="新建对话"
+              className="h-8 w-8"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </CardHeader>
 
-      {/* Error display */}
-      {error && (
-        <div className="px-4 pb-3">
-          <Card className="bg-destructive/10 border-destructive/20">
-            <CardContent className="p-3">
-              <p className="text-sm text-destructive">{error}</p>
-              <Button
-                variant="link"
-                size="sm"
-                onClick={fetchSessions}
-                className="text-xs p-0 h-auto text-destructive"
-              >
-                重试
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {/* Sessions list */}
       <div className="flex-1 overflow-y-auto px-4">

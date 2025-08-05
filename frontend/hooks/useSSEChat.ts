@@ -257,6 +257,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
               content: roleInfo.transitionMessage,
               timestamp: data.timestamp || Date.now(),
               toRole: data.to_role,
+              actionData: data.action_data
             }
             dispatch({ type: 'ADD_ROLE_TRANSITION', payload: message })
           }

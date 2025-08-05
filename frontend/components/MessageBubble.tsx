@@ -271,6 +271,7 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
   const renderRoleTransition = () => {
     const roleInfo = getRoleInfo(message.toRole || '')
     const RoleIcon = roleInfo.icon
+    const hasActionData = message.actionData && Object.keys(message.actionData).length > 0
     
     return (
       <div className="flex justify-start items-start gap-2">
@@ -286,7 +287,19 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
           } : undefined}
         >
           <CardContent className="p-3">
-            <div className="flex items-center gap-2">
+            <div
+              className={cn("flex items-center gap-2", hasActionData && "cursor-pointer")}
+              onClick={hasActionData ? () => setIsExpanded(!isExpanded) : undefined}
+            >
+              {hasActionData && (
+                <ChevronRight className={cn(
+                  "h-4 w-4 transition-transform flex-shrink-0",
+                  isExpanded && "rotate-90",
+                  !roleInfo.customStyles && roleInfo.color
+                )} 
+                style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
+                />
+              )}
               <RoleIcon 
                 className={cn("h-4 w-4", !roleInfo.customStyles && roleInfo.color)} 
                 style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
@@ -298,6 +311,53 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
                 {roleInfo.transitionMessage}
               </span>
             </div>
+            
+            {/* Expandable Action Data */}
+            {hasActionData && isExpanded && (
+              <div className="mt-3 p-3 rounded-md text-xs max-h-64 overflow-auto w-full min-w-0"
+                style={{ 
+                  backgroundColor: roleInfo.customStyles 
+                    ? `${roleInfo.customStyles.color}15` 
+                    : undefined 
+                }}
+                className={cn(
+                  "mt-3 p-3 rounded-md text-xs max-h-64 overflow-auto w-full min-w-0",
+                  !roleInfo.customStyles && roleInfo.bgColor.replace('bg-', 'bg-').replace('-50', '-100')
+                )}
+              >
+                <strong className={cn(
+                  !roleInfo.customStyles && roleInfo.color,
+                  "block mb-2"
+                )}
+                style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
+                >
+                  Action Details:
+                </strong>
+                <div className="space-y-1">
+                  {Object.entries(message.actionData).map(([key, value]) => (
+                    <div key={key} className="flex gap-2">
+                      <span className={cn(
+                        "font-medium capitalize",
+                        !roleInfo.customStyles && roleInfo.color
+                      )}
+                      style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
+                      >
+                        {key}:
+                      </span>
+                      <span className={cn(
+                        "break-words",
+                        !roleInfo.customStyles && roleInfo.color.replace('700', '600')
+                      )}
+                      style={roleInfo.customStyles ? { color: roleInfo.customStyles.color, opacity: 0.8 } : undefined}
+                      >
+                        {value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
             <div 
               className={cn("text-xs mt-1", !roleInfo.customStyles && roleInfo.color.replace('700', '600'))}
               style={roleInfo.customStyles ? { color: roleInfo.customStyles.color, opacity: 0.7 } : undefined}

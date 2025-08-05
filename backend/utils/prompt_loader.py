@@ -19,7 +19,7 @@ def apply_prompt_template(prompt_name: str, state: AgentState) -> list:
     Apply template variables to a prompt template and return formatted messages.
     
     Args:
-        prompt_name: Name of the prompt template to use (supervisor, search_worker, code_worker)
+        prompt_name: Name of the prompt template to use (supervisor, researcher, coder)
         state: Current agent state containing variables to substitute
         
     Returns:

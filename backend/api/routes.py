@@ -125,8 +125,21 @@ async def list_sessions():
     }
 
 
+@router.delete("/sessions/delete-all")
+async def delete_all_sessions():
+    """Soft delete all sessions - marks as deleted but preserves data and history"""
+    try:
+        # Use soft delete to preserve conversation history and data
+        result = await session_manager.soft_delete_all_sessions()
+
+        return {}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete all sessions: {str(e)}")
+
+
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str, remove_files: bool = False):
+async def delete_session(session_id: str):
     """Soft delete a session - marks as deleted but preserves data and history"""
     session_stats = await session_manager.get_session_stats(session_id)
     if not session_stats["exists"]:
@@ -136,21 +149,7 @@ async def delete_session(session_id: str, remove_files: bool = False):
         # Use soft delete to preserve conversation history and data
         await session_manager.soft_delete_session(session_id)
 
-        # Optionally remove workspace files if requested
-        if remove_files:
-            session = await session_manager.get_session(session_id)
-            if session:
-                workspace_path = Path(session.workspace_path)
-                if workspace_path.exists():
-                    import shutil
-                    shutil.rmtree(workspace_path)
-
-        return {
-            "message": f"Session '{session_id}' deleted successfully",
-            "files_removed": remove_files,
-            "chat_history_preserved": True,  # LangGraph checkpoints and session data preserved
-            "note": "Session marked as deleted but conversation history and data are preserved"
-        }
+        return {}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete session: {str(e)}")
@@ -273,7 +272,16 @@ async def stream_chat(session_id: str, request: ChatRequest):
     
     async def generate_sse_stream():
         """Generate Server-Sent Events stream following SSE specification"""
-        config = {"configurable": {"thread_id": session_id}}
+        # Import agent configuration for recursion limit
+        from utils.model_config import get_agent_config
+        agent_config = get_agent_config()
+
+        config = {
+            "configurable": {"thread_id": session_id},
+            "recursion_limit": agent_config["recursion_limit"]
+        }
+
+        logger.info(f"Starting agent stream for session {session_id} with recursion_limit={agent_config['recursion_limit']}")
         current_message_id = f"{session_id}_{int(asyncio.get_event_loop().time() * 1000000)}"
         accumulated_content = ""
         tool_calls_processed = set()
@@ -344,6 +352,7 @@ async def stream_chat(session_id: str, request: ChatRequest):
                             role_data = {
                                 "type": "role_transition",
                                 "to_role": parsed_result["action_data"]["route"],
+                                "action_data": parsed_result["action_data"],
                                 "message_id": current_message_id,
                                 "timestamp": asyncio.get_event_loop().time()
                             }
@@ -444,12 +453,7 @@ async def upload_file(session_id: str, file: UploadFile = File(...)):
     
     workspace_dir = session_context.workspace_path
     
-    # Sanitize filename
-    safe_filename = "".join(c for c in file.filename if c.isalnum() or c in "._-").rstrip()
-    if not safe_filename:
-        safe_filename = f"uploaded_file{file_extension}"
-    
-    file_path = Path(workspace_dir) / safe_filename
+    file_path = Path(workspace_dir) / file.filename
     
     try:
         # Read and validate file size
@@ -462,8 +466,8 @@ async def upload_file(session_id: str, file: UploadFile = File(...)):
             f.write(content)
         
         return {
-            "message": f"File '{safe_filename}' uploaded successfully",
-            "filename": safe_filename,
+            "message": f"File '{file.filename}' uploaded successfully",
+            "filename": file.filename,
             "size": len(content),
             "session_id": session_id,
             "path": str(file_path.relative_to(Path(workspace_dir)))

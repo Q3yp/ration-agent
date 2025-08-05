@@ -26,7 +26,7 @@ export const roleMapping: Record<string, RoleInfo> = {
       borderColor: '#93c5fd'
     }
   },
-  'search_worker': {
+  'researcher': {
     name: '搜索专员',
     transitionMessage: '开始搜索和研究',
     icon: Search,
@@ -38,7 +38,7 @@ export const roleMapping: Record<string, RoleInfo> = {
       borderColor: '#c4b5fd'
     }
   },
-  'code_worker': {
+  'coder': {
     name: '代码专员',
     transitionMessage: '处理代码和数据分析',
     icon: Code,
