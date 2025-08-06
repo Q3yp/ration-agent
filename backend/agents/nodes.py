@@ -160,22 +160,32 @@ async def supervisor_node(state: OrchestratorState, config: RunnableConfig = Non
             
             # Route based on action data
             if route == "researcher":
+                # Create isolated task message for researcher (no user context)
+                from langchain_core.messages import HumanMessage
+                task_message = HumanMessage(content=action_data.get("task", ""))
+                
                 return Command(
                     update={
-                        **result,
+                        **result,  # Preserves existing messages field
                         "current_task": action_data.get("task", ""),
                         "assigned_worker": "researcher",
-                        "workflow_stage": "working"
+                        "workflow_stage": "working",
+                        "researcher_messages": [task_message]  # Isolated context for researcher
                     },
                     goto="researcher"
                 )
             elif route == "coder":
+                # Create isolated task message for coder (no user context)
+                from langchain_core.messages import HumanMessage
+                task_message = HumanMessage(content=action_data.get("task", ""))
+                
                 return Command(
                     update={
-                        **result,
+                        **result,  # Preserves existing messages field
                         "current_task": action_data.get("task", ""),
                         "assigned_worker": "coder",
-                        "workflow_stage": "working"
+                        "workflow_stage": "working",
+                        "coder_messages": [task_message]  # Isolated context for coder
                     },
                     goto="coder"
                 )
@@ -236,6 +246,7 @@ async def researcher_node(state: OrchestratorState, config: RunnableConfig = Non
                 **result,
                 "search_findings": [action_data.get("finding", parsed["user_message"])],
                 "workflow_stage": "synthesizing",
+                "researcher_messages": result.get("messages", []),  # Update researcher messages
                 "parsed_response": {
                     "user_message": parsed["user_message"],
                     "action_data": action_data,
@@ -285,6 +296,7 @@ async def coder_node(state: OrchestratorState, config: RunnableConfig = None):
                 **result,
                 "code_results": [action_data.get("finding", parsed["user_message"])],
                 "workflow_stage": "synthesizing",
+                "coder_messages": result.get("messages", []),  # Update coder messages
                 "parsed_response": {
                     "user_message": parsed["user_message"],
                     "action_data": action_data,

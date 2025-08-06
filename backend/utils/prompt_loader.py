@@ -16,14 +16,14 @@ env = Environment(
 
 def apply_prompt_template(prompt_name: str, state: AgentState) -> list:
     """
-    Apply template variables to a prompt template and return formatted messages.
+    Apply template variables to a prompt template and return formatted messages with role isolation.
     
     Args:
         prompt_name: Name of the prompt template to use (supervisor, researcher, coder)
         state: Current agent state containing variables to substitute
         
     Returns:
-        List of messages with the system prompt as the first message
+        List of messages with the system prompt as the first message and agent-specific message history
     """
     # Convert state to dict for template rendering
     state_vars = {
@@ -40,6 +40,21 @@ def apply_prompt_template(prompt_name: str, state: AgentState) -> list:
     try:
         template = env.get_template(f"{prompt_name}.md")
         system_prompt = template.render(**state_vars)
-        return [{"role": "system", "content": system_prompt}] + state["messages"]
+        
+        # Role-based message isolation
+        if prompt_name == "supervisor":
+            # Supervisor gets full conversation context
+            agent_messages = state.get("messages", [])
+        elif prompt_name == "researcher":
+            # Researcher only gets task-based messages if available, otherwise full context
+            agent_messages = state.get("researcher_messages", state.get("messages", []))
+        elif prompt_name == "coder":
+            # Coder only gets task-based messages if available, otherwise full context
+            agent_messages = state.get("coder_messages", state.get("messages", []))
+        else:
+            # Fallback to original behavior for unknown agents
+            agent_messages = state.get("messages", [])
+        
+        return [{"role": "system", "content": system_prompt}] + agent_messages
     except Exception as e:
         raise ValueError(f"Error applying template {prompt_name}: {e}")

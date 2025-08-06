@@ -314,7 +314,7 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
             
             {/* Expandable Action Data */}
             {hasActionData && isExpanded && (
-              <div className="mt-3 p-3 rounded-md text-xs max-h-64 overflow-auto w-full min-w-0"
+              <div 
                 style={{ 
                   backgroundColor: roleInfo.customStyles 
                     ? `${roleInfo.customStyles.color}15` 
@@ -334,7 +334,7 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
                   Action Details:
                 </strong>
                 <div className="space-y-1">
-                  {Object.entries(message.actionData).map(([key, value]) => (
+                  {Object.entries(message.actionData || {}).map(([key, value]) => (
                     <div key={key} className="flex gap-2">
                       <span className={cn(
                         "font-medium capitalize",

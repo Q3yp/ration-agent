@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class OrchestratorState(AgentState):
-    """Extended state for orchestrator-worker system"""
+    """Extended state for orchestrator-worker system with isolated message threads"""
     # Task delegation variables
     current_task: str = ""
     task_context: dict = {}
@@ -31,6 +31,11 @@ class OrchestratorState(AgentState):
     
     # Artifacts (accumulate results)
     artifacts: Annotated[list, lambda x, y: x + y] = []
+    
+    # Separate message threads for each agent (role isolation)
+    supervisor_messages: Annotated[list, lambda x, y: x + y] = []
+    researcher_messages: Annotated[list, lambda x, y: x + y] = []
+    coder_messages: Annotated[list, lambda x, y: x + y] = []
     
     # Workflow control
     workflow_stage: str = "analyzing"  # analyzing -> delegating -> working -> synthesizing
