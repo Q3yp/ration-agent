@@ -9,6 +9,7 @@ from langchain_community.agent_toolkits import FileManagementToolkit
 from duckduckgo_search import DDGS
 from .ragflow_integration import create_ragflow_tools_for_session
 from .excel_tools import get_excel_tools
+from .formulation_tools import get_formulation_tools, get_add_feed_tool
 
 try:
     import bleach
@@ -531,10 +532,11 @@ def get_search_tools():
     return search_tools
 
 
-async def get_supervisor_tools(session_id: str):
-    """Get supervisor-specific tools"""
-    # No specific supervisor tools currently configured
-    return []
+async def get_nutritionist_tools(session_id: str):
+    """Get nutritionist-specific tools"""
+    # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
+    formulation_tools = get_formulation_tools()
+    return formulation_tools
 
 
 
@@ -553,5 +555,8 @@ async def get_tools(session_id: str):
     # Get Excel tools for the session
     excel_tools = await get_excel_tools(session_id)
 
+    # Get add_feed tool for the coder
+    add_feed_tools = get_add_feed_tool()
+
     # Note: RAGFlow tools are now only available to search worker via get_search_tools()
-    return [session_bash_tool, artifact_tool] + file_tools + excel_tools
+    return [session_bash_tool, artifact_tool] + file_tools + excel_tools + add_feed_tools

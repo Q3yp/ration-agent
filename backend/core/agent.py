@@ -18,8 +18,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class OrchestratorState(AgentState):
-    """Extended state for orchestrator-worker system with isolated message threads"""
+class FormulationState(AgentState):
+    """Extended state for formulation system with isolated message threads"""
     # Task delegation variables
     current_task: str = ""
     task_context: dict = {}
@@ -33,12 +33,16 @@ class OrchestratorState(AgentState):
     artifacts: Annotated[list, lambda x, y: x + y] = []
     
     # Separate message threads for each agent (role isolation)
-    supervisor_messages: Annotated[list, lambda x, y: x + y] = []
+    nutritionist_messages: Annotated[list, lambda x, y: x + y] = []
     researcher_messages: Annotated[list, lambda x, y: x + y] = []
     coder_messages: Annotated[list, lambda x, y: x + y] = []
     
     # Workflow control
     workflow_stage: str = "analyzing"  # analyzing -> delegating -> working -> synthesizing
+    
+    # Feed formulation state
+    feed_database: Annotated[dict, lambda x, y: {**x, **y}] = {}  # Feed name -> feed data
+    current_formulation: Annotated[dict, lambda x, y: y] = {}  # Last formulation result
 
 
 class SharedConnectionManager:
@@ -93,20 +97,20 @@ async def create_agent_for_session(session_id: str):
     checkpointer = AsyncPostgresSaver(pool)
     
     # Import node functions from nodes module
-    from agents.nodes import supervisor_node, researcher_node, coder_node
+    from agents.nodes import nutritionist_node, researcher_node, coder_node
     
-    # Build the orchestrator graph
-    builder = StateGraph(OrchestratorState)
+    # Build the formulation graph
+    builder = StateGraph(FormulationState)
     
     # Add nodes
-    builder.add_node("supervisor", supervisor_node)
+    builder.add_node("nutritionist", nutritionist_node)
     builder.add_node("researcher", researcher_node)
     builder.add_node("coder", coder_node)
     
     # Add edges
-    builder.add_edge(START, "supervisor")
-    builder.add_edge("researcher", "supervisor")
-    builder.add_edge("coder", "supervisor")
+    builder.add_edge(START, "nutritionist")
+    builder.add_edge("researcher", "nutritionist")
+    builder.add_edge("coder", "nutritionist")
     
     # Compile with shared checkpointer
     # Note: recursion_limit is set during invoke/stream, not compile

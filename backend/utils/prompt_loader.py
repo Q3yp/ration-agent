@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from langgraph.prebuilt.chat_agent_executor import AgentState
+from core.agent import FormulationState
 
 # Initialize Jinja2 environment
 prompts_dir = Path(__file__).parent.parent / "prompts"
@@ -14,12 +14,12 @@ env = Environment(
 )
 
 
-def apply_prompt_template(prompt_name: str, state: AgentState) -> list:
+def apply_prompt_template(prompt_name: str, state: FormulationState) -> list:
     """
     Apply template variables to a prompt template and return formatted messages with role isolation.
     
     Args:
-        prompt_name: Name of the prompt template to use (supervisor, researcher, coder)
+        prompt_name: Name of the prompt template to use (nutritionist, researcher, coder)
         state: Current agent state containing variables to substitute
         
     Returns:
@@ -42,8 +42,8 @@ def apply_prompt_template(prompt_name: str, state: AgentState) -> list:
         system_prompt = template.render(**state_vars)
         
         # Role-based message isolation
-        if prompt_name == "supervisor":
-            # Supervisor gets full conversation context
+        if prompt_name == "nutritionist":
+            # Nutritionist gets full conversation context
             agent_messages = state.get("messages", [])
         elif prompt_name == "researcher":
             # Researcher only gets task-based messages if available, otherwise full context

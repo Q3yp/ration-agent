@@ -7,9 +7,9 @@ def get_model_config(model_name: str) -> ChatOpenAI:
     
     # Model and temperature mapping
     model_configs = {
-        "supervisor": {
-            "model": os.getenv("SUPERVISOR_MODEL", os.getenv("OPENROUTER_MODEL")),
-            "temperature": float(os.getenv("SUPERVISOR_TEMPERATURE", "0")),
+        "nutritionist": {
+            "model": os.getenv("NUTRITIONIST_MODEL", os.getenv("OPENROUTER_MODEL")),
+            "temperature": float(os.getenv("NUTRITIONIST_TEMPERATURE", "0")),
             "streaming": True
         },
         "researcher": {

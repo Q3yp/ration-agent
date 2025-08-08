@@ -95,112 +95,157 @@ def _analyze_sheet_structure(filepath: str, sheet_name: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-async def excel_metadata_impl(filepath: str, session_id: str) -> str:
-    """Implementation for excel_metadata tool."""
+async def excel_metadata_impl(filepaths: List[str], session_id: str) -> str:
+    """Implementation for excel_metadata tool - supports batch operations."""
     try:
-        full_path = await _get_session_file_path(filepath, session_id)
+        results = {}
         
-        if not os.path.exists(full_path):
-            return f"Error: File '{filepath}' not found in session workspace"
-        
-        # Get file info
-        file_stat = os.stat(full_path)
-        file_size_mb = round(file_stat.st_size / (1024 * 1024), 2)
-        
-        # Get sheet names
-        try:
-            excel_file = pd.ExcelFile(full_path)
-            sheet_names = excel_file.sheet_names
-        except Exception as e:
-            return f"Error reading Excel file: {str(e)}"
-        
-        # Analyze each sheet
-        sheets_info = {}
-        for sheet_name in sheet_names:
+        for filepath in filepaths:
             try:
-                analysis = _analyze_sheet_structure(full_path, sheet_name)
-                sheets_info[sheet_name] = {
-                    "dimensions": analysis["dimensions"],
-                    "columns": analysis["columns"]
+                full_path = await _get_session_file_path(filepath, session_id)
+                
+                if not os.path.exists(full_path):
+                    results[filepath] = {"error": f"File '{filepath}' not found in session workspace"}
+                    continue
+                
+                # Get file info
+                file_stat = os.stat(full_path)
+                file_size_mb = round(file_stat.st_size / (1024 * 1024), 2)
+                
+                # Get sheet names
+                try:
+                    excel_file = pd.ExcelFile(full_path)
+                    sheet_names = excel_file.sheet_names
+                except Exception as e:
+                    results[filepath] = {"error": f"Error reading Excel file: {str(e)}"}
+                    continue
+                
+                # Analyze each sheet
+                sheets_info = {}
+                for sheet_name in sheet_names:
+                    try:
+                        analysis = _analyze_sheet_structure(full_path, sheet_name)
+                        sheets_info[sheet_name] = {
+                            "dimensions": analysis["dimensions"],
+                            "columns": analysis["columns"]
+                        }
+                    except Exception as e:
+                        sheets_info[sheet_name] = {"error": str(e)}
+                
+                # Build simplified result
+                results[filepath] = {
+                    "file_info": {
+                        "sheets": sheet_names,
+                        "file_size": f"{file_size_mb}MB"
+                    },
+                    "sheets": sheets_info
                 }
+                
             except Exception as e:
-                sheets_info[sheet_name] = {"error": str(e)}
+                logger.error(f"Excel metadata analysis failed for {filepath}: {e}")
+                results[filepath] = {"error": f"Error analyzing Excel file: {str(e)}"}
         
-        # Build simplified result
-        result = {
-            "file_info": {
-                "sheets": sheet_names,
-                "file_size": f"{file_size_mb}MB"
-            },
-            "sheets": sheets_info
-        }
-        
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        return json.dumps(results, ensure_ascii=False, indent=2)
         
     except Exception as e:
         logger.error(f"Excel metadata analysis failed: {e}")
-        return f"Error analyzing Excel file: {str(e)}"
+        return f"Error analyzing Excel file(s): {str(e)}"
 
 
-async def excel_query_impl(filepath: str, sheet: str, query_string: str, session_id: str, header_row: int = 0) -> str:
-    """Implementation for excel_query tool."""
+async def excel_query_impl(queries: List[Dict[str, Any]], session_id: str) -> str:
+    """Implementation for excel_query tool - supports batch operations."""
     try:
-        full_path = await _get_session_file_path(filepath, session_id)
+        results = {}
+        loaded_files = {}  # Cache loaded files to avoid re-reading
         
-        if not os.path.exists(full_path):
-            return f"Error: File '{filepath}' not found in session workspace"
-        
-        # Read Excel file using shared function for consistency with metadata
-        try:
-            df = _read_excel_sheet(full_path, sheet, header_row)
-        except Exception as e:
-            return f"Error reading Excel sheet '{sheet}': {str(e)}"
-        
-        # Execute query
-        try:
-            # Create safe execution context
-            exec_context = {
-                "df": df, 
-                "pd": pd,
-                "__builtins__": {}
-            }
-            
-            # Handle different query types
-            if query_string.strip().startswith('df.'):
-                # Direct pandas operations like df.head(), df.groupby(), etc.
-                result = eval(query_string, exec_context)
-            else:
-                # Try pandas query syntax first
-                try:
-                    result = df.query(query_string)
-                except Exception:
-                    # If query syntax fails, try eval with df context
-                    result = eval(query_string, exec_context)
-            
-            # Format result for output
-            if isinstance(result, pd.DataFrame):
-                if len(result) == 0:
-                    return "Query returned no results."
-                elif len(result) > 100:
-                    # Truncate large results
-                    output = f"Query returned {len(result)} rows (showing first 100):\n\n"
-                    output += result.head(100).to_string(index=False)
+        for i, query_info in enumerate(queries):
+            try:
+                filepath = query_info["filepath"]
+                sheet = query_info["sheet"]
+                query_string = query_info["query_string"]
+                header_row = query_info.get("header_row", 0)
+                query_id = query_info.get("id", f"query_{i}")
+                
+                # Get or load the Excel file
+                file_key = f"{filepath}|{sheet}|{header_row}"
+                if file_key not in loaded_files:
+                    full_path = await _get_session_file_path(filepath, session_id)
+                    
+                    if not os.path.exists(full_path):
+                        results[query_id] = {"error": f"File '{filepath}' not found in session workspace"}
+                        continue
+                    
+                    # Read Excel file using shared function
+                    try:
+                        df = _read_excel_sheet(full_path, sheet, header_row)
+                        loaded_files[file_key] = df
+                    except Exception as e:
+                        results[query_id] = {"error": f"Error reading Excel sheet '{sheet}': {str(e)}"}
+                        continue
                 else:
-                    output = f"Query returned {len(result)} rows:\n\n"
-                    output += result.to_string(index=False)
-            elif isinstance(result, pd.Series):
-                output = f"Query result:\n\n{result.to_string()}"
-            else:
-                output = f"Query result: {result}"
+                    df = loaded_files[file_key]
+                
+                # Execute query
+                try:
+                    # Create safe execution context
+                    exec_context = {
+                        "df": df, 
+                        "pd": pd,
+                        "__builtins__": {}
+                    }
+                    
+                    # Handle different query types
+                    if query_string.strip().startswith('df.'):
+                        # Direct pandas operations like df.head(), df.groupby(), etc.
+                        result = eval(query_string, exec_context)
+                    else:
+                        # Try pandas query syntax first
+                        try:
+                            result = df.query(query_string)
+                        except Exception:
+                            # If query syntax fails, try eval with df context
+                            result = eval(query_string, exec_context)
+                    
+                    # Format result for output
+                    if isinstance(result, pd.DataFrame):
+                        if len(result) == 0:
+                            output = "Query returned no results."
+                        elif len(result) > 100:
+                            # Truncate large results
+                            output = f"Query returned {len(result)} rows (showing first 100):\n\n"
+                            output += result.head(100).to_string(index=False)
+                        else:
+                            output = f"Query returned {len(result)} rows:\n\n"
+                            output += result.to_string(index=False)
+                    elif isinstance(result, pd.Series):
+                        output = f"Query result:\n\n{result.to_string()}"
+                    else:
+                        output = f"Query result: {result}"
+                    
+                    results[query_id] = {
+                        "filepath": filepath,
+                        "sheet": sheet,
+                        "query": query_string,
+                        "result": output
+                    }
+                    
+                except Exception as e:
+                    results[query_id] = {
+                        "filepath": filepath,
+                        "sheet": sheet,
+                        "query": query_string,
+                        "error": f"Error executing query: {str(e)}\nMake sure to use 'df' to reference the dataframe, e.g., 'df.head()' or column names in quotes for query syntax."
+                    }
             
-            return output
-            
-        except Exception as e:
-            return f"Error executing query: {str(e)}\nMake sure to use 'df' to reference the dataframe, e.g., 'df.head()' or column names in quotes for query syntax."
+            except Exception as e:
+                query_id = query_info.get("id", f"query_{i}")
+                results[query_id] = {"error": f"Error processing query: {str(e)}"}
+        
+        return json.dumps(results, ensure_ascii=False, indent=2)
     
     except Exception as e:
-        logger.error(f"Excel query failed: {e}")
-        return f"Error processing Excel query: {str(e)}"
+        logger.error(f"Excel batch query failed: {e}")
+        return f"Error processing Excel queries: {str(e)}"
 
 
 
@@ -263,18 +308,18 @@ async def read_excel_impl(filepath: str, sheet: str, coordinates: str, session_i
 def create_excel_metadata_tool(session_id: str):
     """Create excel_metadata tool bound to a specific session."""
     @tool
-    async def excel_metadata(filepath: str) -> str:
+    async def excel_metadata(filepaths: List[str]) -> str:
         """
         Get Excel file metadata showing available sheets and column names.
-        Simple overview of what's available for querying.
+        Supports batch operations for multiple files.
 
         Args:
-            filepath: Path to the Excel file (relative to session workspace)
+            filepaths: List of paths to Excel files (relative to session workspace)
 
         Returns:
-            JSON with sheet names and column names for each sheet
+            JSON with sheet names and column names for each file
         """
-        return await excel_metadata_impl(filepath, session_id)
+        return await excel_metadata_impl(filepaths, session_id)
     
     return excel_metadata
 
@@ -282,23 +327,25 @@ def create_excel_metadata_tool(session_id: str):
 def create_excel_query_tool(session_id: str):
     """Create excel_query tool bound to a specific session."""
     @tool
-    async def excel_query(filepath: str, sheet: str, query_string: str, header_row: int = 0) -> str:
+    async def excel_query(queries: List[Dict[str, Any]]) -> str:
         """
-        Execute pandas queries on Excel sheets. Use excel_metadata first 
-        to see available columns.
+        Execute pandas queries on Excel sheets. Supports batch operations.
+        Use excel_metadata first to see available columns.
         
         Args:
-            filepath: Path to the Excel file (relative to session workspace)
-            sheet: Name of the sheet to query
-            query_string: Either:
-                - Pandas query syntax: "column > 5" or "name == 'value'"
-                - Direct df operations: "df.head()" or "df.groupby('col').sum()"
-            - header_row: Row number to use as column headers (default: 0, first row)
+            queries: List of query dictionaries, each containing:
+                - filepath: Path to the Excel file (relative to session workspace)
+                - sheet: Name of the sheet to query
+                - query_string: Either:
+                    - Pandas query syntax: "column > 5" or "name == 'value'"
+                    - Direct df operations: "df.head()" or "df.groupby('col').sum()"
+                - header_row: Row number to use as column headers (default: 0)
+                - id: Optional identifier for the query (default: query_N)
             
         Returns:
-            Formatted query results
+            JSON with formatted query results for each query
         """
-        return await excel_query_impl(filepath, sheet, query_string, session_id, header_row)
+        return await excel_query_impl(queries, session_id)
     
     return excel_query
 

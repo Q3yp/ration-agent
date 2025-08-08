@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from langchain_core.messages import HumanMessage
+from langgraph.types import Command
 from models import (
     ChatRequest, FileUploadResponse, FileListResponse, FileDeleteResponse,
     SessionCreateRequest, SessionCreateResponse, SessionStatsResponse,
@@ -21,6 +22,7 @@ from agents.nodes import StreamingResponseParser
 from utils.message_parser import message_parser
 from utils.model_config import get_model_config
 from utils.prompt_loader import env
+from utils.stop_manager import StopManager
 
 
 router = APIRouter()
@@ -59,11 +61,9 @@ async def generate_title_for_session(session_id: str, user_message: str, title_q
     if not generated_title or len(generated_title) < 3:
         generated_title = "New Conversation"
 
-    # Update the session title
+    # Update the session title and mark as generated
     await session_manager.update_session_title(session_id, generated_title)
-    session_context = await session_manager.get_session(session_id)
-    if session_context:
-        session_context.title_generated = True
+    await session_manager.mark_title_generated(session_id)
 
     logger.info(f"Generated title for session {session_id}: {generated_title}")
 
@@ -245,6 +245,43 @@ async def generate_session_title(session_id: str, request: SessionTitleRequest):
 
 
 
+@router.post("/chat/stop/{session_id}")
+async def stop_chat(session_id: str):
+    """Request stop for an active chat session"""
+    logger.info(f"STOP: Stop request received for session {session_id}")
+    
+    # Verify session exists
+    session_context = await session_manager.get_session(session_id)
+    if not session_context:
+        logger.error(f"STOP: Session {session_id} not found for stop request")
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    try:
+        # Cancel the active task immediately
+        logger.info(f"STOP: Cancelling task for session {session_id}")
+        cancelled = await StopManager.cancel_task(session_id)
+        
+        if cancelled:
+            logger.info(f"STOP: Task cancelled successfully for session {session_id}")
+            return {
+                "message": "Execution stopped",
+                "session_id": session_id,
+                "timestamp": asyncio.get_event_loop().time(),
+                "note": "Task cancelled immediately"
+            }
+        else:
+            logger.info(f"STOP: No active task found for session {session_id}")
+            return {
+                "message": "No active execution to stop",
+                "session_id": session_id,
+                "timestamp": asyncio.get_event_loop().time()
+            }
+    
+    except Exception as e:
+        logger.error(f"STOP: Failed to stop session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to stop session: {str(e)}")
+
+
 @router.post("/chat/stream/{session_id}")
 async def stream_chat(session_id: str, request: ChatRequest):
     """HTTP Server-Sent Events streaming endpoint for real-time chat"""
@@ -291,15 +328,40 @@ async def stream_chat(session_id: str, request: ChatRequest):
             yield f"event: connected\ndata: {json.dumps({'message_id': current_message_id, 'session_id': session_id})}\n\n"
             yield f"event: thinking\ndata: {json.dumps({'type': 'agent_thinking', 'message_id': current_message_id})}\n\n"
 
+            # Register current task for cancellation support
+            current_task = asyncio.current_task()
+            await StopManager.register_task(session_id, current_task)
+
+            # Add user message to appropriate thread based on workflow stage
+            user_msg = HumanMessage(content=user_message)
+            
+            # Get current state to check workflow_stage
+            try:
+                current_state = await session_agent.aget_state(config)
+                workflow_stage = current_state.values.get("workflow_stage") if current_state.values else None
+                logger.info(f"ROUTES: Current workflow_stage: {workflow_stage}")
+                
+                if workflow_stage == "researcher":
+                    agent_input = {"researcher_messages": [user_msg]}
+                elif workflow_stage == "coder":
+                    agent_input = {"coder_messages": [user_msg]}
+                else:
+                    # Default to nutritionist
+                    agent_input = {"messages": [user_msg]}
+            except Exception as e:
+                logger.error(f"ROUTES: Failed to get state, defaulting to nutritionist: {e}")
+                agent_input = {"nutritionist_messages": [user_msg]}
+
             # Create async iterator for agent events
             agent_events = session_agent.astream_events(
-                {"messages": [HumanMessage(content=user_message)]},
+                agent_input,
                 config=config,
                 version="v2"
             )
 
             # Process both agent events and title updates concurrently
             async for event in agent_events:
+                
                 # Check for title updates first (non-blocking)
                 try:
                     title = title_queue.get_nowait()
@@ -407,8 +469,19 @@ async def stream_chat(session_id: str, request: ChatRequest):
             }
             yield f"event: complete\ndata: {json.dumps(completion_data, ensure_ascii=False)}\n\n"
             
+        except asyncio.CancelledError:
+            logger.info(f"STREAM: Task cancelled for session {session_id}")
+            # This was a user-requested stop via task cancellation
+            stopped_data = {
+                "type": "agent_stopped", 
+                "message": "Agent execution stopped by user request",
+                "session_id": session_id,
+                "timestamp": asyncio.get_event_loop().time()
+            }
+            yield f"event: stopped\ndata: {json.dumps(stopped_data, ensure_ascii=False)}\n\n"
+            
         except Exception as e:
-            logger.error(f"Error in SSE stream for session {session_id}: {e}")
+            logger.error(f"STREAM: Error in SSE stream for session {session_id}: {e}")
             error_data = {
                 "type": "error",
                 "content": f"Error processing message: {str(e)}",
@@ -417,6 +490,10 @@ async def stream_chat(session_id: str, request: ChatRequest):
                 "timestamp": asyncio.get_event_loop().time()
             }
             yield f"event: error\ndata: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+        
+        finally:
+            # Always cleanup the task from registry
+            await StopManager.cleanup_task(session_id)
     
     return StreamingResponse(
         generate_sse_stream(),

@@ -4,15 +4,16 @@ import logging
 from typing import Literal, Dict, Any
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage
-from langgraph.types import Command
+from langgraph.types import Command, interrupt
 from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 
 from utils.prompt_loader import apply_prompt_template
 from utils.tools import get_tools
-from utils.tools import get_search_tools, get_supervisor_tools
+from utils.tools import get_search_tools, get_nutritionist_tools
 from utils.model_config import get_model_config
-from core.agent import OrchestratorState
+from utils.stop_manager import StopManager
+from core.agent import FormulationState
 
 # Configure logging for node message parsing
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ class StreamingResponseParser:
         return result
     
     def _parse_action_content(self, content: str) -> Dict[str, str]:
-        """Parse action content like 'route:supervisor, finding:research completed'"""
+        """Parse action content like 'route:nutritionist, finding:research completed'"""
         action_data = {}
         # Split by comma and parse key:value pairs
         for item in content.split(','):
@@ -119,25 +120,37 @@ class StreamingResponseParser:
         return action_data
 
 
-async def supervisor_node(state: OrchestratorState, config: RunnableConfig = None) -> Command[Literal["researcher", "coder", "__end__"]]:
-    """Supervisor node that analyzes requests and routes to appropriate workers"""
-    # Get model using centralized configuration
-    model = get_model_config("supervisor")
-    
-    # Get session_id from config to create session-bound artifact tools
+async def nutritionist_node(state: FormulationState, config: RunnableConfig = None) -> Command[Literal["researcher", "coder", "__end__"]]:
+    """Nutritionist node that analyzes requests and routes to appropriate workers"""
+    # Get session_id from config
     session_id = config["configurable"]["thread_id"]
     
-    # Get supervisor tools (artifact creation and listing + Excel tools)
-    supervisor_tools = await get_supervisor_tools(session_id)
+    # Check workflow stage - only route if explicitly set to worker nodes
+    workflow_stage = state.get("workflow_stage")
+    logger.info(f"NODE: Nutritionist node - current workflow_stage: {workflow_stage}")
     
-    supervisor = create_react_agent(
+    if workflow_stage == "researcher":
+        logger.info(f"NODE: Routing to researcher based on workflow_stage")
+        return Command(goto="researcher")
+    elif workflow_stage == "coder":
+        logger.info(f"NODE: Routing to coder based on workflow_stage") 
+        return Command(goto="coder")
+    
+    # Get model using centralized configuration
+    model = get_model_config("nutritionist")
+    
+    # Get nutritionist tools (artifact creation and listing + Excel tools)
+    nutritionist_tools = await get_nutritionist_tools(session_id)
+    
+    nutritionist = create_react_agent(
         model,
-        supervisor_tools,
-        prompt=lambda state: apply_prompt_template("supervisor", state)
+        nutritionist_tools,
+        state_schema=FormulationState,
+        prompt=lambda state: apply_prompt_template("nutritionist", state),
     )
     
-    # Invoke the supervisor agent
-    result = await supervisor.ainvoke(state, config)
+    # Invoke the nutritionist agent
+    result = await nutritionist.ainvoke(state, config)
     
     # Parse the response using new format
     if result.get("messages"):
@@ -169,7 +182,7 @@ async def supervisor_node(state: OrchestratorState, config: RunnableConfig = Non
                         **result,  # Preserves existing messages field
                         "current_task": action_data.get("task", ""),
                         "assigned_worker": "researcher",
-                        "workflow_stage": "working",
+                        "workflow_stage": "researcher",
                         "researcher_messages": [task_message]  # Isolated context for researcher
                     },
                     goto="researcher"
@@ -184,21 +197,21 @@ async def supervisor_node(state: OrchestratorState, config: RunnableConfig = Non
                         **result,  # Preserves existing messages field
                         "current_task": action_data.get("task", ""),
                         "assigned_worker": "coder",
-                        "workflow_stage": "working",
+                        "workflow_stage": "coder",
                         "coder_messages": [task_message]  # Isolated context for coder
                     },
                     goto="coder"
                 )
     
-    # Default: end the conversation with supervisor's response
+    # Default: end the conversation with nutritionist's response
     return Command(
         update={**result, "workflow_stage": "completed"},
         goto="__end__"
     )
 
 
-def _parse_supervisor_response(response_content: str) -> dict:
-    """Parse supervisor LLM response to extract routing decision"""
+def _parse_nutritionist_response(response_content: str) -> dict:
+    """Parse nutritionist LLM response to extract routing decision"""
     # Extract routing decision using regex
     routing_pattern = r"\*\*ROUTING_DECISION:\*\*\s*(\w+)"
     task_pattern = r"\*\*TASK_DESCRIPTION:\*\*\s*(.+?)(?=\n\n|$)"
@@ -215,8 +228,11 @@ def _parse_supervisor_response(response_content: str) -> dict:
     return {"action": "DIRECT_RESPONSE", "task": response_content}
 
 
-async def researcher_node(state: OrchestratorState, config: RunnableConfig = None):
+async def researcher_node(state: FormulationState, config: RunnableConfig = None):
     """Researcher node that performs research tasks"""
+    # Get session_id from config
+    session_id = config["configurable"]["thread_id"]
+    
     # Get model using centralized configuration
     model = get_model_config("researcher")
     
@@ -224,7 +240,8 @@ async def researcher_node(state: OrchestratorState, config: RunnableConfig = Non
     researcher = create_react_agent(
         model,
         tools,
-        prompt=lambda state: apply_prompt_template("researcher", state)
+        state_schema=FormulationState,
+        prompt=lambda state: apply_prompt_template("researcher", state),
     )
     
     result = await researcher.ainvoke(state, config)
@@ -245,7 +262,7 @@ async def researcher_node(state: OrchestratorState, config: RunnableConfig = Non
             return {
                 **result,
                 "search_findings": [action_data.get("finding", parsed["user_message"])],
-                "workflow_stage": "synthesizing",
+                "workflow_stage": "nutritionist",
                 "researcher_messages": result.get("messages", []),  # Update researcher messages
                 "parsed_response": {
                     "user_message": parsed["user_message"],
@@ -258,23 +275,26 @@ async def researcher_node(state: OrchestratorState, config: RunnableConfig = Non
     return {
         **result,
         "search_findings": [],
-        "workflow_stage": "synthesizing"
+        "workflow_stage": "nutritionist"
     }
 
 
-async def coder_node(state: OrchestratorState, config: RunnableConfig = None):
+async def coder_node(state: FormulationState, config: RunnableConfig = None):
     """Coder node that handles code execution and analysis"""
+    # Get session_id from config
+    session_id = config["configurable"]["thread_id"]
+    
     # Get model using centralized configuration
     model = get_model_config("coder")
     
-    # Get session_id from config which is passed by the session-bound agent
-    session_id = config["configurable"]["thread_id"]
+    # Get tools for the session
     tools = await get_tools(session_id)
     
     coder = create_react_agent(
         model,
         tools,
-        prompt=lambda state: apply_prompt_template("coder", state)
+        state_schema=FormulationState,
+        prompt=lambda state: apply_prompt_template("coder", state),
     )
     
     result = await coder.ainvoke(state, config)
@@ -295,7 +315,7 @@ async def coder_node(state: OrchestratorState, config: RunnableConfig = None):
             return {
                 **result,
                 "code_results": [action_data.get("finding", parsed["user_message"])],
-                "workflow_stage": "synthesizing",
+                "workflow_stage": "nutritionist",
                 "coder_messages": result.get("messages", []),  # Update coder messages
                 "parsed_response": {
                     "user_message": parsed["user_message"],
@@ -308,5 +328,5 @@ async def coder_node(state: OrchestratorState, config: RunnableConfig = None):
     return {
         **result,
         "code_results": [],
-        "workflow_stage": "synthesizing"
+        "workflow_stage": "nutritionist"
     }

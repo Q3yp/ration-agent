@@ -37,7 +37,7 @@ def create_session_file_workspace(session_id: str, base_dir: str = None) -> str:
 
 @dataclass
 class SessionContext:
-    """Represents a session with its metadata and state"""
+    """Full session context from database"""
     session_id: str
     workspace_path: str
     user_id: str = "default_user"
@@ -51,28 +51,16 @@ class SessionContext:
     title_generated: bool = False
     
     def resolve_file_path(self, filepath: str) -> str:
-        """Resolve a relative or absolute file path within the session workspace.
-        
-        Args:
-            filepath: File path (relative or absolute)
-            
-        Returns:
-            Absolute path resolved within session workspace
-        """
+        """Resolve a relative or absolute file path within the session workspace."""
         if os.path.isabs(filepath):
-            # If already absolute, check if it's within workspace
             workspace_abs = os.path.abspath(self.workspace_path)
             filepath_abs = os.path.abspath(filepath)
-            
-            # If the path is within workspace, return as is
             if filepath_abs.startswith(workspace_abs):
                 return filepath_abs
             else:
-                # If outside workspace, treat as relative to workspace
                 filename = os.path.basename(filepath)
                 return os.path.join(workspace_abs, filename)
         else:
-            # Relative path - resolve within workspace
             return os.path.abspath(os.path.join(self.workspace_path, filepath))
     
     def get_workspace(self) -> Path:
@@ -82,20 +70,29 @@ class SessionContext:
     def ensure_workspace_exists(self) -> None:
         """Ensure the workspace directory exists"""
         self.get_workspace().mkdir(parents=True, exist_ok=True)
-    
 
+@dataclass 
+class SessionInfo:
+    """Lightweight session info for in-memory cache"""
+    session_id: str
+    title: str
+    created_at: datetime
+    last_accessed: datetime
+    active_connections: int = 0
 
 class SessionManager:
     """Centralized session lifecycle management with database persistence"""
     
     def __init__(self):
-        self._sessions: Dict[str, SessionContext] = {}
-        self._active_sessions: Set[str] = set()
+        self._session_info: Dict[str, SessionInfo] = {}  # Lightweight cache for display
         self._db_pool: Optional[AsyncConnectionPool] = None
         self._session_agents: Dict[str, Any] = {}  # Cache agents per session
+        self._agent_creation_locks: Dict[str, asyncio.Lock] = {}  # Prevent concurrent agent creation
+        self._sessions: Dict[str, SessionContext] = {}  # In-memory session cache
+        self._active_sessions: Set[str] = set()  # Set of active session IDs
     
     async def initialize(self):
-        """Initialize database connection and load existing sessions"""
+        """Initialize database connection - no session loading"""
         # Use the shared connection pool for all database operations
         from core.agent import _connection_manager
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -110,8 +107,7 @@ class SessionManager:
         # Create user_sessions table if it doesn't exist
         await self.create_user_sessions_table()
 
-        # Load existing sessions from database
-        await self.load_sessions_from_database()
+        # No session loading - everything is database-backed
 
     async def create_user_sessions_table(self):
         """Ensure user_sessions table exists (should be created by init.sql in Docker)"""
@@ -328,9 +324,11 @@ class SessionManager:
 
     async def create_session(self, session_id: str, user_id: str = "default_user") -> SessionContext:
         """Create a new session with workspace and prepare agent context"""
-        if session_id in self._sessions:
+        # Check if session already exists in database
+        existing_session = await self.get_session_from_db(session_id)
+        if existing_session:
             logger.debug(f"Session {session_id} already exists, returning existing session")
-            return self._sessions[session_id]
+            return existing_session
         
         # Create workspace for session
         workspace_path = create_session_file_workspace(session_id)
@@ -343,27 +341,58 @@ class SessionManager:
             workspace_path=workspace_path
         )
         
-        # Register session in memory
-        self._sessions[session_id] = session_context
-        self._active_sessions.add(session_id)
-        
-        # Persist to database
+        # Persist to database only
         await self.persist_session_to_database(session_context)
         
         return session_context
     
     async def get_session(self, session_id: str) -> Optional[SessionContext]:
-        """Get existing session or None if not found"""
-        session = self._sessions.get(session_id)
+        """Get existing session from database and update last_accessed"""
+        session = await self.get_session_from_db(session_id)
         if session:
-            session.last_accessed = datetime.now(timezone.utc)
-            # Update database asynchronously
+            # Update last accessed time
             await self.update_session_last_accessed(session_id)
         return session
     
+    async def get_session_from_db(self, session_id: str) -> Optional[SessionContext]:
+        """Get session directly from database - always fresh data"""
+        if not self._db_pool:
+            return None
+        
+        try:
+            async with self._db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT session_id, user_id, workspace_path, created_at, last_accessed, active, deleted, metadata "
+                        "FROM user_sessions WHERE session_id = %s AND active = TRUE AND deleted = FALSE",
+                        (session_id,)
+                    )
+                    row_data = await cur.fetchone()
+                    if not row_data:
+                        return None
+                    
+                    columns = [desc[0] for desc in cur.description]
+                    row = dict(zip(columns, row_data))
+                    metadata = row.get('metadata', {})
+                    
+                    return SessionContext(
+                        session_id=row['session_id'],
+                        user_id=row['user_id'],
+                        workspace_path=row['workspace_path'],
+                        created_at=row['created_at'],
+                        last_accessed=row['last_accessed'],
+                        active=row['active'],
+                        deleted=row.get('deleted', False),
+                        title=metadata.get('title', 'New Conversation'),
+                        title_generated=metadata.get('title_generated', False)
+                    )
+        except Exception as e:
+            logger.error(f"Failed to get session {session_id} from database: {e}")
+            return None
+    
     async def get_session_agent(self, session_id: str):
-        """Get or create agent for session (session must exist)"""
-        session = await self.get_session(session_id)
+        """Get or create agent for session (session must exist) - thread-safe"""
+        session = await self.get_session_from_db(session_id)
         if not session:
             raise RuntimeError(f"Session '{session_id}' not found")
         
@@ -372,11 +401,21 @@ class SessionManager:
             logger.debug(f"Reusing cached agent for session {session_id}")
             return self._session_agents[session_id]
         
-        # Create new agent and cache it
-        logger.info(f"Creating new agent for session {session_id}")
-        agent = await create_agent_for_session(session_id)
-        self._session_agents[session_id] = agent
-        return agent
+        # Ensure only one agent creation per session using lock
+        if session_id not in self._agent_creation_locks:
+            self._agent_creation_locks[session_id] = asyncio.Lock()
+        
+        async with self._agent_creation_locks[session_id]:
+            # Double-check after acquiring lock
+            if session_id in self._session_agents:
+                logger.debug(f"Agent created while waiting for lock for session {session_id}")
+                return self._session_agents[session_id]
+            
+            # Create new agent and cache it
+            logger.info(f"Creating new agent for session {session_id}")
+            agent = await create_agent_for_session(session_id)
+            self._session_agents[session_id] = agent
+            return agent
     
     async def increment_connection(self, session_id: str):
         """Increment active connection count for session"""
@@ -397,6 +436,29 @@ class SessionManager:
             session.title = title
             # Persist to database
             await self.persist_session_to_database(session)
+    
+    async def mark_title_generated(self, session_id: str):
+        """Mark title as generated and persist to database immediately"""
+        if not self._db_pool:
+            return
+        
+        try:
+            async with self._db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    # Update metadata to mark title as generated
+                    await cur.execute("""
+                        UPDATE user_sessions 
+                        SET metadata = jsonb_set(
+                            COALESCE(metadata, '{}'::jsonb), 
+                            '{title_generated}', 
+                            'true'::jsonb
+                        )
+                        WHERE session_id = %s AND deleted = FALSE
+                    """, (session_id,))
+                    logger.info(f"Marked title as generated for session {session_id}")
+        except Exception as e:
+            logger.error(f"Failed to mark title as generated for session {session_id}: {e}")
+    
 
     async def get_session_stats(self, session_id: str) -> Dict:
         """Get session statistics and metadata"""
@@ -422,58 +484,77 @@ class SessionManager:
     
     async def cleanup_session(self, session_id: str, remove_files: bool = False):
         """Clean up session resources"""
+        # Get session from database to ensure it exists
+        session = await self.get_session_from_db(session_id)
+        if not session:
+            logger.warning(f"Session {session_id} not found in database for cleanup")
+            return
+
+        # Clean up agent connection pools first
+        try:
+            await cleanup_agent_session(session_id)
+        except Exception as e:
+            logger.error(f"Error cleaning up agent resources for session {session_id}: {e}")
+
+        if remove_files:
+            workspace_path = Path(session.workspace_path)
+            if workspace_path.exists():
+                import shutil
+                shutil.rmtree(workspace_path)
+
+        # Deactivate in database
+        await self.deactivate_session(session_id)
+
+        # Clean up cached agent and creation lock
+        if session_id in self._session_agents:
+            del self._session_agents[session_id]
+            logger.debug(f"Cleaned up cached agent for session {session_id}")
+        
+        # Clean up agent creation lock
+        if session_id in self._agent_creation_locks:
+            del self._agent_creation_locks[session_id]
+
+        # Remove from memory cache if present
         if session_id in self._sessions:
-            session = self._sessions[session_id]
-
-            # Clean up agent connection pools first
-            try:
-                await cleanup_agent_session(session_id)
-            except Exception as e:
-                logger.error(f"Error cleaning up agent resources for session {session_id}: {e}")
-
-            if remove_files:
-                workspace_path = Path(session.workspace_path)
-                if workspace_path.exists():
-                    import shutil
-                    shutil.rmtree(workspace_path)
-
-            # Deactivate in database
-            await self.deactivate_session(session_id)
-
-            # Clean up cached agent
-            if session_id in self._session_agents:
-                del self._session_agents[session_id]
-                logger.debug(f"Cleaned up cached agent for session {session_id}")
-
             del self._sessions[session_id]
-            self._active_sessions.discard(session_id)
+        self._active_sessions.discard(session_id)
 
     async def soft_delete_session(self, session_id: str):
         """Soft delete a session - mark as deleted but preserve data and history"""
+        # Check if session exists in database first
+        session = await self.get_session_from_db(session_id)
+        if not session:
+            logger.warning(f"Session {session_id} not found in database for soft delete")
+            return
+
+        # Clean up agent connection pools but keep session data
+        try:
+            await cleanup_agent_session(session_id)
+        except Exception as e:
+            logger.error(f"Error cleaning up agent resources for session {session_id}: {e}")
+
+        # Mark as deleted in database (soft delete)
+        await self.mark_session_deleted(session_id)
+
+        # Clean up cached agent and creation lock
+        if session_id in self._session_agents:
+            del self._session_agents[session_id]
+            logger.debug(f"Cleaned up cached agent for session {session_id}")
+        
+        # Clean up agent creation lock
+        if session_id in self._agent_creation_locks:
+            del self._agent_creation_locks[session_id]
+
+        # Remove from memory cache if present
         if session_id in self._sessions:
-            session = self._sessions[session_id]
-
-            # Clean up agent connection pools but keep session data
-            try:
-                await cleanup_agent_session(session_id)
-            except Exception as e:
-                logger.error(f"Error cleaning up agent resources for session {session_id}: {e}")
-
-            # Mark as deleted in database (soft delete)
-            await self.mark_session_deleted(session_id)
-
-            # Clean up cached agent
-            if session_id in self._session_agents:
-                del self._session_agents[session_id]
-                logger.debug(f"Cleaned up cached agent for session {session_id}")
-
-            # Remove from memory cache but don't delete from database
             del self._sessions[session_id]
-            self._active_sessions.discard(session_id)
+        self._active_sessions.discard(session_id)
 
     async def soft_delete_all_sessions(self):
         """Soft delete all active sessions - mark as deleted but preserve data and history"""
-        session_ids = list(self._active_sessions.copy())
+        # Get all active sessions from database instead of memory
+        active_sessions = await self.get_all_active_sessions_from_db()
+        session_ids = [session["session_id"] for session in active_sessions]
         deleted_count = 0
         
         for session_id in session_ids:
