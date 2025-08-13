@@ -157,6 +157,24 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
     </div>
   )
 
+  const renderStopMessage = () => (
+    <div className="flex justify-start items-start gap-2">
+      <div className="w-8 h-8 flex items-center justify-center">
+        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+      </div>
+      <Card className="max-w-[80%] min-w-0 overflow-hidden bg-orange-50 border-orange-200">
+        <CardContent className="p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-orange-700">{message.content}</span>
+          </div>
+          <div className="text-xs text-orange-600 mt-1">
+            {formatTimestamp(message.timestamp)}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+
   const renderErrorMessage = () => (
     <Card className="max-w-[80%] min-w-0 overflow-hidden border-red-200 bg-red-50">
       <CardContent className="p-3">
@@ -386,6 +404,8 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
       return renderToolResult()
     case 'system':
       return renderSystemMessage()
+    case 'stop':
+      return renderStopMessage()
     case 'error':
       return renderErrorMessage()
     case 'agent_thinking':

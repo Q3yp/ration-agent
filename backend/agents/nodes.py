@@ -3,10 +3,13 @@ import re
 import logging
 from typing import Literal, Dict, Any
 from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from langgraph.types import Command, interrupt
 from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import RemoveMessage
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
+
 
 from utils.prompt_loader import apply_prompt_template
 from utils.tools import get_tools
@@ -110,14 +113,53 @@ class StreamingResponseParser:
         return result
     
     def _parse_action_content(self, content: str) -> Dict[str, str]:
-        """Parse action content like 'route:nutritionist, finding:research completed'"""
-        action_data = {}
-        # Split by comma and parse key:value pairs
-        for item in content.split(','):
-            if ':' in item:
-                key, value = item.split(':', 1)
-                action_data[key.strip()] = value.strip()
-        return action_data
+      """Parse structured action with route and task/finding fields"""
+      action_data = {}
+
+      # Extract route (simple word)
+      route_match = re.search(r'route:\s*(\w+)', content)
+      if route_match:
+          action_data['route'] = route_match.group(1).strip()
+
+      # Extract task (everything after "task:")
+      task_match = re.search(r'task:\s*(.+)', content, re.DOTALL)
+      if task_match:
+          action_data['task'] = task_match.group(1).strip()
+
+      # Extract finding (everything after "finding:")  
+      finding_match = re.search(r'finding:\s*(.+)', content, re.DOTALL)
+      if finding_match:
+          action_data['finding'] = finding_match.group(1).strip()
+
+      return action_data
+
+
+async def pre_model_hook(state: FormulationState):
+    cur_node = state.get('workflow_stage', 'nutritionist')  # Default to nutritionist
+    logger.info(state.get('workflow_stage'))
+    # Get the base messages for current workflow stage
+    base_messages = state.get(cur_node + "_messages", [])
+    all_messages = state.get("messages", [])
+    
+    # Check if there are new messages to distribute to current node
+    processed_count = state.get("processed_message_count", 0)
+    current_count = len(all_messages)
+    
+    if current_count > processed_count:
+        # Get new messages since last processing
+        new_messages = all_messages[processed_count:]
+        updated_messages = base_messages + new_messages
+        
+        return {
+            "messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES),*updated_messages],
+            cur_node + "_messages": new_messages,  # Append new messages to current node
+            "processed_message_count": current_count  # Update tracker
+        }
+    
+    
+    # No new messages, return current role messages
+    return {"llm_input_messages": base_messages}
+
 
 
 async def nutritionist_node(state: FormulationState, config: RunnableConfig = None) -> Command[Literal["researcher", "coder", "__end__"]]:
@@ -146,6 +188,7 @@ async def nutritionist_node(state: FormulationState, config: RunnableConfig = No
         model,
         nutritionist_tools,
         state_schema=FormulationState,
+        pre_model_hook=pre_model_hook,
         prompt=lambda state: apply_prompt_template("nutritionist", state),
     )
     
@@ -174,31 +217,32 @@ async def nutritionist_node(state: FormulationState, config: RunnableConfig = No
             # Route based on action data
             if route == "researcher":
                 # Create isolated task message for researcher (no user context)
-                from langchain_core.messages import HumanMessage
-                task_message = HumanMessage(content=action_data.get("task", ""))
+                delegation_message = SystemMessage(content="You are receiving a task from the nutritionist supervisor.")
+                task_message = AIMessage(content=action_data.get("task", ""))
+                count = state.get("processed_message_count", 0)
                 
                 return Command(
                     update={
                         **result,  # Preserves existing messages field
-                        "current_task": action_data.get("task", ""),
-                        "assigned_worker": "researcher",
+                        "messages": result["messages"],
                         "workflow_stage": "researcher",
-                        "researcher_messages": [task_message]  # Isolated context for researcher
+                        "researcher_messages": [delegation_message, task_message],  # Isolated context for researcher
+                        "processed_message_count": count+2
                     },
                     goto="researcher"
                 )
             elif route == "coder":
                 # Create isolated task message for coder (no user context)
-                from langchain_core.messages import HumanMessage
-                task_message = HumanMessage(content=action_data.get("task", ""))
+                delegation_message = SystemMessage(content="You are receiving a task from the nutritionist supervisor.")
+                task_message = AIMessage(content=action_data.get("task", ""))
+                count = state.get("processed_message_count", 0)
                 
                 return Command(
                     update={
                         **result,  # Preserves existing messages field
-                        "current_task": action_data.get("task", ""),
-                        "assigned_worker": "coder",
                         "workflow_stage": "coder",
-                        "coder_messages": [task_message]  # Isolated context for coder
+                        "coder_messages": [delegation_message, task_message], # Isolated context for coder
+                        "processed_message_count": count+2 
                     },
                     goto="coder"
                 )
@@ -241,6 +285,7 @@ async def researcher_node(state: FormulationState, config: RunnableConfig = None
         model,
         tools,
         state_schema=FormulationState,
+        pre_model_hook=pre_model_hook,
         prompt=lambda state: apply_prompt_template("researcher", state),
     )
     
@@ -259,22 +304,36 @@ async def researcher_node(state: FormulationState, config: RunnableConfig = None
             if action_data is None:
                 action_data = {}
             
-            return {
-                **result,
-                "search_findings": [action_data.get("finding", parsed["user_message"])],
-                "workflow_stage": "nutritionist",
-                "researcher_messages": result.get("messages", []),  # Update researcher messages
-                "parsed_response": {
-                    "user_message": parsed["user_message"],
-                    "action_data": action_data,
-                    "full_response": last_message.content
-                }
-            }
+            # Send response back to nutritionist with role indication
+            response_message = SystemMessage(content="Response from researcher agent:")
+            result_message = AIMessage(content=action_data.get("finding", parsed["user_message"]))
+            
+            # All result messages are new from this node's execution
+            new_messages = result["messages"]  # All messages from this node
+            
+            # Update processed count: previous state messages + new messages from this node
+            state_message_count = len(state.get("messages", []))
+            new_processed_count = state_message_count + len(new_messages)
+            
+            return Command(
+                update={
+                    **result,  # Add to main message history
+                    "workflow_stage": "nutritionist",
+                    "researcher_messages": new_messages,  # Add NEW messages to researcher thread
+                    "nutritionist_messages": [response_message, result_message],
+                    "processed_message_count": new_processed_count,  # Update processed count
+                    "parsed_response": {
+                        "user_message": parsed["user_message"],
+                        "action_data": action_data,
+                        "full_response": last_message.content
+                    }
+                },
+                goto="nutritionist"
+            )
     
-    # Fallback for no messages
+    # Fallback for no messages - already handled above
     return {
         **result,
-        "search_findings": [],
         "workflow_stage": "nutritionist"
     }
 
@@ -294,6 +353,7 @@ async def coder_node(state: FormulationState, config: RunnableConfig = None):
         model,
         tools,
         state_schema=FormulationState,
+        pre_model_hook=pre_model_hook,
         prompt=lambda state: apply_prompt_template("coder", state),
     )
     
@@ -312,21 +372,46 @@ async def coder_node(state: FormulationState, config: RunnableConfig = None):
             if action_data is None:
                 action_data = {}
             
-            return {
-                **result,
-                "code_results": [action_data.get("finding", parsed["user_message"])],
-                "workflow_stage": "nutritionist",
-                "coder_messages": result.get("messages", []),  # Update coder messages
-                "parsed_response": {
-                    "user_message": parsed["user_message"],
-                    "action_data": action_data,
-                    "full_response": last_message.content
-                }
-            }
+            # Send response back to nutritionist with role indication
+            response_message = SystemMessage(content="Response from coder agent:")
+            result_message = AIMessage(content=action_data.get("finding"))
+            
+            # All result messages are new from this node's execution
+            new_messages = result["messages"]  # All messages from this node
+            
+            # Update processed count: previous state messages + new messages from this node
+            state_message_count = len(state.get("messages", []))
+            new_processed_count = state_message_count + len(new_messages)
+            
+            return Command(
+                update={
+                    **result,  # Add to main message history
+                    "workflow_stage": "nutritionist", 
+                    "coder_messages": new_messages,  # Add NEW messages to coder thread
+                    "nutritionist_messages": [response_message, result_message],
+                    "processed_message_count": new_processed_count,  # Update processed count
+                    "parsed_response": {
+                        "user_message": parsed["user_message"],
+                        "action_data": action_data,
+                        "full_response": last_message.content
+                    }
+                },
+                goto="nutritionist"
+            )
     
-    # Fallback for no messages
+    # Fallback for no messages - use last message from researcher
+    if result.get("messages"):
+        last_message = result["messages"][-1]
+        response_message = SystemMessage(content="Response from researcher agent:")
+        result_message = AIMessage(content=last_message.content if hasattr(last_message, 'content') else str(last_message))
+        
+        return {
+            **result,
+            "workflow_stage": "nutritionist",
+            "nutritionist_messages": [response_message, result_message]
+        }
+    
     return {
         **result,
-        "code_results": [],
         "workflow_stage": "nutritionist"
     }

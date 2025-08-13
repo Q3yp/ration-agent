@@ -341,16 +341,11 @@ async def stream_chat(session_id: str, request: ChatRequest):
                 workflow_stage = current_state.values.get("workflow_stage") if current_state.values else None
                 logger.info(f"ROUTES: Current workflow_stage: {workflow_stage}")
                 
-                if workflow_stage == "researcher":
-                    agent_input = {"researcher_messages": [user_msg]}
-                elif workflow_stage == "coder":
-                    agent_input = {"coder_messages": [user_msg]}
-                else:
-                    # Default to nutritionist
-                    agent_input = {"messages": [user_msg]}
+                # Add to main messages - pre_model_hook will route to appropriate thread
+                agent_input = {"messages": [user_msg]}
             except Exception as e:
-                logger.error(f"ROUTES: Failed to get state, defaulting to nutritionist: {e}")
-                agent_input = {"nutritionist_messages": [user_msg]}
+                logger.error(f"ROUTES: Failed to get state, defaulting to messages: {e}")
+                agent_input = {"messages": [user_msg]}
 
             # Create async iterator for agent events
             agent_events = session_agent.astream_events(

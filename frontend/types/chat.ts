@@ -9,6 +9,7 @@ export type MessageType =
   | 'agent_thinking'
   | 'agent_complete'
   | 'role_transition'
+  | 'stop'
 
 export interface AttachedFile {
   name: string

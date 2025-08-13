@@ -143,6 +143,7 @@ interface UseSSEChatReturn {
   isTyping: boolean
   connectionError: string | null
   sendMessage: (message: string, filesToShow?: AttachedFile[]) => Promise<void>
+  stopMessage: () => Promise<void>
   retryConnection: () => void
   setInitialMessages: (messages: Message[]) => void
 }
@@ -206,7 +207,8 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
                 timestamp: data.timestamp || Date.now()
               }
             })
-            setIsTyping(false)
+            // Don't set isTyping to false here - agent is still working
+            // Only set to false on 'complete' or 'stopped' events
           }
           break
 
@@ -355,6 +357,21 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
           }
           break
 
+        case 'stopped':
+          if (data.type === 'agent_stopped') {
+            console.log('Agent execution stopped:', data.message)
+            setIsTyping(false)
+            // Add a stop message to show the stop
+            const stopMessage: Message = {
+              id: `${Date.now()}_stopped`,
+              type: 'stop' as MessageType,
+              content: '执行已停止',
+              timestamp: Date.now(),
+            }
+            dispatch({ type: 'ADD_ERROR', payload: stopMessage })
+          }
+          break
+
         case 'error':
           console.error('SSE Error:', data)
           const errorMessage: Message = {
@@ -449,6 +466,9 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
 
     } catch (error: any) {
       if (error.name === 'AbortError') {
+        // Stream was aborted (likely due to stop button) - don't change isTyping here
+        // Let the 'stopped' event from backend handle it
+        console.log('Stream aborted (stop button clicked)')
         return
       }
       
@@ -466,6 +486,36 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
       dispatch({ type: 'ADD_ERROR', payload: errorMessage })
     }
   }, [endpoint, sessionId, handleSSEMessage])
+
+  const stopMessage = useCallback(async () => {
+    try {
+      // Don't abort stream - let backend finish current work naturally
+      
+      // Send stop request to backend
+      const response = await fetch(`${endpoint}/chat/stop/${sessionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to stop: ${response.statusText}`)
+      }
+      
+      const result = await response.json()
+      console.log('Stop requested:', result.message)
+      
+      // Change UI state immediately - show send button instead of stop button
+      setIsTyping(false)
+      
+      // Backend will naturally finish current work and send "stopped" event
+      
+    } catch (error: any) {
+      console.error('Error stopping message:', error)
+      setConnectionError(`Failed to stop: ${error.message}`)
+    }
+  }, [endpoint, sessionId])
 
   const retryConnection = useCallback(() => {
     setConnectionError(null)
@@ -491,6 +541,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
     isTyping,
     connectionError,
     sendMessage,
+    stopMessage,
     retryConnection,
     setInitialMessages,
   }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, AlertTriangle, Upload, Loader2 } from 'lucide-react'
+import { Send, AlertTriangle, Upload, Loader2, Square } from 'lucide-react'
 import MessageList from './MessageList'
 import FileUpload from './FileUpload'
 import HtmlArtifact from './HtmlArtifact'
@@ -35,6 +35,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
     isTyping,
     connectionError,
     sendMessage,
+    stopMessage,
     retryConnection,
     setInitialMessages,
   } = useSSEChat({ 
@@ -225,13 +226,25 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
               disabled={!isConnected || isTyping || historyLoading || !historyInitialized}
               className="flex-1"
             />
-            <Button
-              onClick={handleSendMessage}
-              disabled={!inputValue.trim() || !isConnected || isTyping || historyLoading || !historyInitialized}
-              size="icon"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+            {isTyping ? (
+              <Button
+                onClick={stopMessage}
+                variant="destructive"
+                size="icon"
+                title="停止执行"
+              >
+                <Square className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                onClick={handleSendMessage}
+                disabled={!inputValue.trim() || !isConnected || historyLoading || !historyInitialized}
+                size="icon"
+                title="发送消息"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            )}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
             按 Enter 发送 • Shift+Enter 换行 • {showFileUpload ? '文件上传已启用' : '点击 📁 上传文件'} • 使用服务器发送事件

@@ -9,6 +9,19 @@ from psycopg_pool import AsyncConnectionPool
 
 import logging
 
+# Reducer functions for state annotations (must be named functions for serialization)
+def add_messages(x: list, y: list) -> list:
+    """Reducer function to concatenate message lists"""
+    return x + y
+
+def merge_dicts(x: dict, y: dict) -> dict:
+    """Reducer function to merge dictionaries"""
+    return {**x, **y}
+
+def replace_dict(x: dict, y: dict) -> dict:
+    """Reducer function to replace dictionary"""
+    return y
+
 # Fix for Windows async event loop
 if os.name == 'nt':  # Windows
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -20,29 +33,26 @@ logger = logging.getLogger(__name__)
 
 class FormulationState(AgentState):
     """Extended state for formulation system with isolated message threads"""
-    # Task delegation variables
-    current_task: str = ""
+    # Task context
     task_context: dict = {}
-    assigned_worker: str = ""
     
-    # Worker findings (accumulate results)
-    search_findings: Annotated[list, lambda x, y: x + y] = []
-    code_results: Annotated[list, lambda x, y: x + y] = []
-    
-    # Artifacts (accumulate results)
-    artifacts: Annotated[list, lambda x, y: x + y] = []
+    # Artifacts (accumulate results) - using named functions for serialization
+    artifacts: Annotated[list, add_messages] = []
     
     # Separate message threads for each agent (role isolation)
-    nutritionist_messages: Annotated[list, lambda x, y: x + y] = []
-    researcher_messages: Annotated[list, lambda x, y: x + y] = []
-    coder_messages: Annotated[list, lambda x, y: x + y] = []
+    nutritionist_messages: Annotated[list, add_messages] = []
+    researcher_messages: Annotated[list, add_messages] = []
+    coder_messages: Annotated[list, add_messages] = []
+    
+    # Message count tracker (total messages processed so far)
+    processed_message_count: int = 0
     
     # Workflow control
-    workflow_stage: str = "analyzing"  # analyzing -> delegating -> working -> synthesizing
+    workflow_stage: str = "nutritionist"  
     
     # Feed formulation state
-    feed_database: Annotated[dict, lambda x, y: {**x, **y}] = {}  # Feed name -> feed data
-    current_formulation: Annotated[dict, lambda x, y: y] = {}  # Last formulation result
+    feed_database: Annotated[dict, merge_dicts] = {}  # Feed name -> feed data
+    current_formulation: Annotated[dict, replace_dict] = {}  # Last formulation result
 
 
 class SharedConnectionManager:

@@ -33,7 +33,3 @@ IMPORTANT: Always structure your response with <user> content first, followed by
 - **Nutritionist Communication**: Put comprehensive results in <action> finding field to respond to
 nutritionist ONLY when you have completed your task. you do not need <action> every turn
 
-{% if current_task %}
-## Current Task
-{{ current_task }}
-{% endif %}

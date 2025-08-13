@@ -34,7 +34,3 @@ IMPORTANT: Always structure your response with <user> content first, followed by
 - **Stay Focused**: Address the assigned task precisely, avoid scope expansion
 
 
-{% if current_task %}
-## Current Task
-{{ current_task }}
-{% endif %}

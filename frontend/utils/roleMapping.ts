@@ -14,9 +14,9 @@ export interface RoleInfo {
 }
 
 export const roleMapping: Record<string, RoleInfo> = {
-  'supervisor': {
-    name: '协调员',
-    transitionMessage: '分析任务并处理',
+  'nutritionist': {
+    name: '营养师',
+    transitionMessage: '继续作业',
     icon: Brain,
     color: '#1d4ed8', // Blue-700
     bgColor: '#eff6ff border-2',
@@ -26,7 +26,7 @@ export const roleMapping: Record<string, RoleInfo> = {
       borderColor: '#93c5fd'
     }
   },
-  'researcher': {
+  'researcher': { 
     name: '搜索专员',
     transitionMessage: '开始搜索和研究',
     icon: Search,
