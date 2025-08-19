@@ -2,12 +2,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import tiktoken
 
 from api.routes import router
 from services.session_manager import session_manager
 from core.agent import cleanup_shared_resources
 
 load_dotenv()
+
+# Initialize tiktoken encoder at app startup
+TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

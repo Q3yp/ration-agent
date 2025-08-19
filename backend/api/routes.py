@@ -18,8 +18,8 @@ from utils.message_processor import (
     process_tool_start_event, process_tool_end_event, process_chat_model_stream_event
 )
 from services.chat_history_service import chat_history_service
-from agents.nodes import StreamingResponseParser
-from utils.message_parser import message_parser
+from utils.unified_message_parser import unified_parser
+from models import ParsedMessage
 from utils.model_config import get_model_config
 from utils.prompt_loader import env
 from utils.stop_manager import StopManager
@@ -163,13 +163,37 @@ async def get_session_history(session_id: str, limit: int = 50):
         raise HTTPException(status_code=404, detail="Session not found")
     
     try:
-        # Use the unified parser for consistent message formatting
-        history = await chat_history_service.get_session_history_for_frontend_async(session_id, limit)
+        # Get raw messages from LangGraph checkpointer
+        from core.agent import _connection_manager
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        
+        pool = await _connection_manager.get_shared_pool()
+        checkpointer = AsyncPostgresSaver(pool)
+        config = {"configurable": {"thread_id": session_id}}
+        
+        # Get raw messages from checkpoint
+        state_snapshot = await checkpointer.aget_tuple(config)
+        raw_messages = []
+        if state_snapshot and state_snapshot.checkpoint:
+            channel_values = state_snapshot.checkpoint.get("channel_values", {})
+            raw_messages = channel_values.get("messages", [])
+            
+            # Apply limit if specified
+            if limit and len(raw_messages) > limit:
+                raw_messages = raw_messages[-limit:]
+        
+        # Use unified parser for consistent formatting
+        parsed_messages = unified_parser.parse_messages(raw_messages)
+        
+        # Convert to dict format for JSON serialization
+        messages_for_frontend = [msg.dict() for msg in parsed_messages]
+        
+        # Get summary
         summary = await chat_history_service.get_session_summary_async(session_id)
         
         return {
             "session_id": session_id,
-            "messages": history,
+            "messages": messages_for_frontend,
             "summary": summary
         }
     
@@ -347,11 +371,11 @@ async def stream_chat(session_id: str, request: ChatRequest):
                 logger.error(f"ROUTES: Failed to get state, defaulting to messages: {e}")
                 agent_input = {"messages": [user_msg]}
 
-            # Create async iterator for agent events
+            # Create async iterator for agent events with subgraph streaming
             agent_events = session_agent.astream_events(
                 agent_input,
                 config=config,
-                version="v2"
+                subgraphs=True
             )
 
             # Process both agent events and title updates concurrently
@@ -370,75 +394,33 @@ async def stream_chat(session_id: str, request: ChatRequest):
                 except asyncio.QueueEmpty:
                     pass  # No title update available
 
-                # Process agent event
-                if event["event"] == "on_chat_model_stream":
-                    chunk_content = event["data"]["chunk"].content
-                    if chunk_content:
-                        accumulated_content += chunk_content
-                        
-                        # Check for create_artifact tool mention in accumulated content
-                        try:
-                            if "create_artifact" in accumulated_content and not artifact_loading_sent:
-                                artifact_loading_sent = True
-                                artifact_loading_data = {
-                                    "type": "artifact_loading",
-                                    "message_id": current_message_id,
-                                    "timestamp": asyncio.get_event_loop().time()
-                                }
-                                yield f"event: artifact_loading\ndata: {json.dumps(artifact_loading_data, ensure_ascii=False)}\n\n"
-                        except Exception as e:
-                            logger.error(f"Error in artifact loading detection: {e}")
-                            # Continue processing without failing the stream
-                        
-                        # Parse the chunk using unified message parser
-                        parsed_result = message_parser.parse_streaming_chunk(chunk_content)
-                        
-                        # Send user content to frontend (handles multiple <user> blocks)
-                        if parsed_result["user_chunk"]:
-                            chunk_data = {
-                                "type": "agent_chunk",
-                                "content": parsed_result["user_chunk"],
-                                "message_id": current_message_id,
-                                "full_content": parsed_result["user_message"],
-                                "timestamp": asyncio.get_event_loop().time()
-                            }
-                            yield f"event: chunk\ndata: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
-                        
-                        # When we detect a complete action block, emit role transition
-                        if parsed_result["action_data"] and "route" in parsed_result["action_data"]:
-                            role_data = {
-                                "type": "role_transition",
-                                "to_role": parsed_result["action_data"]["route"],
-                                "action_data": parsed_result["action_data"],
+                # Process agent event using unified parser
+                try:
+                    # Add timestamp to event
+                    event_with_timestamp = {**event, "timestamp": asyncio.get_event_loop().time()}
+                    
+                    # Parse event into ParsedMessage format
+                    parsed_messages = unified_parser.parse_streaming_event(event_with_timestamp)
+                    
+                    # Send each ParsedMessage as SSE event
+                    for parsed_msg in parsed_messages:
+                        # Handle artifact loading detection for agent messages
+                        if parsed_msg.type == "agent" and "create_artifact" in parsed_msg.content and not artifact_loading_sent:
+                            artifact_loading_sent = True
+                            artifact_loading_data = {
+                                "type": "artifact_loading",
                                 "message_id": current_message_id,
                                 "timestamp": asyncio.get_event_loop().time()
                             }
-                            yield f"event: role_transition\ndata: {json.dumps(role_data, ensure_ascii=False)}\n\n"
-                
-                elif event["event"] == "on_tool_start":
-                    try:
-                        # Add timestamp to event for processor
-                        event_with_timestamp = {**event, "timestamp": asyncio.get_event_loop().time()}
-                        tool_data = process_tool_start_event(event_with_timestamp)
+                            yield f"event: artifact_loading\ndata: {json.dumps(artifact_loading_data, ensure_ascii=False)}\n\n"
                         
-                        # Send regular tool_call event
-                        json_str = json.dumps(tool_data, ensure_ascii=False)
-                        yield f"event: tool_call\ndata: {json_str}\n\n"
-                    except Exception as e:
-                        logger.error(f"Error in on_tool_start serialization: {e}")
-                        raise
-                
-                elif event["event"] == "on_tool_end":
-                    try:
-                        # Add timestamp to event for processor
-                        event_with_timestamp = {**event, "timestamp": asyncio.get_event_loop().time()}
-                        tool_result_data = process_tool_end_event(event_with_timestamp)
+                        # Send ParsedMessage as SSE event
+                        message_data = parsed_msg.dict()
+                        yield f"event: message\ndata: {json.dumps(message_data, ensure_ascii=False)}\n\n"
                         
-                        json_str = json.dumps(tool_result_data, ensure_ascii=False)
-                        yield f"event: tool_result\ndata: {json_str}\n\n"
-                    except Exception as e:
-                        logger.error(f"Error in on_tool_end serialization: {e}")
-                        raise
+                except Exception as e:
+                    logger.error(f"Error processing streaming event: {e}")
+                    # Continue without failing the entire stream
                 
             
             # Note: Conversation history is automatically saved by LangGraph's checkpointer

@@ -25,6 +25,8 @@ dependencies = [
     "psycopg-pool>=3.2.6",
     "bleach>=6.1.0",
     "requests>=2.32.4",
+    "tiktoken>=0.8.0",
+    "langgraph-supervisor>=0.0.28",
 ]
 
 [tool.uv]

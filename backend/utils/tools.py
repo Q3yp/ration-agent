@@ -697,7 +697,22 @@ async def get_nutritionist_tools(session_id: str):
     
     return formulation_tools + todo_tools
 
+async def get_coder_tools(session_id: str):
+    """Get all available tools for a session (code worker tools)."""
+    # Create session-bound bash tool
+    session_bash_tool = create_bash_command_tool(session_id)
 
+    # Get file management tools for the session
+    file_tools = await get_file_management_tools(session_id)
+
+    # Create session-bound artifact tool
+    artifact_tool = create_artifact_tool(session_id)
+
+    # Get Excel tools for the session
+    excel_tools = await get_excel_tools(session_id)
+
+    # Note: RAGFlow tools are now only available to search worker via get_search_tools()
+    return [session_bash_tool, artifact_tool] + file_tools + excel_tools
 
 
 async def get_tools(session_id: str):

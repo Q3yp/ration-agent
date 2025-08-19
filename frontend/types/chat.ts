@@ -1,15 +1,12 @@
 export type MessageType = 
   | 'user' 
-  | 'agent' 
-  | 'agent_chunk'
-  | 'system' 
+  | 'agent'
   | 'tool_call' 
   | 'tool_result' 
-  | 'error' 
-  | 'agent_thinking'
-  | 'agent_complete'
   | 'role_transition'
-  | 'stop'
+  | 'artifact'
+  | 'error' 
+  | 'system'
 
 export interface AttachedFile {
   name: string
@@ -24,21 +21,38 @@ export interface ArtifactData {
   isLoading?: boolean
 }
 
+// Unified message interface matching backend ParsedMessage
 export interface Message {
   id: string
   type: MessageType
   content: string
   timestamp: number
-  toolName?: string
-  toolArgs?: Record<string, any>
-  toolCallId?: string
-  messageId?: string
-  fullContent?: string
-  isStreaming?: boolean
-  attachedFiles?: AttachedFile[]
-  toRole?: string
-  artifactData?: ArtifactData
-  actionData?: Record<string, string>
+  metadata?: Record<string, any>
+}
+
+// Helper functions to access metadata fields with type safety
+export function getToolMetadata(message: Message) {
+  return message.metadata as {
+    tool_name?: string
+    tool_args?: Record<string, any>
+    tool_id?: string
+    tool_call_id?: string
+  } | undefined
+}
+
+export function getRoleTransitionMetadata(message: Message) {
+  return message.metadata as {
+    to_role?: string
+    task_description?: string
+  } | undefined
+}
+
+export function getArtifactMetadata(message: Message) {
+  return message.metadata as {
+    title?: string
+    description?: string
+    html_content?: string
+  } | undefined
 }
 
 export interface Session {
@@ -52,29 +66,3 @@ export interface Session {
   title?: string
 }
 
-export interface SessionHistoryMessage {
-  type: string
-  content: string
-  full_content?: string
-  action_data?: Record<string, string>
-  tool_calls?: Array<{
-    id: string
-    name: string
-    args: Record<string, any>
-  }>
-  tool_call_id?: string  // For tool result messages
-  timestamp?: string
-}
-
-export interface SessionHistory {
-  session_id: string
-  messages: SessionHistoryMessage[]
-  summary: {
-    session_id: string
-    total_messages: number
-    human_messages: number
-    ai_messages: number
-    system_messages: number
-    has_history: boolean
-  }
-}

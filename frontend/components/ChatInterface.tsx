@@ -46,31 +46,22 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
   })
 
   const {
-    sessionHistory,
+    messages: historyMessages,
     isLoading: historyLoading,
-    error: historyError,
-    convertHistoryToMessages
+    error: historyError
   } = useSessionHistory({ sessionId, endpoint })
 
   // Load session history when component mounts or session changes
   useEffect(() => {
-    if (sessionHistory && !historyInitialized) {
-      const historyMessages = convertHistoryToMessages(sessionHistory.messages)
+    if (historyMessages.length > 0 && !historyInitialized) {
       setInitialMessages(historyMessages)
-      
-      // Don't auto-open artifacts from history - let user click to open them
-      // const latestArtifact = getLatestArtifact(sessionHistory.messages)
-      // if (latestArtifact) {
-      //   setCurrentArtifact(latestArtifact)
-      // }
-      
       setHistoryInitialized(true)
-    } else if (!historyLoading && !historyError && !sessionHistory && !historyInitialized) {
+    } else if (!historyLoading && !historyError && historyMessages.length === 0 && !historyInitialized) {
       // No history found, start with empty messages
       setInitialMessages([])
       setHistoryInitialized(true)
     }
-  }, [sessionHistory, historyLoading, historyError, convertHistoryToMessages, setInitialMessages, historyInitialized])
+  }, [historyMessages, historyLoading, historyError, setInitialMessages, historyInitialized])
 
   // Reset history initialized when session changes
   useEffect(() => {

@@ -22,6 +22,14 @@ def replace_dict(x: dict, y: dict) -> dict:
     """Reducer function to replace dictionary"""
     return y
 
+def add_int(x: int, y: int) -> int:
+    """Reducer function to add integers"""
+    return x + y
+
+def replace_string(x: str, y: str) -> str:
+    """Reducer function to replace string values"""
+    return y
+
 # Fix for Windows async event loop
 if os.name == 'nt':  # Windows
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -32,23 +40,30 @@ logger = logging.getLogger(__name__)
 
 
 class FormulationState(AgentState):
-    """Extended state for formulation system with isolated message threads"""
+    """Simplified state for LangGraph Multi-Agent Supervisor system"""
     # Task context
     task_context: dict = {}
     
     # Artifacts (accumulate results) - using named functions for serialization
     artifacts: Annotated[list, add_messages] = []
     
-    # Separate message threads for each agent (role isolation)
-    nutritionist_messages: Annotated[list, add_messages] = []
-    researcher_messages: Annotated[list, add_messages] = []
-    coder_messages: Annotated[list, add_messages] = []
+    # Feed formulation state (core business logic)
+    feed_database: Annotated[dict, merge_dicts] = {}  # Feed name -> feed data
+    current_formulation: Annotated[dict, replace_dict] = {}  # Last formulation result
     
+    # Active agent tracking (for supervisor framework)
+    active_agent: Annotated[str, replace_string] = "nutritionist"
+
+class WorkerState(AgentState):
+    """Extended state for formulation system with isolated message threads"""
+    # Task context
+    task_context: dict = {}
+    
+    # Artifacts (accumulate results) - using named functions for serialization
+    artifacts: Annotated[list, add_messages] = []
+
     # Message count tracker (total messages processed so far)
-    processed_message_count: int = 0
-    
-    # Workflow control
-    workflow_stage: str = "nutritionist"  
+    processed_message_count: Annotated[int, add_int] = 0
     
     # Feed formulation state
     feed_database: Annotated[dict, merge_dicts] = {}  # Feed name -> feed data
@@ -100,31 +115,21 @@ _connection_manager = SharedConnectionManager()
 
 
 async def create_agent_for_session(session_id: str):
-    """Create a new agent for a session with its own checkpointer instance"""
+    """Create a new agent for a session using LangGraph Multi-Agent Supervisor pattern"""
     
     # Get shared pool and create individual checkpointer for this session
     pool = await _connection_manager.get_shared_pool()
     checkpointer = AsyncPostgresSaver(pool)
     
-    # Import node functions from nodes module
-    from agents.nodes import nutritionist_node, researcher_node, coder_node
+    # Import supervisor creation function from nodes module
+    from agents.nodes import create_nutritionist_supervisor
     
-    # Build the formulation graph
-    builder = StateGraph(FormulationState)
-    
-    # Add nodes
-    builder.add_node("nutritionist", nutritionist_node)
-    builder.add_node("researcher", researcher_node)
-    builder.add_node("coder", coder_node)
-    
-    # Add edges
-    builder.add_edge(START, "nutritionist")
-    builder.add_edge("researcher", "nutritionist")
-    builder.add_edge("coder", "nutritionist")
+    # Create the supervisor workflow
+    supervisor_workflow = await create_nutritionist_supervisor(session_id)
     
     # Compile with shared checkpointer
     # Note: recursion_limit is set during invoke/stream, not compile
-    agent = builder.compile(checkpointer=checkpointer)
+    agent = supervisor_workflow.compile(checkpointer=checkpointer)
     
     return agent
 

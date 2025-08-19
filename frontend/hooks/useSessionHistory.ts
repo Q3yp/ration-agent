@@ -1,34 +1,47 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { SessionHistory, Message, SessionHistoryMessage, ArtifactData } from '@/types/chat'
-import { getRoleInfo } from '@/utils/roleMapping'
-import { parseArtifactData } from '@/utils/artifactParser'
+import { Message } from '@/types/chat'
 
 interface UseSessionHistoryProps {
   sessionId: string | null
   endpoint?: string
 }
 
+interface SessionHistoryResponse {
+  session_id: string
+  messages: Message[]  // Already in unified ParsedMessage format from backend
+  summary: {
+    session_id: string
+    total_messages: number
+    human_messages: number
+    ai_messages: number
+    system_messages: number
+    has_history: boolean
+  }
+}
+
 interface UseSessionHistoryReturn {
-  sessionHistory: SessionHistory | null
+  messages: Message[]
   isLoading: boolean
   error: string | null
   loadSessionHistory: () => Promise<void>
-  convertHistoryToMessages: (historyMessages: SessionHistoryMessage[]) => Message[]
-  getLatestArtifact: (historyMessages: SessionHistoryMessage[]) => ArtifactData | null
 }
 
 export function useSessionHistory({ 
   sessionId, 
   endpoint = 'http://localhost:8000' 
 }: UseSessionHistoryProps): UseSessionHistoryReturn {
-  const [sessionHistory, setSessionHistory] = useState<SessionHistory | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const loadSessionHistory = useCallback(async () => {
-    if (!sessionId) return
+    if (!sessionId) {
+      setMessages([])
+      setError(null)
+      return
+    }
 
     try {
       setIsLoading(true)
@@ -40,151 +53,27 @@ export function useSessionHistory({
         throw new Error(`Failed to load session history: ${response.statusText}`)
       }
       
-      const data: SessionHistory = await response.json()
-      setSessionHistory(data)
+      const data: SessionHistoryResponse = await response.json()
+      
+      // Backend now returns ParsedMessage format directly with proper metadata
+      setMessages(data.messages || [])
     } catch (error) {
       console.error('Error loading session history:', error)
       setError(error instanceof Error ? error.message : 'Failed to load session history')
-      setSessionHistory(null)
+      setMessages([])
     } finally {
       setIsLoading(false)
     }
   }, [sessionId, endpoint])
 
-  const convertHistoryToMessages = useCallback((historyMessages: SessionHistoryMessage[]): Message[] => {
-    if (!historyMessages || historyMessages.length === 0) {
-      return []
-    }
-
-    // Create a stable ID base from the sessionId to ensure consistent IDs
-    const stableIdBase = sessionId ? sessionId.slice(-8) : 'default'
-    const messages: Message[] = []
-    
-    historyMessages.forEach((msg, index) => {
-      const baseTimestamp = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now() - (historyMessages.length - index) * 1000
-      
-      // Handle tool result messages separately
-      if (msg.type === 'tool') {
-        messages.push({
-          id: `history_tool_result_${index}_${stableIdBase}`,
-          type: 'tool_result',
-          content: msg.content,
-          timestamp: baseTimestamp,
-          isStreaming: false,
-          toolCallId: msg.tool_call_id || ''
-        })
-        return // Don't process further for tool messages
-      }
-      
-      // Add the main message (human, ai, system)
-      // Skip AI messages with empty content (they only contain tool calls)
-      if (!(msg.type === 'ai' && (!msg.content || msg.content.trim() === ''))) {
-        messages.push({
-          id: `history_${index}_${stableIdBase}`,
-          type: msg.type === 'human' ? 'user' : msg.type === 'ai' ? 'agent' : 'system',
-          content: msg.content,
-          timestamp: baseTimestamp,
-          isStreaming: false,
-          fullContent: msg.full_content
-        })
-        
-        // Check for role transition in AI messages with action data
-        if (msg.type === 'ai' && msg.action_data && msg.action_data.route) {
-          const toRole = msg.action_data.route
-          const roleInfo = getRoleInfo(toRole)
-          messages.push({
-            id: `history_role_transition_${index}_${stableIdBase}`,
-            type: 'role_transition',
-            content: roleInfo.transitionMessage,
-            timestamp: baseTimestamp + 0.5, // Slight offset to maintain order
-            isStreaming: false,
-            toRole: toRole,
-            actionData: msg.action_data
-          })
-        }
-      }
-      
-      // Add tool call messages if they exist (for AI messages)
-      if (msg.type === 'ai' && msg.tool_calls && msg.tool_calls.length > 0) {
-        msg.tool_calls.forEach((toolCall, toolIndex) => {
-          // Add tool call message
-          messages.push({
-            id: `history_tool_call_${index}_${toolIndex}_${stableIdBase}`,
-            type: 'tool_call',
-            content: `Calling ${toolCall.name}...`,
-            timestamp: baseTimestamp + toolIndex + 1, // Slight offset to maintain order
-            isStreaming: false,
-            toolName: toolCall.name,
-            toolArgs: toolCall.args,
-            toolCallId: toolCall.id
-          })
-        })
-      }
-    })
-    
-    return messages
-  }, [sessionId]) // sessionId is used for stable ID generation, getRoleInfo is from utils and should be stable
-
-  const getLatestArtifact = useCallback((historyMessages: SessionHistoryMessage[]): ArtifactData | null => {
-    if (!historyMessages || historyMessages.length === 0) {
-      return null
-    }
-
-    // Look through history messages in reverse order (most recent first)
-    // to find the latest artifact data in tool results
-    for (let i = historyMessages.length - 1; i >= 0; i--) {
-      const msg = historyMessages[i]
-      
-      // Check tool result messages for artifact data
-      if (msg.type === 'tool' && msg.content) {
-        const artifactData = parseArtifactData(msg.content)
-        if (artifactData) {
-          return artifactData
-        }
-      }
-    }
-
-    return null
-  }, [])
-
   useEffect(() => {
-    const loadHistory = async () => {
-      if (!sessionId) {
-        setSessionHistory(null)
-        setError(null)
-        return
-      }
-
-      try {
-        setIsLoading(true)
-        setError(null)
-        
-        const response = await fetch(`${endpoint}/sessions/${sessionId}/history?limit=50`)
-        
-        if (!response.ok) {
-          throw new Error(`Failed to load session history: ${response.statusText}`)
-        }
-        
-        const data: SessionHistory = await response.json()
-        setSessionHistory(data)
-      } catch (error) {
-        console.error('Error loading session history:', error)
-        setError(error instanceof Error ? error.message : 'Failed to load session history')
-        setSessionHistory(null)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadHistory()
-  }, [sessionId, endpoint])
+    loadSessionHistory()
+  }, [loadSessionHistory])
 
   return {
-    sessionHistory,
+    messages,
     isLoading,
     error,
-    loadSessionHistory,
-    convertHistoryToMessages,
-    getLatestArtifact
+    loadSessionHistory
   }
 }

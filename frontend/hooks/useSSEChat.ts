@@ -53,8 +53,7 @@ function messageReducer(state: MessageState, action: MessageAction): MessageStat
           type: 'agent' as MessageType,
           content: content || '',
           timestamp: timestamp,
-          isStreaming: true,
-          messageId: messageId
+          metadata: { is_streaming: true }
         }
         
         return {
@@ -70,7 +69,7 @@ function messageReducer(state: MessageState, action: MessageAction): MessageStat
         ...state,
         messages: state.messages.map((msg, index) => 
           index === lastAgentIndex 
-            ? { ...msg, content: (msg.content || '') + (content || ''), isStreaming: true }
+            ? { ...msg, content: (msg.content || '') + (content || ''), metadata: { ...msg.metadata, is_streaming: true } }
             : msg
         )
       }
@@ -106,8 +105,8 @@ function messageReducer(state: MessageState, action: MessageAction): MessageStat
       return {
         ...state,
         messages: state.messages.map(msg => 
-          msg.messageId === action.payload.messageId
-            ? { ...msg, isStreaming: false }
+          msg.id === action.payload.messageId
+            ? { ...msg, metadata: { ...msg.metadata, is_streaming: false } }
             : msg
         )
       }
@@ -158,6 +157,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
   const [isConnected, setIsConnected] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
+  // Remove the extra state variable - artifact loading is handled by existing logic
   
   const eventSourceRef = useRef<EventSource | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -197,71 +197,75 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
           setIsTyping(true)
           break
 
-        case 'chunk':
-          if (data.type === 'agent_chunk') {
-            dispatch({
-              type: 'ADD_CHUNK',
-              payload: {
-                messageId: data.message_id,
-                content: data.content || '',
-                timestamp: data.timestamp || Date.now()
+        case 'message':
+          // Unified message handling - all message types come as ParsedMessage format
+          const message: Message = {
+            id: data.id,
+            type: data.type as MessageType,
+            content: data.content,
+            timestamp: data.timestamp,
+            metadata: data.metadata
+          }
+
+          // Handle different message types
+          switch (data.type) {
+            case 'user':
+              dispatch({ type: 'ADD_USER_MESSAGE', payload: message })
+              break
+            
+            case 'agent':
+              if (message.metadata?.is_streaming) {
+                dispatch({
+                  type: 'ADD_CHUNK',
+                  payload: {
+                    messageId: message.id,
+                    content: message.content,
+                    timestamp: message.timestamp
+                  }
+                })
+              } else {
+                dispatch({ type: 'ADD_USER_MESSAGE', payload: message })
               }
-            })
-            // Don't set isTyping to false here - agent is still working
-            // Only set to false on 'complete' or 'stopped' events
-          }
-          break
-
-        case 'tool_call':
-          if (data.type === 'tool_call') {
-            const message: Message = {
-              id: data.tool_id || `${Date.now()}_${Math.random()}`,
-              type: 'tool_call' as MessageType,
-              content: `Calling ${data.tool_name}...`,
-              timestamp: data.timestamp || Date.now(),
-              toolName: data.tool_name,
-              toolArgs: data.tool_args,
-              toolCallId: data.tool_id,
-            }
-            dispatch({ type: 'ADD_TOOL_CALL', payload: message })
-          }
-          break
-
-        case 'tool_result':
-          if (data.type === 'tool_result') {
-            // Check if the tool result contains artifact data
-            const artifactData = parseArtifactData(data.content);
+              break
             
-            // If artifact data is found, update the artifact panel (auto-open for live session)
-            // This will replace any loading state that was shown earlier
-            if (artifactData && onArtifactUpdate) {
-              onArtifactUpdate(artifactData);
-            }
+            case 'tool_call':
+              dispatch({ type: 'ADD_TOOL_CALL', payload: message })
+              break
             
-            // Keep the original content (including artifact data) so MessageBubble can detect it
-            const message: Message = {
-              id: `${Date.now()}_${Math.random()}`,
-              type: 'tool_result' as MessageType,
-              content: data.content, // Keep original content with artifact data
-              timestamp: data.timestamp || Date.now(),
-              toolCallId: data.tool_call_id,
-            }
-            dispatch({ type: 'ADD_TOOL_RESULT', payload: message })
-          }
-          break
-
-        case 'role_transition':
-          if (data.type === 'role_transition') {
-            const roleInfo = getRoleInfo(data.to_role)
-            const message: Message = {
-              id: `${Date.now()}_${Math.random()}`,
-              type: 'role_transition' as MessageType,
-              content: roleInfo.transitionMessage,
-              timestamp: data.timestamp || Date.now(),
-              toRole: data.to_role,
-              actionData: data.action_data
-            }
-            dispatch({ type: 'ADD_ROLE_TRANSITION', payload: message })
+            case 'tool_result':
+              // Check if the tool result contains artifact data
+              const artifactData = parseArtifactData(message.content);
+              
+              if (artifactData && onArtifactUpdate) {
+                onArtifactUpdate(artifactData);
+              }
+              
+              dispatch({ type: 'ADD_TOOL_RESULT', payload: message })
+              break
+            
+            case 'role_transition':
+              // Get role info for consistent styling and metadata
+              const roleTransitionMeta = message.metadata as { to_role?: string; task_description?: string }
+              const roleInfo = getRoleInfo(roleTransitionMeta?.to_role || '')
+              
+              const roleTransitionMessage: Message = {
+                ...message,
+                content: roleInfo.transitionMessage, // Use getRoleInfo for consistent display
+                metadata: {
+                  ...message.metadata,
+                  roleInfo // Add role info to metadata for styling
+                }
+              }
+              dispatch({ type: 'ADD_ROLE_TRANSITION', payload: roleTransitionMessage })
+              break
+            
+            case 'error':
+              dispatch({ type: 'ADD_ERROR', payload: message })
+              break
+            
+            default:
+              // Handle unknown message types as system messages
+              dispatch({ type: 'ADD_ERROR', payload: { ...message, type: 'system' } })
           }
           break
 
@@ -403,7 +407,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
         type: 'user' as MessageType,
         content: message.trim(),
         timestamp: Date.now(),
-        attachedFiles: filesToShow,
+        metadata: { attached_files: filesToShow },
       }
       dispatch({ type: 'ADD_USER_MESSAGE', payload: userMessage })
       setIsTyping(true)

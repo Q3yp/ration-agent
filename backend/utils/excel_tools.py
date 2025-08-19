@@ -8,7 +8,6 @@ from langchain_core.tools import tool
 from datetime import datetime
 import re
 import logging
-
 logger = logging.getLogger(__name__)
 
 
@@ -152,100 +151,63 @@ async def excel_metadata_impl(filepaths: List[str], session_id: str) -> str:
         return f"Error analyzing Excel file(s): {str(e)}"
 
 
-async def excel_query_impl(queries: List[Dict[str, Any]], session_id: str) -> str:
-    """Implementation for excel_query tool - supports batch operations."""
+async def excel_query_impl(filepath: str, sheet: str, query_string: str, session_id: str, header_row: int = 0) -> str:
+    """Implementation for excel_query tool."""
     try:
-        results = {}
-        loaded_files = {}  # Cache loaded files to avoid re-reading
+        full_path = await _get_session_file_path(filepath, session_id)
         
-        for i, query_info in enumerate(queries):
-            try:
-                filepath = query_info["filepath"]
-                sheet = query_info["sheet"]
-                query_string = query_info["query_string"]
-                header_row = query_info.get("header_row", 0)
-                query_id = query_info.get("id", f"query_{i}")
-                
-                # Get or load the Excel file
-                file_key = f"{filepath}|{sheet}|{header_row}"
-                if file_key not in loaded_files:
-                    full_path = await _get_session_file_path(filepath, session_id)
-                    
-                    if not os.path.exists(full_path):
-                        results[query_id] = {"error": f"File '{filepath}' not found in session workspace"}
-                        continue
-                    
-                    # Read Excel file using shared function
-                    try:
-                        df = _read_excel_sheet(full_path, sheet, header_row)
-                        loaded_files[file_key] = df
-                    except Exception as e:
-                        results[query_id] = {"error": f"Error reading Excel sheet '{sheet}': {str(e)}"}
-                        continue
-                else:
-                    df = loaded_files[file_key]
-                
-                # Execute query
-                try:
-                    # Create safe execution context
-                    exec_context = {
-                        "df": df, 
-                        "pd": pd,
-                        "__builtins__": {}
-                    }
-                    
-                    # Handle different query types
-                    if query_string.strip().startswith('df.'):
-                        # Direct pandas operations like df.head(), df.groupby(), etc.
-                        result = eval(query_string, exec_context)
-                    else:
-                        # Try pandas query syntax first
-                        try:
-                            result = df.query(query_string)
-                        except Exception:
-                            # If query syntax fails, try eval with df context
-                            result = eval(query_string, exec_context)
-                    
-                    # Format result for output
-                    if isinstance(result, pd.DataFrame):
-                        if len(result) == 0:
-                            output = "Query returned no results."
-                        elif len(result) > 100:
-                            # Truncate large results
-                            output = f"Query returned {len(result)} rows (showing first 100):\n\n"
-                            output += result.head(100).to_string(index=False)
-                        else:
-                            output = f"Query returned {len(result)} rows:\n\n"
-                            output += result.to_string(index=False)
-                    elif isinstance(result, pd.Series):
-                        output = f"Query result:\n\n{result.to_string()}"
-                    else:
-                        output = f"Query result: {result}"
-                    
-                    results[query_id] = {
-                        "filepath": filepath,
-                        "sheet": sheet,
-                        "query": query_string,
-                        "result": output
-                    }
-                    
-                except Exception as e:
-                    results[query_id] = {
-                        "filepath": filepath,
-                        "sheet": sheet,
-                        "query": query_string,
-                        "error": f"Error executing query: {str(e)}\nMake sure to use 'df' to reference the dataframe, e.g., 'df.head()' or column names in quotes for query syntax."
-                    }
+        if not os.path.exists(full_path):
+            return f"Error: File '{filepath}' not found in session workspace"
+        
+        # Read Excel file
+        try:
+            df = _read_excel_sheet(full_path, sheet, header_row)
+        except Exception as e:
+            return f"Error reading Excel sheet '{sheet}': {str(e)}"
+        
+        # Execute query
+        try:
+            # Create execution context with common imports
+            import numpy as np
+            global_context = {
+                "df": df, 
+                "pd": pd,
+                "np": np,
+            }
             
-            except Exception as e:
-                query_id = query_info.get("id", f"query_{i}")
-                results[query_id] = {"error": f"Error processing query: {str(e)}"}
-        
-        return json.dumps(results, ensure_ascii=False, indent=2)
+            # Create context dict for LLM to write results (string:string)
+            context = {}
+            global_context["context"] = context
+            
+            # Execute arbitrary pandas code
+            exec(query_string, global_context)
+            
+            # Format results from context dict
+            if not context:
+                return "No results were written to the context dictionary. Use context['key'] = 'value' to store results."
+            
+            # Format output from context
+            output_lines = []
+            for key, value in context.items():
+                output_lines.append(f"{key}: {value}")
+            
+            formatted_output = "\n".join(output_lines)
+            
+            # Check token count using shared tiktoken encoder
+            from main import TIKTOKEN_ENCODER
+            token_count = len(TIKTOKEN_ENCODER.encode(formatted_output))
+            
+            if token_count > 10000:
+                return f"Query result exceeded token limit of 10000 tokens (got {token_count} tokens). Please refine your query to return less data."
+            
+            return formatted_output
+            
+        except Exception as e:
+            return f"Error executing code: {str(e)}\nUse 'df' to reference the dataframe and 'context' dict to store results. Example: context['result'] = str(df.head())"
     
     except Exception as e:
-        logger.error(f"Excel batch query failed: {e}")
-        return f"Error processing Excel queries: {str(e)}"
+        logger.error(f"Excel query failed: {e}")
+        return f"Error processing Excel query: {str(e)}"
 
 
 
@@ -327,25 +289,28 @@ def create_excel_metadata_tool(session_id: str):
 def create_excel_query_tool(session_id: str):
     """Create excel_query tool bound to a specific session."""
     @tool
-    async def excel_query(queries: List[Dict[str, Any]]) -> str:
+    async def excel_query(filepath: str, sheet: str, query_string: str, header_row: int = 0) -> str:
         """
-        Execute pandas queries on Excel sheets. Supports batch operations.
-        Use excel_metadata first to see available columns.
+        Execute arbitrary pandas code on Excel data. Use excel_metadata first to see available columns.
+        
+        The dataframe is available as 'df', pandas as 'pd', and numpy as 'np'.
+        You must write results to the 'context' dictionary using context['key'] = 'value'.
+        All context values must be strings.
         
         Args:
-            queries: List of query dictionaries, each containing:
-                - filepath: Path to the Excel file (relative to session workspace)
-                - sheet: Name of the sheet to query
-                - query_string: Either:
-                    - Pandas query syntax: "column > 5" or "name == 'value'"
-                    - Direct df operations: "df.head()" or "df.groupby('col').sum()"
-                - header_row: Row number to use as column headers (default: 0)
-                - id: Optional identifier for the query (default: query_N)
+            filepath: Path to the Excel file (relative to session workspace)
+            sheet: Name of the sheet to query
+            query_string: Python code to execute. Must write results to context dict.
+                Examples:
+                - context['summary'] = str(df.describe())
+                - context['row_count'] = str(len(df))
+                - filtered = df[df['column'] > 5]; context['filtered'] = filtered.to_string()
+            header_row: Row number to use as column headers (default: 0)
             
         Returns:
-            JSON with formatted query results for each query
+            Formatted results from context dictionary, or token limit message if exceeded
         """
-        return await excel_query_impl(queries, session_id)
+        return await excel_query_impl(filepath, sheet, query_string, session_id, header_row)
     
     return excel_query
 

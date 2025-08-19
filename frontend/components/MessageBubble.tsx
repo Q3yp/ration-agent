@@ -1,6 +1,6 @@
 'use client'
 
-import { Message, ArtifactData } from '@/types/chat'
+import { Message, ArtifactData, getArtifactMetadata, getRoleTransitionMetadata } from '@/types/chat'
 import {
   Settings,
   CheckCircle,
@@ -60,7 +60,7 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
               isExpanded && "rotate-90"
             )} />
             <Settings className="h-4 w-4 mr-2 flex-shrink-0" />
-            <span className="font-semibold truncate">工具调用: {message.toolName}</span>
+            <span className="font-semibold truncate">Tool Call: {message.metadata?.tool_name || 'Unknown'}</span>
           </div>
           <Badge variant="secondary" className="text-xs flex-shrink-0 ml-2">
             {formatTimestamp(message.timestamp)}
@@ -68,11 +68,11 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
         </div>
 
         {/* Expandable Content */}
-        {isExpanded && message.toolArgs && Object.keys(message.toolArgs).length > 0 && (
+        {isExpanded && message.metadata?.tool_args && Object.keys(message.metadata.tool_args).length > 0 && (
           <div className="mt-3 bg-muted p-3 rounded-md text-xs max-h-64 overflow-auto w-full min-w-0">
             <strong>参数:</strong>
             <pre className="mt-1 whitespace-pre-wrap font-mono break-all word-break-all overflow-wrap-anywhere min-w-0">
-              {JSON.stringify(message.toolArgs, null, 2)}
+              {JSON.stringify(message.metadata?.tool_args, null, 2)}
             </pre>
           </div>
         )}
@@ -254,7 +254,7 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
         <CardContent className="p-3">
           <MarkdownMessage
             content={message.content}
-            isStreaming={message.isStreaming || false}
+            isStreaming={message.metadata?.is_streaming || false}
           />
           <div className="text-xs text-muted-foreground mt-2">
             {formatTimestamp(message.timestamp)}
@@ -286,10 +286,47 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
     </div>
   )
 
+  const renderArtifact = () => {
+    const artifactMeta = getArtifactMetadata(message)
+    if (!artifactMeta?.html_content) return null
+    
+    const artifactData: ArtifactData = {
+      title: artifactMeta.title || 'Artifact',
+      description: artifactMeta.description || '',
+      html_content: artifactMeta.html_content
+    }
+    
+    return (
+      <div className="flex justify-start items-start gap-2">
+        <div className="w-8 h-8 flex items-center justify-center">
+          <File className="h-4 w-4 text-blue-600" />
+        </div>
+        <Card className="max-w-[80%] min-w-0 overflow-hidden border-blue-200 bg-blue-50">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => onArtifactOpen?.(artifactData)}>
+              <ExternalLink className="h-4 w-4 text-blue-600 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-blue-900 truncate">
+                  {artifactData.title}
+                </div>
+                {artifactData.description && (
+                  <div className="text-xs text-blue-700 mt-1">
+                    {artifactData.description}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   const renderRoleTransition = () => {
-    const roleInfo = getRoleInfo(message.toRole || '')
+    const roleTransitionMeta = getRoleTransitionMetadata(message)
+    const roleInfo = getRoleInfo(roleTransitionMeta?.to_role || '')
     const RoleIcon = roleInfo.icon
-    const hasActionData = message.actionData && Object.keys(message.actionData).length > 0
+    const hasTaskDescription = roleTransitionMeta?.task_description
     
     return (
       <div className="flex justify-start items-start gap-2">
@@ -306,10 +343,10 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
         >
           <CardContent className="p-3">
             <div
-              className={cn("flex items-center gap-2", hasActionData && "cursor-pointer")}
-              onClick={hasActionData ? () => setIsExpanded(!isExpanded) : undefined}
+              className={cn("flex items-center gap-2", hasTaskDescription && "cursor-pointer")}
+              onClick={hasTaskDescription ? () => setIsExpanded(!isExpanded) : undefined}
             >
-              {hasActionData && (
+              {hasTaskDescription && (
                 <ChevronRight className={cn(
                   "h-4 w-4 transition-transform flex-shrink-0",
                   isExpanded && "rotate-90",
@@ -330,8 +367,8 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
               </span>
             </div>
             
-            {/* Expandable Action Data */}
-            {hasActionData && isExpanded && (
+            {/* Expandable Task Description */}
+            {hasTaskDescription && isExpanded && (
               <div 
                 style={{ 
                   backgroundColor: roleInfo.customStyles 
@@ -349,29 +386,10 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
                 )}
                 style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
                 >
-                  Action Details:
+                  Task Description:
                 </strong>
-                <div className="space-y-1">
-                  {Object.entries(message.actionData || {}).map(([key, value]) => (
-                    <div key={key} className="flex gap-2">
-                      <span className={cn(
-                        "font-medium capitalize",
-                        !roleInfo.customStyles && roleInfo.color
-                      )}
-                      style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
-                      >
-                        {key}:
-                      </span>
-                      <span className={cn(
-                        "break-words",
-                        !roleInfo.customStyles && roleInfo.color.replace('700', '600')
-                      )}
-                      style={roleInfo.customStyles ? { color: roleInfo.customStyles.color, opacity: 0.8 } : undefined}
-                      >
-                        {value}
-                      </span>
-                    </div>
-                  ))}
+                <div className="text-gray-600 whitespace-pre-wrap">
+                  {roleTransitionMeta?.task_description}
                 </div>
               </div>
             )}
@@ -388,8 +406,8 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
     )
   }
 
-  // Don't render agent_complete messages
-  if (message.type === 'agent_complete') {
+  // Don't render legacy agent_complete messages
+  if ((message.type as string) === 'agent_complete') {
     return null
   }
 
@@ -404,20 +422,26 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
       return renderToolResult()
     case 'system':
       return renderSystemMessage()
-    case 'stop':
-      return renderStopMessage()
     case 'error':
       return renderErrorMessage()
-    case 'agent_thinking':
-      return renderThinkingMessage()
     case 'role_transition':
       return renderRoleTransition()
+    case 'artifact':
+      return renderArtifact()
     default:
+      // Handle legacy message types
+      if ((message.type as string) === 'stop') {
+        return renderStopMessage()
+      }
+      if ((message.type as string) === 'agent_thinking') {
+        return renderThinkingMessage()
+      }
+      
       return (
         <div className="flex justify-center">
           <Card className="max-w-md bg-muted">
             <CardContent className="p-3 text-center">
-              <div className="text-xs">未知消息类型: {message.type}</div>
+              <div className="text-xs">Unknown message type: {message.type}</div>
             </CardContent>
           </Card>
         </div>
