@@ -1,25 +1,18 @@
 import asyncio
 import json
-import os
 import logging
-import traceback
+import time
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from langchain_core.messages import HumanMessage
-from langgraph.types import Command
 from models import (
-    ChatRequest, FileUploadResponse, FileListResponse, FileDeleteResponse,
+    ChatRequest, FileUploadResponse, FileDeleteResponse,
     SessionCreateRequest, SessionCreateResponse, SessionStatsResponse,
-    SessionTitleRequest, SessionTitleResponse
+    ParsedMessage
 )
 from services.session_manager import session_manager
-from utils.message_processor import (
-    process_tool_start_event, process_tool_end_event, process_chat_model_stream_event
-)
 from services.chat_history_service import chat_history_service
-from utils.unified_message_parser import unified_parser
-from models import ParsedMessage
 from utils.model_config import get_model_config
 from utils.prompt_loader import env
 from utils.stop_manager import StopManager
@@ -86,7 +79,7 @@ async def health():
         "agent_ready": True,  # Agents are created on-demand
         "active_connections": 0,
         "active_sessions": len(active_sessions),
-        "timestamp": asyncio.get_event_loop().time()
+        "timestamp": time.time()
     }
 
 
@@ -156,37 +149,25 @@ async def delete_session(session_id: str):
 
 
 @router.get("/sessions/{session_id}/history")
-async def get_session_history(session_id: str, limit: int = 50):
+async def get_session_history(session_id: str):
     """Get chat history for a session"""
     session_context = await session_manager.get_session(session_id)
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found")
     
     try:
-        # Get raw messages from LangGraph checkpointer
-        from core.agent import _connection_manager
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        # Get complete messages from supervisor and all worker subgraphs
+        raw_messages = await chat_history_service.get_complete_session_messages(session_id)
+        logger.info(f"API: Retrieved {len(raw_messages)} raw messages for session {session_id}")
         
-        pool = await _connection_manager.get_shared_pool()
-        checkpointer = AsyncPostgresSaver(pool)
-        config = {"configurable": {"thread_id": session_id}}
-        
-        # Get raw messages from checkpoint
-        state_snapshot = await checkpointer.aget_tuple(config)
-        raw_messages = []
-        if state_snapshot and state_snapshot.checkpoint:
-            channel_values = state_snapshot.checkpoint.get("channel_values", {})
-            raw_messages = channel_values.get("messages", [])
-            
-            # Apply limit if specified
-            if limit and len(raw_messages) > limit:
-                raw_messages = raw_messages[-limit:]
-        
-        # Use unified parser for consistent formatting
-        parsed_messages = unified_parser.parse_messages(raw_messages)
+        # Use session-specific parser for consistent formatting
+        session_parser = session_manager.get_session_parser(session_id)
+        parsed_messages = session_parser.parse_messages(raw_messages)
+        logger.info(f"API: Parsed into {len(parsed_messages)} messages for session {session_id}")
         
         # Convert to dict format for JSON serialization
         messages_for_frontend = [msg.dict() for msg in parsed_messages]
+        logger.info(f"API: Returning {len(messages_for_frontend)} messages to frontend for session {session_id}")
         
         # Get summary
         summary = await chat_history_service.get_session_summary_async(session_id)
@@ -201,69 +182,7 @@ async def get_session_history(session_id: str, limit: int = 50):
         raise HTTPException(status_code=500, detail=f"Failed to get session history: {str(e)}")
 
 
-@router.delete("/sessions/{session_id}/history")
-async def clear_session_history(session_id: str):
-    """Clear chat history for a session"""
-    session_context = await session_manager.get_session(session_id)
-    if not session_context:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    try:
-        # Note: LangGraph checkpoints cannot be directly cleared
-        await chat_history_service.clear_session_history_async(session_id)
-        return {
-            "message": f"Chat history for session '{session_id}' cannot be cleared - LangGraph checkpoints are immutable",
-            "session_id": session_id,
-            "success": False,
-            "note": "Consider using a new session ID for a fresh conversation"
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to clear session history: {str(e)}")
 
-
-@router.post("/sessions/{session_id}/generate-title", response_model=SessionTitleResponse)
-async def generate_session_title(session_id: str, request: SessionTitleRequest):
-    """Generate a descriptive title for a session based on conversation content"""
-    # Verify session exists
-    session_context = await session_manager.get_session(session_id)
-    if not session_context:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    try:
-        # Get the title generation model
-        model = get_model_config("title_generation")
-        
-        # Load and render the title generation prompt template
-        template = env.get_template("title_generation.md")
-        title_prompt = template.render(user_message=request.conversation_preview)
-
-        # Generate title using the model
-        response = await model.ainvoke(title_prompt)
-        
-        # Extract and clean the title
-        generated_title = response.content.strip()
-        
-        # Remove any quotes or extra formatting
-        generated_title = generated_title.replace('"', '').replace("'", "").strip()
-        
-        # Ensure title doesn't exceed 60 characters
-        if len(generated_title) > 60:
-            generated_title = generated_title[:57] + "..."
-        
-        # Fallback title if generation fails
-        if not generated_title or len(generated_title) < 3:
-            generated_title = "New Conversation"
-        
-        return SessionTitleResponse(
-            session_id=session_id,
-            title=generated_title,
-            message="Title generated successfully"
-        )
-    
-    except Exception as e:
-        logger.error(f"Failed to generate title for session {session_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate title: {str(e)}")
 
 
 
@@ -290,7 +209,7 @@ async def stop_chat(session_id: str):
             return {
                 "message": "Execution stopped",
                 "session_id": session_id,
-                "timestamp": asyncio.get_event_loop().time(),
+                "timestamp": time.time(),
                 "note": "Task cancelled immediately"
             }
         else:
@@ -298,7 +217,7 @@ async def stop_chat(session_id: str):
             return {
                 "message": "No active execution to stop",
                 "session_id": session_id,
-                "timestamp": asyncio.get_event_loop().time()
+                "timestamp": time.time()
             }
     
     except Exception as e:
@@ -343,14 +262,13 @@ async def stream_chat(session_id: str, request: ChatRequest):
         }
 
         logger.info(f"Starting agent stream for session {session_id} with recursion_limit={agent_config['recursion_limit']}")
-        current_message_id = f"{session_id}_{int(asyncio.get_event_loop().time() * 1000000)}"
+        current_message_id = f"{session_id}_{int(time.time() * 1000000)}"
         accumulated_content = ""
         tool_calls_processed = set()
         artifact_loading_sent = False
 
         try:
             yield f"event: connected\ndata: {json.dumps({'message_id': current_message_id, 'session_id': session_id})}\n\n"
-            yield f"event: thinking\ndata: {json.dumps({'type': 'agent_thinking', 'message_id': current_message_id})}\n\n"
 
             # Register current task for cancellation support
             current_task = asyncio.current_task()
@@ -378,6 +296,10 @@ async def stream_chat(session_id: str, request: ChatRequest):
                 subgraphs=True
             )
 
+            # Get session parser from session manager (persistent across events)
+            session_parser = session_manager.get_session_parser(session_id)
+            logger.info(f"STREAM: Using persistent message parser for session {session_id}")
+
             # Process both agent events and title updates concurrently
             async for event in agent_events:
                 
@@ -388,19 +310,19 @@ async def stream_chat(session_id: str, request: ChatRequest):
                         "type": "title_update",
                         "title": title,
                         "session_id": session_id,
-                        "timestamp": asyncio.get_event_loop().time()
+                        "timestamp": time.time()
                     }
                     yield f"event: title_update\ndata: {json.dumps(title_data, ensure_ascii=False)}\n\n"
                 except asyncio.QueueEmpty:
                     pass  # No title update available
 
-                # Process agent event using unified parser
+                # Process agent event using session-specific parser
                 try:
                     # Add timestamp to event
-                    event_with_timestamp = {**event, "timestamp": asyncio.get_event_loop().time()}
+                    event_with_timestamp = {**event, "timestamp": time.time()}
                     
                     # Parse event into ParsedMessage format
-                    parsed_messages = unified_parser.parse_streaming_event(event_with_timestamp)
+                    parsed_messages = session_parser.parse_streaming_event(event_with_timestamp)
                     
                     # Send each ParsedMessage as SSE event
                     for parsed_msg in parsed_messages:
@@ -410,7 +332,7 @@ async def stream_chat(session_id: str, request: ChatRequest):
                             artifact_loading_data = {
                                 "type": "artifact_loading",
                                 "message_id": current_message_id,
-                                "timestamp": asyncio.get_event_loop().time()
+                                "timestamp": time.time()
                             }
                             yield f"event: artifact_loading\ndata: {json.dumps(artifact_loading_data, ensure_ascii=False)}\n\n"
                         
@@ -433,7 +355,7 @@ async def stream_chat(session_id: str, request: ChatRequest):
                     "type": "title_update",
                     "title": title,
                     "session_id": session_id,
-                    "timestamp": asyncio.get_event_loop().time()
+                    "timestamp": time.time()
                 }
                 yield f"event: title_update\ndata: {json.dumps(title_data, ensure_ascii=False)}\n\n"
             except asyncio.QueueEmpty:
@@ -442,7 +364,7 @@ async def stream_chat(session_id: str, request: ChatRequest):
             completion_data = {
                 "type": "agent_complete",
                 "message_id": current_message_id,
-                "timestamp": asyncio.get_event_loop().time()
+                "timestamp": time.time()
             }
             yield f"event: complete\ndata: {json.dumps(completion_data, ensure_ascii=False)}\n\n"
             
@@ -453,7 +375,7 @@ async def stream_chat(session_id: str, request: ChatRequest):
                 "type": "agent_stopped", 
                 "message": "Agent execution stopped by user request",
                 "session_id": session_id,
-                "timestamp": asyncio.get_event_loop().time()
+                "timestamp": time.time()
             }
             yield f"event: stopped\ndata: {json.dumps(stopped_data, ensure_ascii=False)}\n\n"
             
@@ -464,7 +386,7 @@ async def stream_chat(session_id: str, request: ChatRequest):
                 "content": f"Error processing message: {str(e)}",
                 "error_code": "PROCESSING_ERROR",
                 "message_id": current_message_id,
-                "timestamp": asyncio.get_event_loop().time()
+                "timestamp": time.time()
             }
             yield f"event: error\ndata: {json.dumps(error_data, ensure_ascii=False)}\n\n"
         
@@ -531,35 +453,6 @@ async def upload_file(session_id: str, file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
 
 
-@router.get("/files/list/{session_id}", response_model=FileListResponse)
-async def list_files(session_id: str):
-    """List files in the session's workspace"""
-    session_context = await session_manager.get_session(session_id)
-    if not session_context:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    workspace_dir = Path(session_context.workspace_path)
-    
-    try:
-        files = []
-        for file_path in workspace_dir.iterdir():
-            if file_path.is_file():
-                stat = file_path.stat()
-                files.append({
-                    "name": file_path.name,
-                    "size": stat.st_size,
-                    "modified": stat.st_mtime,
-                    "path": str(file_path.relative_to(workspace_dir))
-                })
-        
-        return {
-            "files": files,
-            "session_id": session_id,
-            "workspace": str(workspace_dir)
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
 
 
 @router.delete("/files/delete/{session_id}/{filename}", response_model=FileDeleteResponse)
@@ -587,3 +480,45 @@ async def delete_file(session_id: str, filename: str):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+
+
+@router.get("/files/download/{session_id}/{filename}")
+async def download_file(session_id: str, filename: str):
+    """Download a file from the session's workspace"""
+    session_context = await session_manager.get_session(session_id)
+    if not session_context:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    workspace_dir = Path(session_context.workspace_path)
+    file_path = workspace_dir / filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    if not file_path.is_relative_to(workspace_dir):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    
+    try:
+        # Determine media type based on file extension
+        media_type = "application/octet-stream"
+        if file_path.suffix.lower() == '.xlsx':
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif file_path.suffix.lower() == '.csv':
+            media_type = "text/csv"
+        elif file_path.suffix.lower() == '.json':
+            media_type = "application/json"
+        elif file_path.suffix.lower() == '.txt':
+            media_type = "text/plain"
+        
+        return FileResponse(
+            path=str(file_path),
+            filename=filename,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename=\"{filename}\"",
+                "Cache-Control": "no-cache"
+            }
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")

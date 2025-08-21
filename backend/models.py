@@ -66,40 +66,33 @@ class SessionTitleResponse(BaseModel):
     message: str
 
 
-# Unified message format for frontend communication
+# Simplified message format for frontend communication
 from typing import Dict, Any, Optional, Literal
 
 MessageType = Literal[
     "user",           # User input message
-    "agent",          # Agent response content  
-    "tool_call",      # Tool being called
+    "agent",          # Agent response content (streamable)
+    "tool_call",      # Tool execution indicator
     "tool_result",    # Tool execution result
-    "role_transition", # Agent handoff/routing
-    "artifact",       # HTML artifacts for visualization
-    "error",          # Error messages
-    "system"          # System messages
+    "role_transition", # Agent handoff/routing (single expandable bubble)
+    "artifact",       # HTML artifacts for visualization (clickable)
+    "file_export"     # File export with download capability
 ]
 
 class ParsedMessage(BaseModel):
     """
-    Unified message format for frontend communication.
-    Frontend uses 'type' to determine rendering, 'content' for display.
+    Simplified unified message format.
+    6 types: user, agent, tool_call, tool_result, role_transition, artifact
     """
     id: str
     type: MessageType
     content: str
     timestamp: float
-    
-    # Optional metadata based on message type
     metadata: Optional[Dict[str, Any]] = None
-    
-    class Config:
-        # Allow extra fields for extensibility
-        extra = "allow"
 
-# Convenience constructors for common message types
+# Message constructors
 def create_user_message(content: str, message_id: str, timestamp: float) -> ParsedMessage:
-    """Create a user message"""
+    """User input message"""
     return ParsedMessage(
         id=message_id,
         type="user", 
@@ -108,7 +101,7 @@ def create_user_message(content: str, message_id: str, timestamp: float) -> Pars
     )
 
 def create_agent_message(content: str, message_id: str, timestamp: float, is_streaming: bool = False) -> ParsedMessage:
-    """Create an agent response message"""
+    """Agent response - streamable in real-time, complete in history"""
     return ParsedMessage(
         id=message_id,
         type="agent",
@@ -118,69 +111,72 @@ def create_agent_message(content: str, message_id: str, timestamp: float, is_str
     )
 
 def create_tool_call_message(tool_name: str, tool_args: Dict[str, Any], tool_id: str, timestamp: float) -> ParsedMessage:
-    """Create a tool call message"""
+    """Tool execution indicator"""
     return ParsedMessage(
         id=tool_id,
         type="tool_call",
-        content=f"Calling {tool_name}...",
+        content=f"Executing {tool_name}",
         timestamp=timestamp,
         metadata={
             "tool_name": tool_name,
-            "tool_args": tool_args,
-            "tool_id": tool_id
+            "tool_args": tool_args
         }
     )
 
-def create_tool_result_message(content: str, tool_id: str, timestamp: float) -> ParsedMessage:
-    """Create a tool result message"""
+def create_tool_result_message(content: str, tool_name: str, tool_id: str, timestamp: float) -> ParsedMessage:
+    """Tool execution result"""
     return ParsedMessage(
         id=f"{tool_id}_result",
         type="tool_result", 
         content=content,
         timestamp=timestamp,
-        metadata={"tool_call_id": tool_id}
+        metadata={"tool_name": tool_name}
     )
 
-def create_role_transition_message(to_role: str, task_description: str, message_id: str, timestamp: float) -> ParsedMessage:
-    """Create a role transition message"""
+def create_role_transition_message(to_role: str, message_id: str, timestamp: float) -> ParsedMessage:
+    """Simple bubble for agent handoffs"""
     role_messages = {
-        "researcher": "🔬 Delegating to researcher...",
-        "coder": "💻 Delegating to coder...", 
-        "nutritionist": "🥛 Returning to nutritionist..."
+        "researcher": "🔬 Delegating to researcher",
+        "coder": "💻 Delegating to coder", 
+        "nutritionist": "🥛 Returning to nutritionist"
     }
     
-    content = role_messages.get(to_role, f"Transitioning to {to_role}...")
+    transition_message = role_messages.get(to_role, f"Transitioning to {to_role}")
     
     return ParsedMessage(
         id=message_id,
         type="role_transition",
-        content=content,
+        content=transition_message,
         timestamp=timestamp,
         metadata={
-            "to_role": to_role,
-            "task_description": task_description
+            "to_role": to_role
         }
     )
 
-def create_error_message(error_text: str, message_id: str, timestamp: float) -> ParsedMessage:
-    """Create an error message"""
-    return ParsedMessage(
-        id=message_id,
-        type="error",
-        content=error_text,
-        timestamp=timestamp
-    )
-
 def create_artifact_message(title: str, description: str, html_content: str, message_id: str, timestamp: float) -> ParsedMessage:
-    """Create an artifact message for HTML visualizations"""
+    """Clickable HTML artifact bubble"""
     return ParsedMessage(
         id=message_id,
         type="artifact",
-        content=f"Generated artifact: {title}",
+        content=title,
         timestamp=timestamp,
         metadata={
             "title": title,
             "description": description,
             "html_content": html_content
+        }
+    )
+
+def create_file_export_message(filename: str, file_type: str, filepath: str, message_id: str, timestamp: float) -> ParsedMessage:
+    """File export with download capability"""
+    return ParsedMessage(
+        id=message_id,
+        type="file_export",
+        content=f"📊 {filename} ready for download",
+        timestamp=timestamp,
+        metadata={
+            "filename": filename,
+            "file_type": file_type,
+            "filepath": filepath
         }
     )

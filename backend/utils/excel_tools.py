@@ -17,19 +17,15 @@ async def _get_session_file_path(filepath: str, session_id: str) -> str:
         # Import here to avoid circular imports
         from services.session_manager import session_manager
         
-        # Get session workspace path
-        session = await session_manager.get_session(session_id)
-        if not session:
-            raise RuntimeError(f"Session '{session_id}' not found")
-        
-        session.ensure_workspace_exists()
+        # Get session workspace path using shared utility
+        workspace_path = await session_manager.get_session_workspace_path(session_id)
         
         # If filepath is already absolute and within workspace, use as-is
-        if os.path.isabs(filepath) and filepath.startswith(str(session.workspace_path)):
+        if os.path.isabs(filepath) and filepath.startswith(str(workspace_path)):
             return filepath
         
         # Otherwise, treat as relative to workspace
-        return str(Path(session.workspace_path) / filepath)
+        return str(workspace_path / filepath)
     except Exception as e:
         logger.error(f"Error getting session file path: {e}")
         raise

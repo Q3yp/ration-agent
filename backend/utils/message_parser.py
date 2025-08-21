@@ -1,208 +1,403 @@
 """
-Unified message parser for handling both streaming and historical message parsing.
-Ensures consistent formatting between real-time chat and chat history retrieval.
+Simplified unified message parser.
+Handles both streaming events and stored messages with identical logic.
+Produces 6 message types: user, agent, tool_call, tool_result, role_transition, artifact
 """
-
+import logging
 import re
-from typing import Dict, Any, List, Optional
-from langchain_core.messages import BaseMessage, AIMessage
+import json
+from typing import List, Dict, Any, Optional, Tuple
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, ToolMessage, SystemMessage
+from models import (
+    ParsedMessage, 
+    create_user_message,
+    create_agent_message, 
+    create_tool_call_message,
+    create_tool_result_message,
+    create_role_transition_message,
+    create_artifact_message,
+    create_file_export_message
+)
 
+logger = logging.getLogger(__name__)
 
-class StreamingResponseParser:
-    """Handles streaming parsing for tool-based responses"""
+class UnifiedMessageParser:
+    """
+    Single parser for both streaming and history contexts.
+    Smart tool handling: combines delegation tools into role transitions,
+    detects artifacts, handles normal tool calls/results separately.
+    """
     
-    def __init__(self):
-        self.reset()
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.delegation_tools = {
+            # LangGraph Swarm tools with custom prefix
+            "transfer_to_researcher", "transfer_to_coder", "transfer_to_nutritionist",
+            # Legacy supervisor tools
+            "transfer_back_to_nutritionist"
+        }
+        self.pending_delegations = {}  # tool_id -> (tool_name, tool_args, timestamp)
+        self.agent_message_counter = 0
+        self.current_agent_message_id = None
     
-    def reset(self):
-        """Reset parser state for new response"""
-        self.buffer = ""
-        self.full_response = ""
-        self.user_content = ""
-        self.pending_tool_calls = []
-    
-    def parse_chunk(self, chunk: str) -> Dict[str, Any]:
-        """
-        Parse a streaming chunk looking for regular content and tool calls
-        """
-        # Handle None or non-string chunks
-        if chunk is None:
-            chunk = ""
-        elif not isinstance(chunk, str):
-            chunk = str(chunk)
+    def _extract_artifact_data(self, content: str) -> Optional[Dict[str, str]]:
+        """Extract artifact data from tool result content (legacy fallback)"""
+        # This method is now a fallback for any legacy artifact data in tool results
+        # New artifacts are created directly from tool calls, not tool results
+        
+        # Check for legacy artifact data markers (keeping for backwards compatibility)
+        start_tag = '[ARTIFACT_DATA]'
+        end_tag = '[/ARTIFACT_DATA]'
+        
+        start_idx = content.find(start_tag)
+        if start_idx == -1:
+            return None
             
-        self.buffer += chunk
-        self.full_response += chunk
+        end_idx = content.find(end_tag)
+        if end_idx == -1:
+            return None
         
-        # For tool-based responses, most content is direct user content
-        self.user_content += chunk
         
-        result = {
-            "user_chunk": chunk,
-            "action_data": None,
-            "is_complete": False,
-            "user_message": self.user_content
-        }
+        # Simple extraction for legacy support only
+        json_start = start_idx + len(start_tag)
+        raw_content = content[json_start:end_idx]
         
-        return result
+        first_brace = raw_content.find('{')
+        last_brace = raw_content.rfind('}')
+        
+        if first_brace == -1 or last_brace == -1 or first_brace >= last_brace:
+            return None
+        
+        json_str = raw_content[first_brace:last_brace + 1]
+        
+        try:
+            artifact_data = json.loads(json_str)
+            if artifact_data.get('title') and artifact_data.get('html_content'):
+                return {
+                    'title': artifact_data['title'],
+                    'description': artifact_data.get('description', ''),
+                    'html_content': artifact_data['html_content']
+                }
+        except json.JSONDecodeError:
+            pass
+        
+        return None
     
-    def parse_tool_call_for_action(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Convert handoff tool calls to action data for role transitions
-        """
-        tool_name = tool_call.get("name", "")
-        args = tool_call.get("args", {})
+    def _extract_file_export_data(self, content: str) -> Optional[Dict[str, str]]:
+        """Extract file export data from tool result content"""
+        # Simple string extraction instead of regex
+        start_tag = '[FILE_EXPORT]'
+        end_tag = '[/FILE_EXPORT]'
         
-        # Map tool names to route names for handoff tools
-        handoff_tool_map = {
-            "delegate_to_researcher": "researcher",
-            "delegate_to_coder": "coder", 
-            "return_to_nutritionist": "nutritionist"
-        }
-        
-        if tool_name in handoff_tool_map:
-            action_data = {
-                "route": handoff_tool_map[tool_name]
-            }
+        start_idx = content.find(start_tag)
+        if start_idx == -1:
+            return None
             
-            # Extract task description or findings
-            if "task_description" in args:
-                action_data["task"] = args["task_description"]
-            elif "findings" in args:
-                action_data["finding"] = args["findings"]
+        end_idx = content.find(end_tag)
+        if end_idx == -1:
+            return None
+        
+        # Extract JSON content between tags
+        json_start = start_idx + len(start_tag)
+        file_json = content[json_start:end_idx].strip()
+        
+        if not file_json:
+            return None
+        
+        try:
+            file_data = json.loads(file_json)
             
-            return {
-                "user_chunk": "",
-                "action_data": action_data,
-                "is_complete": True,
-                "user_message": self.user_content,
-                "is_handoff_tool": True
-            }
-        
-        # Not a handoff tool, return normal result
-        return {
-            "user_chunk": "",
-            "action_data": None,
-            "is_complete": False,
-            "user_message": self.user_content,
-            "is_handoff_tool": False
-        }
-
-
-# Removed legacy XML conversion functions - no longer needed with pure tool-based approach
-
-
-class MessageParser:
-    """Unified parser for AI messages, tool calls, and frontend formatting"""
-    
-    def __init__(self):
-        self.streaming_parser = StreamingResponseParser()
-    
-    def parse_ai_message_content(self, content: str) -> Dict[str, Any]:
-        """Parse AI message content - now primarily direct content since we use tools"""
-        if not content:
-            return {"display_content": "", "full_content": content, "action_data": None}
-        
-        # With tool-based approach, most content is direct display content
-        # Action/routing is handled by tool calls, not embedded content
-        return {
-            "display_content": content,
-            "full_content": content,
-            "action_data": None  # Tool calls are handled separately
-        }
-    
-    def extract_tool_calls(self, message: BaseMessage) -> List[Dict[str, Any]]:
-        """Extract tool calls information from a message"""
-        tool_calls = []
-        
-        if isinstance(message, AIMessage) and hasattr(message, 'tool_calls') and message.tool_calls:
-            for tool_call in message.tool_calls:
-                tool_calls.append({
-                    "id": tool_call.get("id"),
-                    "name": tool_call.get("name"), 
-                    "args": tool_call.get("args", {})
-                })
-        
-        return tool_calls
-    
-    def parse_message_for_frontend(self, message: BaseMessage) -> Dict[str, Any]:
-        """Parse a single message for frontend consumption"""
-        msg_type = message.__class__.__name__.lower().replace("message", "")
-        content = message.content
-        
-        # Parse AI messages to extract user-visible content and action data
-        if msg_type == "ai" and content:
-            parsed_content = self.parse_ai_message_content(content)
-            display_content = parsed_content["display_content"]
-            full_content = parsed_content["full_content"]
-            action_data = parsed_content["action_data"]
-        else:
-            display_content = content
-            full_content = content
-            action_data = None
-        
-        # Extract tool calls information
-        tool_calls = self.extract_tool_calls(message)
-        
-        # Check if any tool calls are handoff tools and generate action data
-        # Also filter out handoff tools from tool_calls list for frontend
-        filtered_tool_calls = []
-        if tool_calls and not action_data:
-            for tool_call in tool_calls:
-                parsed_tool = self.streaming_parser.parse_tool_call_for_action(tool_call)
-                if parsed_tool.get("is_handoff_tool") and parsed_tool.get("action_data"):
-                    # Use action data from handoff tool but don't include it in tool_calls
-                    action_data = parsed_tool["action_data"]
-                else:
-                    # Keep non-handoff tools in the tool_calls list
-                    filtered_tool_calls.append(tool_call)
-        else:
-            # No handoff tools, keep all tool calls
-            filtered_tool_calls = tool_calls
-        
-        result = {
-            "type": msg_type,
-            "content": display_content,
-            "full_content": full_content,
-            "tool_calls": filtered_tool_calls,  # Only non-handoff tool calls
-            "action_data": action_data,
-            "timestamp": getattr(message, "additional_kwargs", {}).get("timestamp")
-        }
-        
-        # Add tool_call_id for tool messages
-        if msg_type == "tool" and hasattr(message, 'tool_call_id'):
-            result["tool_call_id"] = message.tool_call_id
-        
-        return result
-    
-    def parse_messages_for_frontend(self, messages: List[BaseMessage]) -> List[Dict[str, Any]]:
-        """Parse multiple messages for frontend consumption, filtering out handoff tool messages"""
-        result = []
-        handoff_tool_call_ids = set()
-        
-        # First pass: collect handoff tool call IDs
-        for msg in messages:
-            if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                for tool_call in msg.tool_calls:
-                    tool_name = tool_call.get("name", "")
-                    if tool_name in ["delegate_to_researcher", "delegate_to_coder", "return_to_nutritionist"]:
-                        handoff_tool_call_ids.add(tool_call.get("id"))
-        
-        # Second pass: parse messages and filter out handoff tool results
-        for msg in messages:
-            # Skip ToolMessage responses that correspond to handoff tools
-            if hasattr(msg, 'tool_call_id') and msg.tool_call_id in handoff_tool_call_ids:
-                continue
+            if file_data.get('filepath') and file_data.get('filename'):
+                return {
+                    'filepath': file_data['filepath'],
+                    'filename': file_data['filename'],
+                    'file_type': file_data.get('type', 'unknown')
+                }
                 
-            parsed_msg = self.parse_message_for_frontend(msg)
-            result.append(parsed_msg)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+        
+        return None
+    
+    
+    def _get_delegation_role(self, tool_name: str) -> Optional[str]:
+        """Map delegation tool names to roles"""
+        mapping = {
+            "transfer_to_researcher": "researcher",
+            "transfer_to_coder": "coder", 
+            "transfer_to_nutritionist": "nutritionist",
+            "transfer_back_to_nutritionist": "nutritionist"
+        }
+        return mapping.get(tool_name)
+    
+    def parse_message(self, message: BaseMessage, context: str = "history") -> List[ParsedMessage]:
+        """
+        Parse a single message. Context can be 'streaming' or 'history'.
+        Returns list of ParsedMessages.
+        """
+        timestamp = getattr(message, 'timestamp', message.additional_kwargs.get('timestamp', 0))
+        if timestamp == 0:
+            timestamp = message.additional_kwargs.get('created_at', 0)
+        
+        msg_id = getattr(message, 'id', None) or f"msg_{hash(str(message.content))}_{int(timestamp * 1000000)}"
+        
+        if isinstance(message, HumanMessage):
+            return [create_user_message(
+                content=message.content,
+                message_id=msg_id,
+                timestamp=timestamp
+            )]
+        
+        elif isinstance(message, AIMessage):
+            result = []
+            
+            # Add agent content if present
+            if message.content.strip():
+                is_streaming = context == "streaming"
+                result.append(create_agent_message(
+                    content=message.content,
+                    message_id=msg_id,
+                    timestamp=timestamp,
+                    is_streaming=is_streaming
+                ))
+            
+            # Process tool calls
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                for tool_call in message.tool_calls:
+                    tool_name = tool_call.get("name", "")
+                    tool_id = tool_call.get("id", f"tool_{int(timestamp * 1000000)}")
+                    tool_args = tool_call.get("args", {})
+                    
+                    if tool_name in self.delegation_tools:
+                        # Store delegation for later combination with result
+                        self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
+                    elif tool_name == "create_artifact":
+                        # Create artifact message directly from tool args
+                        result.append(create_artifact_message(
+                            title=tool_args.get('title', ''),
+                            description=tool_args.get('description', ''),
+                            html_content=tool_args.get('html_content', ''),
+                            message_id=f"{tool_id}_artifact",
+                            timestamp=timestamp
+                        ))
+                    else:
+                        # Regular tool call
+                        result.append(create_tool_call_message(
+                            tool_name=tool_name,
+                            tool_args=tool_args,
+                            tool_id=tool_id,
+                            timestamp=timestamp
+                        ))
+            
+            return result
+        
+        elif isinstance(message, ToolMessage):
+            tool_id = getattr(message, 'tool_call_id', msg_id)
+            
+            # Check if this is a delegation tool result
+            if tool_id in self.pending_delegations:
+                tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
+                to_role = self._get_delegation_role(tool_name)
+                
+                # Create single role transition bubble
+                return [create_role_transition_message(
+                    to_role=to_role,
+                    message_id=f"{tool_id}_transition",
+                    timestamp=timestamp
+                )]
+            
+            # Skip create_artifact tool results (artifact already created from tool call)
+            # We need to infer tool name from message content or use additional_kwargs
+            tool_name = getattr(message, 'name', message.additional_kwargs.get('tool_name', 'unknown'))
+            if tool_name == "create_artifact":
+                return []  # Don't send tool result to frontend
+            
+            # Check for file export data
+            file_export_data = self._extract_file_export_data(message.content)
+            
+            if file_export_data:
+                result = []
+                
+                # Create file export message
+                result.append(create_file_export_message(
+                    filename=file_export_data['filename'],
+                    file_type=file_export_data['file_type'],
+                    filepath=file_export_data['filepath'],
+                    message_id=f"{tool_id}_export",
+                    timestamp=timestamp
+                ))
+                
+                # Create tool result with original content
+                result.append(create_tool_result_message(
+                    content=message.content,
+                    tool_name="export_formulation",
+                    tool_id=tool_id,
+                    timestamp=timestamp
+                ))
+                
+                return result
+            else:
+                # Regular tool result
+                return [create_tool_result_message(
+                    content=message.content,
+                    tool_name=tool_name,
+                    tool_id=tool_id,
+                    timestamp=timestamp
+                )]
+        
+        # Skip system messages and other types
+        return []
+    
+    def parse_messages(self, messages: List[BaseMessage]) -> List[ParsedMessage]:
+        """Parse list of messages (for history context)"""
+        # Convert dict messages to BaseMessage objects if needed
+        converted_messages = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                msg_type = msg.get("type", "").lower()
+                content = msg.get("content", "")
+                additional_kwargs = msg.get("additional_kwargs", {})
+                
+                if msg_type == "human":
+                    converted_messages.append(HumanMessage(content=content, additional_kwargs=additional_kwargs))
+                elif msg_type == "ai":
+                    ai_msg = AIMessage(content=content, additional_kwargs=additional_kwargs)
+                    if "tool_calls" in msg:
+                        ai_msg.tool_calls = msg["tool_calls"]
+                    converted_messages.append(ai_msg)
+                elif msg_type == "tool":
+                    converted_messages.append(ToolMessage(
+                        content=content, 
+                        tool_call_id=msg.get("tool_call_id", ""), 
+                        additional_kwargs=additional_kwargs
+                    ))
+                elif msg_type == "system":
+                    converted_messages.append(SystemMessage(content=content, additional_kwargs=additional_kwargs))
+            else:
+                converted_messages.append(msg)
+        
+        # Parse all messages
+        result = []
+        for msg in converted_messages:
+            parsed = self.parse_message(msg, context="history")
+            result.extend(parsed)
         
         return result
     
-    def parse_streaming_chunk(self, chunk_content: str) -> Dict[str, Any]:
-        """Parse streaming chunk content (for real-time chat)"""
-        return self.streaming_parser.parse_chunk(chunk_content)
+    def parse_streaming_event(self, event: Dict[str, Any]) -> List[ParsedMessage]:
+        """Parse streaming LangGraph event"""
+        event_type = event.get("event", "")
+        timestamp = event.get("timestamp", 0)
+        
+        if event_type == "on_chat_model_start":
+            # New AI response starting - increment counter
+            self.agent_message_counter += 1
+            self.current_agent_message_id = f"{self.session_id}_agent_{self.agent_message_counter}"
+            return []  # Don't send anything yet, wait for chunks
+        
+        elif event_type == "on_chat_model_stream":
+            # Agent content chunk - use current message ID
+            chunk_content = event["data"]["chunk"].content
+            if chunk_content and self.current_agent_message_id:
+                return [create_agent_message(
+                    content=chunk_content,
+                    message_id=self.current_agent_message_id,
+                    timestamp=timestamp,
+                    is_streaming=True
+                )]
+        
+        elif event_type == "on_chat_model_end":
+            # AI response finished - reset current message ID
+            self.current_agent_message_id = None
+            return []  # Don't send anything
+        
+        elif event_type == "on_tool_start":
+            # Tool call started
+            tool_name = event.get("name", "")
+            # Get args from LangGraph streaming events
+            tool_args = event["data"].get("input", {})
+            tool_id = event.get("run_id", f"tool_{int(timestamp * 1000000)}")
+            
+            
+            if tool_name in self.delegation_tools:
+                # Store delegation for later combination
+                self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
+                return []  # Don't send anything yet
+            elif tool_name == "create_artifact":
+                # Create artifact message directly from tool args
+                return [create_artifact_message(
+                    title=tool_args.get('title', ''),
+                    description=tool_args.get('description', ''),
+                    html_content=tool_args.get('html_content', ''),
+                    message_id=f"{tool_id}_artifact",
+                    timestamp=timestamp
+                )]
+            else:
+                # Regular tool call
+                return [create_tool_call_message(
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    tool_id=tool_id,
+                    timestamp=timestamp
+                )]
+        
+        elif event_type == "on_tool_end":
+            # Tool call completed
+            tool_name = event.get("name", "")
+            tool_id = event.get("run_id", f"tool_{int(timestamp * 1000000)}")
+            result_content = str(event["data"].get("output", ""))
+            
+            
+            # Check if this is a delegation tool result
+            if tool_id in self.pending_delegations:
+                tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
+                to_role = self._get_delegation_role(tool_name)
+                
+                # Create single role transition bubble
+                return [create_role_transition_message(
+                    to_role=to_role,
+                    message_id=f"{tool_id}_transition",
+                    timestamp=timestamp
+                )]
+            
+            # Skip create_artifact tool results (artifact already created from tool call)
+            if tool_name == "create_artifact":
+                return []  # Don't send tool result to frontend
+            
+            # Check for file export data
+            file_export_data = self._extract_file_export_data(result_content)
+            
+            if file_export_data:
+                result = []
+                
+                # Create file export message
+                result.append(create_file_export_message(
+                    filename=file_export_data['filename'],
+                    file_type=file_export_data['file_type'],
+                    filepath=file_export_data['filepath'],
+                    message_id=f"{tool_id}_export",
+                    timestamp=timestamp
+                ))
+                
+                # Create tool result with original content
+                result.append(create_tool_result_message(
+                    content=result_content,
+                    tool_name=tool_name,
+                    tool_id=tool_id,
+                    timestamp=timestamp
+                ))
+                
+                return result
+            else:
+                # Regular tool result
+                return [create_tool_result_message(
+                    content=result_content,
+                    tool_name=tool_name,
+                    tool_id=tool_id,
+                    timestamp=timestamp
+                )]
+        
+        # Unknown or unhandled event type
+        return []
 
-
-# Global message parser instance
-message_parser = MessageParser()
+# No global parser - create per session

@@ -116,40 +116,56 @@ class FormulationOptimizer:
                         b_ub.append(max_val * 100)
                 
                 elif constraint_type == "daily_total":
-                    # Daily total constraint: absolute daily nutrient intake
-                    nutrient = constraint["nutrient"]
+                    # Daily total constraint: flexible system for any daily attribute
+                    attribute = constraint.get("attribute")
                     target = constraint.get("target")
-                    daily_intake_kg = constraint.get("daily_intake_kg")
-                    min_val = constraint.get("min")
-                    max_val = constraint.get("max")
+                    tolerance_percent = constraint.get("tolerance_percent", 10.0)
                     
-                    if daily_intake_kg is None:
-                        logger.warning(f"Daily intake not specified for daily_total constraint on {nutrient}")
+                    if not attribute or target is None:
+                        logger.warning(f"Daily total constraint missing attribute or target: {constraint}")
                         continue
                     
-                    # Build constraint row (nutrient per kg feed * daily intake / 100)
-                    constraint_row = []
-                    for feed_name in selected_feeds:
-                        feed_nutrients = self.feeds[feed_name]["nutrients"]
-                        nutrient_content = feed_nutrients.get(nutrient, 0.0)
-                        # Convert to daily intake: (nutrient_content/100) * (daily_intake_kg/100) * feed_percentage
-                        constraint_row.append(nutrient_content * daily_intake_kg / 10000)
+                    # Calculate tolerance range
+                    tolerance_factor = tolerance_percent / 100.0
+                    target_min = target * (1 - tolerance_factor)
+                    target_max = target * (1 + tolerance_factor)
                     
-                    # Add constraints based on what's specified
-                    if target is not None:
-                        # Target constraint (convert to min/max with small tolerance)
-                        tolerance = target * 0.01  # 1% tolerance
-                        A_ub.append([-x for x in constraint_row])  # >= target - tolerance
-                        b_ub.append(-(target - tolerance))
-                        A_ub.append(constraint_row)  # <= target + tolerance
-                        b_ub.append(target + tolerance)
+                    if attribute == "dmi":
+                        # Special case: DMI constraint affects all nutrients
+                        # This is handled differently - DMI sets the total intake level
+                        # Store DMI range for later use in nutrient calculations
+                        self.dmi_min = target_min
+                        self.dmi_max = target_max
+                        self.dmi_target = target
+                        continue
+                    
                     else:
-                        if min_val is not None:
-                            A_ub.append([-x for x in constraint_row])
-                            b_ub.append(-min_val)
-                        if max_val is not None:
-                            A_ub.append(constraint_row)
-                            b_ub.append(max_val)
+                        # Nutrient daily total constraint
+                        # Requires DMI to be specified elsewhere
+                        if not hasattr(self, 'dmi_target') or self.dmi_target is None:
+                            logger.warning(f"Daily total constraint for {attribute} requires DMI to be specified")
+                            continue
+                        
+                        # Use DMI range for constraint flexibility
+                        dmi_min = getattr(self, 'dmi_min', self.dmi_target)
+                        dmi_max = getattr(self, 'dmi_max', self.dmi_target)
+                        
+                        # Build constraint rows
+                        constraint_row_min = []
+                        constraint_row_max = []
+                        for feed_name in selected_feeds:
+                            feed_nutrients = self.feeds[feed_name]["nutrients"]
+                            nutrient_content = feed_nutrients.get(attribute, 0.0)
+                            # Convert to daily intake: (nutrient_content/100) * (dmi/100) * feed_percentage
+                            constraint_row_min.append(nutrient_content * dmi_min / 10000)
+                            constraint_row_max.append(nutrient_content * dmi_max / 10000)
+                        
+                        # Add target constraint with tolerance
+                        # Use min DMI for lower bound, max DMI for upper bound to allow flexibility
+                        A_ub.append([-x for x in constraint_row_min])  # >= target_min
+                        b_ub.append(-target_min)
+                        A_ub.append(constraint_row_max)  # <= target_max  
+                        b_ub.append(target_max)
                 
                 elif constraint_type == "ratio":
                     # Ratio constraint: nutrient1/nutrient2 ratio
@@ -214,7 +230,7 @@ class FormulationOptimizer:
             nutrient_analysis = {}
             
             for i, feed_name in enumerate(selected_feeds):
-                percentage = result.x[i]
+                percentage = float(result.x[i])  # Convert numpy.float64 to Python float
                 if percentage > 0.001:  # Only include feeds with meaningful inclusion
                     formulation[feed_name] = {
                         "percentage_dm": round(percentage, 2),
@@ -235,15 +251,15 @@ class FormulationOptimizer:
                 total_content = 0.0
                 for feed_name, inclusion in formulation.items():
                     feed_nutrients = self.feeds[feed_name]["nutrients"]
-                    nutrient_content = feed_nutrients.get(nutrient, 0.0)
+                    nutrient_content = float(feed_nutrients.get(nutrient, 0.0))  # Ensure Python float
                     total_content += inclusion["percentage_dm"] * nutrient_content / 100
                 
-                nutrient_analysis[nutrient] = round(total_content, 2)
+                nutrient_analysis[nutrient] = round(float(total_content), 2)  # Ensure Python float
             
             return {
                 "status": "success",
                 "formulation": formulation,
-                "cost_per_kg_dm": round(total_cost, 3),
+                "cost_per_kg_dm": round(float(total_cost), 3),  # Ensure Python float
                 "nutrient_analysis": nutrient_analysis,
                 "constraint_satisfaction": "All constraints satisfied",
                 "optimization_objective": optimization_goal

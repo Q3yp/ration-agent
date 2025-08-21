@@ -13,7 +13,7 @@ from langchain_community.agent_toolkits import FileManagementToolkit
 from duckduckgo_search import DDGS
 from .ragflow_integration import create_ragflow_tools_for_session
 from .excel_tools import get_excel_tools
-from .formulation_tools import get_formulation_tools, get_add_feed_tool
+from .formulation_tools import create_formulation_tools
 
 try:
     import bleach
@@ -257,7 +257,16 @@ async def create_html_artifact(
         
         # Return structured data that includes the HTML content for frontend display
         # No file saving needed - content is embedded in tool result and persisted via LangGraph checkpointing
-        return f"✅ HTML artifact created successfully!\n- Title: {title}\n- Description: {description or 'No description'}\n\n[ARTIFACT_DATA]\n{json.dumps({'title': title, 'description': description or '', 'html_content': full_html}, ensure_ascii=False)}\n[/ARTIFACT_DATA]\n\nThe artifact is now available for display in the frontend."
+        artifact_data = {
+            'title': title,
+            'description': description or '',
+            'html_content': full_html
+        }
+        
+        # Use compact JSON serialization without newlines to avoid parsing issues
+        artifact_json = json.dumps(artifact_data, ensure_ascii=False, separators=(',', ':'))
+        
+        return f"✅ HTML artifact created successfully!\n- Title: {title}\n- Description: {description or 'No description'}\n\n[ARTIFACT_DATA]\n{artifact_json}\n[/ARTIFACT_DATA]\n\nThe artifact is now available for display in the frontend."
         
     except Exception as e:
         logger.error(f"Failed to create HTML artifact: {e}")
@@ -537,165 +546,12 @@ def get_search_tools():
 
 
 
-# Simple unified todo tool
-@tool
-def manage_todos(
-    action: str,
-    state: Annotated[dict, InjectedState],
-    tool_call_id: Annotated[str, InjectedToolCallId],
-    items: Optional[str] = None
-) -> Command:
-    """
-    Manage todo list with simple operations.
-    
-    Args:
-        action: Action to perform - "create", "add", "update", "remove", "goto", "check"
-        items: Items for the action:
-            - create: "item1 | item2 | item3" (overwrites entire list)
-            - add: "2:new item | another item" (adds at position 2, pushes rest right) or "end:new item | another" (adds at end)
-            - update: "1:updated description | 3:another update"
-            - remove: "1,2,3" (comma-separated IDs)
-            - goto: "3" (go to item 3) or "end" (go to end)
-            - check: not needed (shows current list)
-    
-    Returns:
-        Current todo list state
-    """
-    try:
-        current_todos = state.get("todos", [])
-        current_pos = state.get("todo_position", 0)
-        
-        if action == "create":
-            # Overwrite entire list
-            if not items:
-                new_todos = []
-            else:
-                new_todos = []
-                for i, item in enumerate(items.split(" | "), 1):
-                    if item.strip():
-                        new_todos.append({"id": i, "task": item.strip()})
-            current_todos = new_todos
-            current_pos = 1 if new_todos else 0
-            
-        elif action == "add":
-            if items and ":" in items:
-                pos_str, tasks_str = items.split(":", 1)
-                new_tasks = [t.strip() for t in tasks_str.split("|") if t.strip()]
-                if new_tasks:
-                    if pos_str.strip() == "end":
-                        # Add at end
-                        for task in new_tasks:
-                            new_id = len(current_todos) + 1
-                            current_todos.append({"id": new_id, "task": task})
-                    else:
-                        try:
-                            pos = int(pos_str.strip())
-                            # Insert new items at position, push existing items right
-                            new_todos = []
-                            inserted = False
-                            
-                            # Add items before insertion point
-                            for todo in current_todos:
-                                if todo["id"] < pos:
-                                    new_todos.append(todo)
-                            
-                            # Insert new items at position
-                            for i, task in enumerate(new_tasks):
-                                new_todos.append({"id": pos + i, "task": task})
-                            
-                            # Add items after insertion point (shifted right)
-                            for todo in current_todos:
-                                if todo["id"] >= pos:
-                                    new_todos.append({"id": todo["id"] + len(new_tasks), "task": todo["task"]})
-                            
-                            # Renumber all items to be sequential
-                            for i, todo in enumerate(new_todos, 1):
-                                todo["id"] = i
-                                
-                            current_todos = new_todos
-                        except ValueError:
-                            pass
-        
-        elif action == "update":
-            if items:
-                updates = {}
-                for update in items.split(" | "):
-                    if ":" in update:
-                        id_str, new_task = update.split(":", 1)
-                        try:
-                            updates[int(id_str.strip())] = new_task.strip()
-                        except ValueError:
-                            continue
-                
-                for todo in current_todos:
-                    if todo["id"] in updates:
-                        todo["task"] = updates[todo["id"]]
-        
-        elif action == "remove":
-            if items:
-                try:
-                    remove_ids = [int(x.strip()) for x in items.split(",")]
-                    current_todos = [t for t in current_todos if t["id"] not in remove_ids]
-                    # Renumber remaining items
-                    for i, todo in enumerate(current_todos, 1):
-                        todo["id"] = i
-                except ValueError:
-                    pass
-        
-        elif action == "goto":
-            if items:
-                if items.strip() == "end":
-                    current_pos = len(current_todos)
-                else:
-                    try:
-                        current_pos = int(items.strip())
-                    except ValueError:
-                        pass
-        
-        # Format current state for display
-        if not current_todos:
-            display = "Todo list is empty"
-        else:
-            lines = ["Current Todo List:"]
-            for todo in current_todos:
-                marker = "→" if todo["id"] == current_pos else " "
-                lines.append(f"{marker} {todo['id']}: {todo['task']}")
-            display = "\n".join(lines)
-        
-        return Command(
-            update={
-                "todos": current_todos,
-                "todo_position": current_pos,
-                "messages": [
-                    ToolMessage(display, tool_call_id=tool_call_id)
-                ]
-            }
-        )
-        
-    except Exception as e:
-        logger.error(f"Manage todos error: {e}")
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(f"Error managing todos: {str(e)}", tool_call_id=tool_call_id)
-                ]
-            }
-        )
-
-def get_todo_tools():
-    """Get simple todo management tool."""
-    return [manage_todos]
-
-
 async def get_nutritionist_tools(session_id: str):
     """Get nutritionist-specific tools"""
     # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
-    formulation_tools = get_formulation_tools()
+    formulation_tools = create_formulation_tools(session_id)
     
-    # Add todo management tool
-    todo_tools = get_todo_tools()
-    
-    return formulation_tools + todo_tools
+    return formulation_tools
 
 async def get_coder_tools(session_id: str):
     """Get all available tools for a session (code worker tools)."""
@@ -729,8 +585,5 @@ async def get_tools(session_id: str):
     # Get Excel tools for the session
     excel_tools = await get_excel_tools(session_id)
 
-    # Get add_feed tool for the coder
-    add_feed_tools = get_add_feed_tool()
-
     # Note: RAGFlow tools are now only available to search worker via get_search_tools()
-    return [session_bash_tool, artifact_tool] + file_tools + excel_tools + add_feed_tools
+    return [session_bash_tool, artifact_tool] + file_tools + excel_tools

@@ -3,6 +3,7 @@ import asyncio
 from typing import Annotated, Optional
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt.chat_agent_executor import AgentState
+from langgraph_swarm import SwarmState
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 class FormulationState(AgentState):
-    """Simplified state for LangGraph Multi-Agent Supervisor system"""
+    """Enhanced state for LangGraph Swarm multi-agent system using AgentState"""
     # Task context
     task_context: dict = {}
     
@@ -50,25 +51,21 @@ class FormulationState(AgentState):
     # Feed formulation state (core business logic)
     feed_database: Annotated[dict, merge_dicts] = {}  # Feed name -> feed data
     current_formulation: Annotated[dict, replace_dict] = {}  # Last formulation result
+    formulation_constraints: Annotated[list, add_messages] = []  # Nutritional constraints used in optimization
+    feed_constraints: Annotated[dict, replace_dict] = {}  # Feed inclusion constraints
     
-    # Active agent tracking (for supervisor framework)
-    active_agent: Annotated[str, replace_string] = "nutritionist"
+    # Task delegation context for swarm agents
+    task_description: Annotated[str, replace_string] = ""
 
-class WorkerState(AgentState):
-    """Extended state for formulation system with isolated message threads"""
-    # Task context
-    task_context: dict = {}
-    
-    # Artifacts (accumulate results) - using named functions for serialization
-    artifacts: Annotated[list, add_messages] = []
 
-    # Message count tracker (total messages processed so far)
-    processed_message_count: Annotated[int, add_int] = 0
+class FormulationSwarmState(SwarmState):
+    """Custom swarm state with formulation fields for persistence"""
     
-    # Feed formulation state
+    # Feed formulation state (core business logic) 
     feed_database: Annotated[dict, merge_dicts] = {}  # Feed name -> feed data
     current_formulation: Annotated[dict, replace_dict] = {}  # Last formulation result
-
+    formulation_constraints: Annotated[list, add_messages] = []  # Nutritional constraints used in optimization
+    feed_constraints: Annotated[dict, replace_dict] = {}  # Feed inclusion constraints
 
 class SharedConnectionManager:
     """Manages a single shared connection pool for all agent operations"""
@@ -115,21 +112,21 @@ _connection_manager = SharedConnectionManager()
 
 
 async def create_agent_for_session(session_id: str):
-    """Create a new agent for a session using LangGraph Multi-Agent Supervisor pattern"""
+    """Create a new agent for a session using LangGraph Swarm pattern"""
     
     # Get shared pool and create individual checkpointer for this session
     pool = await _connection_manager.get_shared_pool()
     checkpointer = AsyncPostgresSaver(pool)
     
-    # Import supervisor creation function from nodes module
-    from agents.nodes import create_nutritionist_supervisor
+    # Import swarm creation function from nodes module
+    from agents.nodes import create_agent_swarm
     
-    # Create the supervisor workflow
-    supervisor_workflow = await create_nutritionist_supervisor(session_id)
+    # Create the swarm workflow
+    swarm_workflow = await create_agent_swarm(session_id)
     
     # Compile with shared checkpointer
     # Note: recursion_limit is set during invoke/stream, not compile
-    agent = supervisor_workflow.compile(checkpointer=checkpointer)
+    agent = swarm_workflow.compile(checkpointer=checkpointer)
     
     return agent
 

@@ -7,6 +7,7 @@ from typing import Dict, Optional, Set, List, Any
 from dataclasses import dataclass, field
 from psycopg_pool import AsyncConnectionPool
 from core.agent import create_agent_for_session, cleanup_agent_session
+from utils.message_parser import UnifiedMessageParser
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -87,6 +88,7 @@ class SessionManager:
         self._session_info: Dict[str, SessionInfo] = {}  # Lightweight cache for display
         self._db_pool: Optional[AsyncConnectionPool] = None
         self._session_agents: Dict[str, Any] = {}  # Cache agents per session
+        self._session_parsers: Dict[str, UnifiedMessageParser] = {}  # Cache parsers per session
         self._agent_creation_locks: Dict[str, asyncio.Lock] = {}  # Prevent concurrent agent creation
         self._sessions: Dict[str, SessionContext] = {}  # In-memory session cache
         self._active_sessions: Set[str] = set()  # Set of active session IDs
@@ -417,6 +419,14 @@ class SessionManager:
             self._session_agents[session_id] = agent
             return agent
     
+    def get_session_parser(self, session_id: str) -> UnifiedMessageParser:
+        """Get or create message parser for session - thread-safe"""
+        if session_id not in self._session_parsers:
+            logger.debug(f"Creating new message parser for session {session_id}")
+            self._session_parsers[session_id] = UnifiedMessageParser(session_id)
+        
+        return self._session_parsers[session_id]
+    
     async def increment_connection(self, session_id: str):
         """Increment active connection count for session"""
         session = await self.get_session(session_id)
@@ -477,6 +487,27 @@ class SessionManager:
             "agent_ready": True,  # Agents are created on-demand
             "title": session.title
         }
+
+    async def get_session_workspace_path(self, session_id: str) -> Path:
+        """Get the workspace Path object for a session. 
+        
+        This is a shared utility for tools that need to create files in the session workspace.
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            Path object for the session workspace
+            
+        Raises:
+            RuntimeError: If session is not found
+        """
+        session = await self.get_session(session_id)
+        if not session:
+            raise RuntimeError(f"Session '{session_id}' not found")
+        
+        session.ensure_workspace_exists()
+        return session.get_workspace()
     
     async def list_active_sessions(self) -> list:
         """Get list of all active session IDs with their stats from database"""
@@ -505,10 +536,14 @@ class SessionManager:
         # Deactivate in database
         await self.deactivate_session(session_id)
 
-        # Clean up cached agent and creation lock
+        # Clean up cached agent, parser, and creation lock
         if session_id in self._session_agents:
             del self._session_agents[session_id]
             logger.debug(f"Cleaned up cached agent for session {session_id}")
+        
+        if session_id in self._session_parsers:
+            del self._session_parsers[session_id]
+            logger.debug(f"Cleaned up cached parser for session {session_id}")
         
         # Clean up agent creation lock
         if session_id in self._agent_creation_locks:
@@ -536,10 +571,14 @@ class SessionManager:
         # Mark as deleted in database (soft delete)
         await self.mark_session_deleted(session_id)
 
-        # Clean up cached agent and creation lock
+        # Clean up cached agent, parser, and creation lock
         if session_id in self._session_agents:
             del self._session_agents[session_id]
             logger.debug(f"Cleaned up cached agent for session {session_id}")
+        
+        if session_id in self._session_parsers:
+            del self._session_parsers[session_id]
+            logger.debug(f"Cleaned up cached parser for session {session_id}")
         
         # Clean up agent creation lock
         if session_id in self._agent_creation_locks:
