@@ -1,11 +1,9 @@
 'use client'
 
-import { Message, ArtifactData, getArtifactMetadata, getRoleTransitionMetadata } from '@/types/chat'
+import { Message, ArtifactData, getArtifactMetadata, getRoleTransitionMetadata, getToolMetadata, getFileExportMetadata } from '@/types/chat'
 import {
   Settings,
   CheckCircle,
-  AlertCircle,
-  Info,
   ChevronRight,
   User,
   Bot,
@@ -13,192 +11,45 @@ import {
   CornerDownRight
 } from 'lucide-react'
 import { formatTimestamp } from '@/utils/formatTime'
-import { getRoleInfo } from '@/utils/roleMapping'
+import { getRoleInfo, getToolName } from '@/utils/roleMapping'
 import MarkdownMessage from './MarkdownMessage'
 import { useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
-import { ExternalLink } from 'lucide-react'
-import { parseArtifactData } from '@/utils/artifactParser'
-
 
 interface MessageBubbleProps {
   message: Message
   onArtifactOpen?: (artifactData: ArtifactData) => void
+  onFileDownload?: (filename: string, sessionId: string) => void
+  sessionId?: string
 }
 
-export default function MessageBubble({ message, onArtifactOpen }: MessageBubbleProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+export default function MessageBubble({ message, onArtifactOpen, onFileDownload, sessionId }: MessageBubbleProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
   
-  // Parse file upload tags from message content
+  // Parse file upload tags from user message content
   const parseFileUploads = (content: string) => {
-    const fileUploadRegex = /\[FILE_UPLOAD\](.*?)\[\/FILE_UPLOAD\]/g;
-    const fileUploads: string[] = [];
-    let match;
+    const fileUploadRegex = /\[FILE_UPLOAD\](.*?)\[\/FILE_UPLOAD\]/g
+    const fileUploads: string[] = []
+    let match
     
     while ((match = fileUploadRegex.exec(content)) !== null) {
-      fileUploads.push(match[1]);
+      fileUploads.push(match[1])
     }
     
-    // Remove file upload tags from content
-    const cleanContent = content.replace(fileUploadRegex, '').trim();
-    
-    return { fileUploads, cleanContent };
-  };
-  const renderToolCall = () => (
-    <Card className="max-w-[80%] min-w-0 overflow-hidden">
-      <CardContent className="p-3">
-        <div
-          className="flex items-center justify-between cursor-pointer"
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          <div className="flex items-center min-w-0">
-            <ChevronRight className={cn(
-              "h-4 w-4 mr-1 transition-transform flex-shrink-0",
-              isExpanded && "rotate-90"
-            )} />
-            <Settings className="h-4 w-4 mr-2 flex-shrink-0" />
-            <span className="font-semibold truncate">Tool Call: {message.metadata?.tool_name || 'Unknown'}</span>
-          </div>
-          <Badge variant="secondary" className="text-xs flex-shrink-0 ml-2">
-            {formatTimestamp(message.timestamp)}
-          </Badge>
-        </div>
-
-        {/* Expandable Content */}
-        {isExpanded && message.metadata?.tool_args && Object.keys(message.metadata.tool_args).length > 0 && (
-          <div className="mt-3 bg-muted p-3 rounded-md text-xs max-h-64 overflow-auto w-full min-w-0">
-            <strong>参数:</strong>
-            <pre className="mt-1 whitespace-pre-wrap font-mono break-all word-break-all overflow-wrap-anywhere min-w-0">
-              {JSON.stringify(message.metadata?.tool_args, null, 2)}
-            </pre>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-
-  const renderToolResult = () => {
-    const artifactData = parseArtifactData(message.content)
-    const isArtifactTool = artifactData !== null
-    
-    return (
-      <Card className={cn(
-        "max-w-[80%] min-w-0 overflow-hidden border-green-200 bg-green-50",
-        isArtifactTool && onArtifactOpen && "cursor-pointer hover:bg-green-100 transition-colors"
-      )}>
-        <CardContent className="p-3">
-          <div
-            className="flex items-center justify-between"
-            onClick={() => {
-              if (isArtifactTool && onArtifactOpen && artifactData) {
-                onArtifactOpen(artifactData)
-              } else {
-                setIsExpanded(!isExpanded)
-              }
-            }}
-          >
-            <div className="flex items-center min-w-0">
-              {isArtifactTool ? (
-                <ExternalLink className="h-4 w-4 mr-2 text-green-600 flex-shrink-0" />
-              ) : (
-                <>
-                  <ChevronRight className={cn(
-                    "h-4 w-4 mr-1 transition-transform flex-shrink-0",
-                    isExpanded && "rotate-90"
-                  )} />
-                  <CheckCircle className="h-4 w-4 mr-2 text-green-600 flex-shrink-0" />
-                </>
-              )}
-              <span className="font-semibold truncate">
-                {isArtifactTool ? artifactData.title : "工具结果"}
-              </span>
-            </div>
-            <Badge variant="outline" className="text-xs text-green-600 flex-shrink-0 ml-2">
-              {formatTimestamp(message.timestamp)}
-            </Badge>
-          </div>
-
-          {/* Show description for artifacts */}
-          {isArtifactTool && artifactData.description && (
-            <div className="mt-2 text-sm text-green-700">
-              {artifactData.description}
-            </div>
-          )}
-
-          {/* Expandable Content - only for non-artifact tools */}
-          {!isArtifactTool && isExpanded && (
-            <div className="mt-3 bg-green-100 p-3 rounded-md text-sm max-h-64 overflow-auto w-full min-w-0">
-              <pre className="whitespace-pre-wrap font-mono break-all word-break-all overflow-wrap-anywhere min-w-0">
-                {message.content}
-              </pre>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    )
+    const cleanContent = content.replace(fileUploadRegex, '').trim()
+    return { fileUploads, cleanContent }
   }
 
-  const renderSystemMessage = () => (
-    <div className="flex justify-center">
-      <Card className="max-w-md bg-muted">
-        <CardContent className="p-3 text-center">
-          <div className="flex items-center justify-center">
-            <Info className="h-4 w-4 mr-2" />
-            {message.content}
-          </div>
-          <div className="text-xs text-muted-foreground mt-1">
-            {formatTimestamp(message.timestamp)}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-
-  const renderStopMessage = () => (
-    <div className="flex justify-start items-start gap-2">
-      <div className="w-8 h-8 flex items-center justify-center">
-        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-      </div>
-      <Card className="max-w-[80%] min-w-0 overflow-hidden bg-orange-50 border-orange-200">
-        <CardContent className="p-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-orange-700">{message.content}</span>
-          </div>
-          <div className="text-xs text-orange-600 mt-1">
-            {formatTimestamp(message.timestamp)}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-
-  const renderErrorMessage = () => (
-    <Card className="max-w-[80%] min-w-0 overflow-hidden border-red-200 bg-red-50">
-      <CardContent className="p-3">
-        <div className="flex items-center mb-2">
-          <AlertCircle className="h-4 w-4 mr-2 text-red-600" />
-          <span className="font-semibold text-red-600">错误</span>
-        </div>
-        <div className="text-sm text-red-800 break-words overflow-wrap-anywhere">
-          {message.content}
-        </div>
-        <div className="text-xs text-red-600 mt-2">
-          {formatTimestamp(message.timestamp)}
-        </div>
-      </CardContent>
-    </Card>
-  )
-
   const renderUserMessage = () => {
-    const { fileUploads, cleanContent } = parseFileUploads(message.content);
+    const { fileUploads, cleanContent } = parseFileUploads(message.content)
     
     return (
       <div className="flex justify-end items-start gap-2">
         <div className="max-w-[80%] space-y-2">
-          {/* File Uploads from message content */}
+          {/* File Uploads */}
           {fileUploads.length > 0 && (
             <div className="flex justify-end">
               <Card className="bg-blue-50 border-blue-200">
@@ -222,7 +73,7 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
             </div>
           )}
           
-          {/* Message Content (cleaned of file upload tags) */}
+          {/* Message Content */}
           {cleanContent && (
             <Card className="bg-primary text-primary-foreground">
               <CardContent className="p-3">
@@ -264,58 +115,83 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
     </div>
   )
 
-  const renderThinkingMessage = () => (
-    <div className="flex justify-start items-start gap-2">
-      <Avatar className="w-8 h-8">
-        <AvatarFallback>
-          <Bot className="h-4 w-4" />
-        </AvatarFallback>
-      </Avatar>
-      <Card className="max-w-[80%] min-w-0 overflow-hidden bg-muted border-dashed">
-        <CardContent className="p-3">
-          <div className="flex items-center">
-            <div className="animate-pulse flex space-x-1 mr-2">
-              <div className="w-2 h-2 bg-muted-foreground rounded-full"></div>
-              <div className="w-2 h-2 bg-muted-foreground rounded-full"></div>
-              <div className="w-2 h-2 bg-muted-foreground rounded-full"></div>
-            </div>
-            <span className="text-muted-foreground italic break-words overflow-wrap-anywhere">{message.content}</span>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-
-  const renderArtifact = () => {
-    const artifactMeta = getArtifactMetadata(message)
-    if (!artifactMeta?.html_content) return null
-    
-    const artifactData: ArtifactData = {
-      title: artifactMeta.title || 'Artifact',
-      description: artifactMeta.description || '',
-      html_content: artifactMeta.html_content
-    }
+  const renderToolCall = () => {
+    const toolMeta = getToolMetadata(message)
     
     return (
       <div className="flex justify-start items-start gap-2">
         <div className="w-8 h-8 flex items-center justify-center">
-          <File className="h-4 w-4 text-blue-600" />
+          <Settings className="h-4 w-4 text-gray-600" />
         </div>
-        <Card className="max-w-[80%] min-w-0 overflow-hidden border-blue-200 bg-blue-50">
+        <Card className="max-w-[80%] min-w-0 overflow-hidden bg-gray-50 border-gray-200">
           <CardContent className="p-3">
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => onArtifactOpen?.(artifactData)}>
-              <ExternalLink className="h-4 w-4 text-blue-600 flex-shrink-0" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-blue-900 truncate">
-                  {artifactData.title}
-                </div>
-                {artifactData.description && (
-                  <div className="text-xs text-blue-700 mt-1">
-                    {artifactData.description}
-                  </div>
-                )}
+            <div
+              className="flex items-center justify-between cursor-pointer"
+              onClick={() => setIsExpanded(!isExpanded)}
+            >
+              <div className="flex items-center min-w-0">
+                <ChevronRight className={cn(
+                  "h-4 w-4 mr-1 transition-transform flex-shrink-0",
+                  isExpanded && "rotate-90"
+                )} />
+                <span className="font-semibold truncate">
+                  {getToolName(toolMeta?.tool_name || message.content.replace('Executing ', ''))}
+                </span>
               </div>
+              <Badge variant="secondary" className="text-xs flex-shrink-0 ml-2">
+                {formatTimestamp(message.timestamp)}
+              </Badge>
             </div>
+
+            {/* Expandable tool arguments */}
+            {isExpanded && toolMeta?.tool_args && Object.keys(toolMeta.tool_args).length > 0 && (
+              <div className="mt-3 bg-gray-100 p-3 rounded-md text-xs max-h-64 overflow-auto">
+                <strong>参数:</strong>
+                <pre className="mt-1 whitespace-pre-wrap font-mono break-all">
+                  {JSON.stringify(toolMeta.tool_args, null, 2)}
+                </pre>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  const renderToolResult = () => {
+    return (
+      <div className="flex justify-start items-start gap-2">
+        <div className="w-8 h-8 flex items-center justify-center">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+        </div>
+        <Card className="max-w-[80%] min-w-0 overflow-hidden border-green-200 bg-green-50">
+          <CardContent className="p-3">
+            <div
+              className="flex items-center justify-between cursor-pointer"
+              onClick={() => setIsExpanded(!isExpanded)}
+            >
+              <div className="flex items-center min-w-0">
+                <ChevronRight className={cn(
+                  "h-4 w-4 mr-1 transition-transform flex-shrink-0 text-green-600",
+                  isExpanded && "rotate-90"
+                )} />
+                <span className="text-sm text-green-700">
+                  工具结果
+                </span>
+              </div>
+              <Badge variant="outline" className="text-xs text-green-600 flex-shrink-0 ml-2">
+                {formatTimestamp(message.timestamp)}
+              </Badge>
+            </div>
+
+            {/* Expandable content */}
+            {isExpanded && (
+              <div className="mt-3 bg-green-100 p-3 rounded-md text-xs max-h-64 overflow-auto">
+                <pre className="whitespace-pre-wrap font-mono break-all">
+                  {message.content}
+                </pre>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -326,7 +202,6 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
     const roleTransitionMeta = getRoleTransitionMetadata(message)
     const roleInfo = getRoleInfo(roleTransitionMeta?.to_role || '')
     const RoleIcon = roleInfo.icon
-    const hasTaskDescription = roleTransitionMeta?.task_description
     
     return (
       <div className="flex justify-start items-start gap-2">
@@ -342,19 +217,7 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
           } : undefined}
         >
           <CardContent className="p-3">
-            <div
-              className={cn("flex items-center gap-2", hasTaskDescription && "cursor-pointer")}
-              onClick={hasTaskDescription ? () => setIsExpanded(!isExpanded) : undefined}
-            >
-              {hasTaskDescription && (
-                <ChevronRight className={cn(
-                  "h-4 w-4 transition-transform flex-shrink-0",
-                  isExpanded && "rotate-90",
-                  !roleInfo.customStyles && roleInfo.color
-                )} 
-                style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
-                />
-              )}
+            <div className="flex items-center gap-2">
               <RoleIcon 
                 className={cn("h-4 w-4", !roleInfo.customStyles && roleInfo.color)} 
                 style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
@@ -366,33 +229,6 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
                 {roleInfo.transitionMessage}
               </span>
             </div>
-            
-            {/* Expandable Task Description */}
-            {hasTaskDescription && isExpanded && (
-              <div 
-                style={{ 
-                  backgroundColor: roleInfo.customStyles 
-                    ? `${roleInfo.customStyles.color}15` 
-                    : undefined 
-                }}
-                className={cn(
-                  "mt-3 p-3 rounded-md text-xs max-h-64 overflow-auto w-full min-w-0",
-                  !roleInfo.customStyles && roleInfo.bgColor.replace('bg-', 'bg-').replace('-50', '-100')
-                )}
-              >
-                <strong className={cn(
-                  !roleInfo.customStyles && roleInfo.color,
-                  "block mb-2"
-                )}
-                style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
-                >
-                  Task Description:
-                </strong>
-                <div className="text-gray-600 whitespace-pre-wrap">
-                  {roleTransitionMeta?.task_description}
-                </div>
-              </div>
-            )}
             
             <div 
               className={cn("text-xs mt-1", !roleInfo.customStyles && roleInfo.color.replace('700', '600'))}
@@ -406,11 +242,218 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
     )
   }
 
-  // Don't render legacy agent_complete messages
-  if ((message.type as string) === 'agent_complete') {
-    return null
+  const renderArtifact = () => {
+    const artifactMeta = getArtifactMetadata(message)
+    if (!artifactMeta?.html_content) return null
+    
+    const artifactData: ArtifactData = {
+      title: artifactMeta.title || message.content,
+      description: artifactMeta.description || '',
+      html_content: artifactMeta.html_content
+    }
+    
+    return (
+      <div className="flex justify-start items-start gap-2 my-4">
+        <div className="w-8 h-8 flex items-center justify-center">
+          <div className="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>
+        </div>
+        
+        {/* Ultra Fancy Holographic Card */}
+        <div className="relative max-w-[90%] min-w-0 cursor-pointer" onClick={() => onArtifactOpen?.(artifactData)}>
+          {/* Background Glow */}
+          <div className="absolute -inset-1 bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 rounded-3xl opacity-50 blur-sm"></div>
+          
+          {/* Main Glass Card */}
+          <div className="relative bg-white/15 backdrop-blur-xl border border-white/30 rounded-3xl p-6">
+            
+            {/* Holographic Overlay */}
+            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-blue-200/30 via-transparent to-purple-200/30 opacity-60"></div>
+            
+            {/* Floating Orbs */}
+            <div className="absolute top-2 right-4 w-12 h-12 bg-gradient-to-br from-blue-300/40 to-purple-300/40 rounded-full blur-xl"></div>
+            <div className="absolute bottom-4 left-2 w-8 h-8 bg-gradient-to-br from-indigo-300/30 to-blue-300/30 rounded-full blur-lg"></div>
+            <div className="absolute top-1/2 left-1/4 w-6 h-6 bg-gradient-to-br from-purple-300/20 to-blue-300/20 rounded-full blur-md"></div>
+            
+            {/* Content Container */}
+            <div className="relative z-10 flex items-center gap-5">
+              
+              {/* Ultra Fancy Artifact Icon */}
+              <div className="relative">
+                {/* Icon Glow Ring */}
+                <div className="absolute -inset-2 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full opacity-60 blur-sm"></div>
+                
+                {/* Icon Container */}
+                <div className="relative w-20 h-20 bg-gradient-to-br from-white/40 to-white/20 backdrop-blur-md border border-white/40 rounded-2xl flex items-center justify-center">
+                  {/* Inner Glow */}
+                  <div className="absolute inset-2 bg-gradient-to-br from-blue-100/50 to-purple-100/50 rounded-xl"></div>
+                  
+                  {/* HTML Icon */}
+                  <div className="relative z-10 text-3xl filter drop-shadow-[0_2px_8px_rgba(59,130,246,0.5)]">
+                    📄
+                  </div>
+                  
+                  {/* Sparkle Effect */}
+                  <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-90"></div>
+                </div>
+              </div>
+              
+              {/* Content Section */}
+              <div className="flex-1 min-w-0">
+                {/* Title with Holographic Text */}
+                <div className="text-xl font-bold bg-gradient-to-r from-gray-800 via-blue-700 to-purple-700 bg-clip-text text-transparent mb-2 truncate filter drop-shadow-sm">
+                  {artifactData.title}
+                </div>
+                
+                {/* Open Label - Floating Pill */}
+                <div className="relative inline-flex items-center">
+                  <div className="absolute -inset-1 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full opacity-70 blur-sm"></div>
+                  <div className="relative bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg">
+                    <span className="flex items-center gap-2">
+                      ✨ 查看动态内容
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Description */}
+                {artifactData.description && (
+                  <div className="mt-2 inline-block bg-white/20 backdrop-blur-sm border border-white/30 px-3 py-1 rounded-full text-xs font-medium text-gray-600">
+                    {artifactData.description}
+                  </div>
+                )}
+              </div>
+              
+            </div>
+            
+            {/* Bottom Section */}
+            <div className="relative z-10 mt-4 pt-3 border-t border-white/30">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-gray-500">
+                  <div className="w-2 h-2 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full"></div>
+                  HTML 动态内容
+                </div>
+                <div className="text-gray-400 bg-white/20 px-2 py-1 rounded-full backdrop-blur-sm border border-white/20">
+                  {formatTimestamp(message.timestamp)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
+  const renderFileExport = () => {
+    const fileExportMeta = getFileExportMetadata(message)
+    if (!fileExportMeta?.filename) return null
+    
+    const handleDownload = () => {
+      if (onFileDownload && sessionId && fileExportMeta.filename) {
+        onFileDownload(fileExportMeta.filename, sessionId)
+      }
+    }
+    
+    const getFileIcon = (fileType: string) => {
+      switch (fileType) {
+        case 'excel':
+          return '📊'
+        case 'csv':
+          return '📈'
+        case 'json':
+          return '📄'
+        default:
+          return '📁'
+      }
+    }
+    
+    return (
+      <div className="flex justify-start items-start gap-2 my-4">
+        <div className="w-8 h-8 flex items-center justify-center">
+          <div className="w-2 h-2 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.6)]"></div>
+        </div>
+        
+        {/* Ultra Fancy Holographic Card */}
+        <div className="relative max-w-[90%] min-w-0 cursor-pointer" onClick={handleDownload}>
+          {/* Background Glow */}
+          <div className="absolute -inset-1 bg-gradient-to-r from-emerald-400 via-green-400 to-teal-400 rounded-3xl opacity-50 blur-sm"></div>
+          
+          {/* Main Glass Card */}
+          <div className="relative bg-white/15 backdrop-blur-xl border border-white/30 rounded-3xl p-6">
+            
+            {/* Holographic Overlay */}
+            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-emerald-200/30 via-transparent to-teal-200/30 opacity-60"></div>
+            
+            {/* Floating Orbs */}
+            <div className="absolute top-2 right-4 w-12 h-12 bg-gradient-to-br from-emerald-300/40 to-teal-300/40 rounded-full blur-xl"></div>
+            <div className="absolute bottom-4 left-2 w-8 h-8 bg-gradient-to-br from-green-300/30 to-emerald-300/30 rounded-full blur-lg"></div>
+            <div className="absolute top-1/2 left-1/4 w-6 h-6 bg-gradient-to-br from-teal-300/20 to-emerald-300/20 rounded-full blur-md"></div>
+            
+            {/* Content Container */}
+            <div className="relative z-10 flex items-center gap-5">
+              
+              {/* Ultra Fancy File Icon */}
+              <div className="relative">
+                {/* Icon Glow Ring */}
+                <div className="absolute -inset-2 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full opacity-60 blur-sm"></div>
+                
+                {/* Icon Container */}
+                <div className="relative w-20 h-20 bg-gradient-to-br from-white/40 to-white/20 backdrop-blur-md border border-white/40 rounded-2xl flex items-center justify-center">
+                  {/* Inner Glow */}
+                  <div className="absolute inset-2 bg-gradient-to-br from-emerald-100/50 to-teal-100/50 rounded-xl"></div>
+                  
+                  {/* File Icon */}
+                  <div className="relative z-10 text-3xl filter drop-shadow-[0_2px_8px_rgba(52,211,153,0.5)]">
+                    {getFileIcon(fileExportMeta.file_type || '')}
+                  </div>
+                  
+                  {/* Sparkle Effect */}
+                  <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-90"></div>
+                </div>
+              </div>
+              
+              {/* Content Section */}
+              <div className="flex-1 min-w-0">
+                {/* Filename with Holographic Text */}
+                <div className="text-xl font-bold bg-gradient-to-r from-gray-800 via-emerald-700 to-teal-700 bg-clip-text text-transparent mb-2 truncate filter drop-shadow-sm">
+                  {fileExportMeta.filename}
+                </div>
+                
+                {/* Download Label - Floating Pill */}
+                <div className="relative inline-flex items-center">
+                  <div className="absolute -inset-1 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full opacity-70 blur-sm"></div>
+                  <div className="relative bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg">
+                    <span className="flex items-center gap-2">
+                      ✨ 下载配方报告
+                    </span>
+                  </div>
+                </div>
+                
+                {/* File Type Badge */}
+                <div className="mt-2 inline-block bg-white/20 backdrop-blur-sm border border-white/30 px-3 py-1 rounded-full text-xs font-medium text-gray-600">
+                  {fileExportMeta.file_type?.toUpperCase()} 格式
+                </div>
+              </div>
+              
+            </div>
+            
+            {/* Bottom Section */}
+            <div className="relative z-10 mt-4 pt-3 border-t border-white/30">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-gray-500">
+                  <div className="w-2 h-2 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full"></div>
+                  准备下载
+                </div>
+                <div className="text-gray-400 bg-white/20 px-2 py-1 rounded-full backdrop-blur-sm border border-white/20">
+                  {formatTimestamp(message.timestamp)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Route to appropriate renderer based on message type
   switch (message.type) {
     case 'user':
       return renderUserMessage()
@@ -420,23 +463,14 @@ export default function MessageBubble({ message, onArtifactOpen }: MessageBubble
       return renderToolCall()
     case 'tool_result':
       return renderToolResult()
-    case 'system':
-      return renderSystemMessage()
-    case 'error':
-      return renderErrorMessage()
     case 'role_transition':
       return renderRoleTransition()
     case 'artifact':
       return renderArtifact()
+    case 'file_export':
+      return renderFileExport()
     default:
-      // Handle legacy message types
-      if ((message.type as string) === 'stop') {
-        return renderStopMessage()
-      }
-      if ((message.type as string) === 'agent_thinking') {
-        return renderThinkingMessage()
-      }
-      
+      // Unknown message type fallback
       return (
         <div className="flex justify-center">
           <Card className="max-w-md bg-muted">

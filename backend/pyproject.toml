@@ -27,6 +27,8 @@ dependencies = [
     "requests>=2.32.4",
     "tiktoken>=0.8.0",
     "langgraph-swarm>=0.0.14",
+    "matplotlib>=3.10.5",
+    "seaborn>=0.13.2",
 ]
 
 [tool.uv]

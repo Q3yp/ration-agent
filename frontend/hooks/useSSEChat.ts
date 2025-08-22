@@ -1,133 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, useReducer } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Message, MessageType, AttachedFile, ArtifactData } from '@/types/chat'
-import { getRoleInfo } from '@/utils/roleMapping'
-import { parseArtifactData, cleanContentForDisplay } from '@/utils/artifactParser'
-
-interface MessageState {
-  messages: Message[]
-  shouldCreateNewBubble: boolean
-  currentBubbleId: string | null
-}
-
-type MessageAction = 
-  | { type: 'SET_INITIAL_MESSAGES'; payload: Message[] }
-  | { type: 'ADD_USER_MESSAGE'; payload: Message }
-  | { type: 'ADD_CHUNK'; payload: { messageId: string; content: string; timestamp: number } }
-  | { type: 'ADD_TOOL_CALL'; payload: Message }
-  | { type: 'ADD_TOOL_RESULT'; payload: Message }
-  | { type: 'ADD_ROLE_TRANSITION'; payload: Message }
-  | { type: 'ADD_ERROR'; payload: Message }
-  | { type: 'MARK_COMPLETE'; payload: { messageId: string } }
-  | { type: 'SET_NEW_BUBBLE_FLAG'; payload: boolean }
-  | { type: 'RESET_FOR_NEW_MESSAGE' }
-
-function messageReducer(state: MessageState, action: MessageAction): MessageState {
-  switch (action.type) {
-    case 'SET_INITIAL_MESSAGES':
-      return {
-        ...state,
-        messages: action.payload,
-        shouldCreateNewBubble: false,
-        currentBubbleId: null
-      }
-    
-    case 'ADD_USER_MESSAGE':
-      return {
-        ...state,
-        messages: [...state.messages, action.payload],
-        shouldCreateNewBubble: true, // Next agent chunk should create new bubble
-        currentBubbleId: null
-      }
-    
-    case 'ADD_CHUNK': {
-      const { messageId, content, timestamp } = action.payload
-      const lastAgentIndex = state.messages.findLastIndex(msg => msg.type === 'agent')
-      
-      // Create new bubble if flag is set OR no existing agent message
-      if (state.shouldCreateNewBubble || lastAgentIndex < 0) {
-        const newBubbleId = `${messageId}_bubble_${Date.now()}`
-        const newBubble: Message = {
-          id: newBubbleId,
-          type: 'agent' as MessageType,
-          content: content || '',
-          timestamp: timestamp,
-          metadata: { is_streaming: true }
-        }
-        
-        return {
-          ...state,
-          messages: [...state.messages, newBubble],
-          shouldCreateNewBubble: false, // Reset flag
-          currentBubbleId: newBubbleId
-        }
-      }
-      
-      // Update existing agent message
-      return {
-        ...state,
-        messages: state.messages.map((msg, index) => 
-          index === lastAgentIndex 
-            ? { ...msg, content: (msg.content || '') + (content || ''), metadata: { ...msg.metadata, is_streaming: true } }
-            : msg
-        )
-      }
-    }
-    
-    case 'ADD_TOOL_CALL':
-      return {
-        ...state,
-        messages: [...state.messages, action.payload],
-        shouldCreateNewBubble: true // Next chunk should create new bubble
-      }
-    
-    case 'ADD_TOOL_RESULT':
-      return {
-        ...state,
-        messages: [...state.messages, action.payload]
-      }
-    
-    case 'ADD_ROLE_TRANSITION':
-      return {
-        ...state,
-        messages: [...state.messages, action.payload],
-        shouldCreateNewBubble: true // Next chunk should create new bubble
-      }
-    
-    case 'ADD_ERROR':
-      return {
-        ...state,
-        messages: [...state.messages, action.payload]
-      }
-    
-    case 'MARK_COMPLETE':
-      return {
-        ...state,
-        messages: state.messages.map(msg => 
-          msg.id === action.payload.messageId
-            ? { ...msg, metadata: { ...msg.metadata, is_streaming: false } }
-            : msg
-        )
-      }
-    
-    case 'SET_NEW_BUBBLE_FLAG':
-      return {
-        ...state,
-        shouldCreateNewBubble: action.payload
-      }
-    
-    case 'RESET_FOR_NEW_MESSAGE':
-      return {
-        ...state,
-        shouldCreateNewBubble: true,
-        currentBubbleId: null
-      }
-    
-    default:
-      return state
-  }
-}
 
 interface UseSSEChatProps {
   sessionId: string
@@ -148,29 +22,15 @@ interface UseSSEChatReturn {
 }
 
 export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTitleUpdate, onArtifactUpdate }: UseSSEChatProps): UseSSEChatReturn {
-  const [messageState, dispatch] = useReducer(messageReducer, {
-    messages: [],
-    shouldCreateNewBubble: false,
-    currentBubbleId: null
-  })
-  
+  const [messages, setMessages] = useState<Message[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
-  // Remove the extra state variable - artifact loading is handled by existing logic
   
-  const eventSourceRef = useRef<EventSource | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const currentStreamingMessageRef = useRef<string | null>(null)
 
   const cleanup = useCallback(() => {
-    if (eventSourceRef.current) {
-      try {
-        eventSourceRef.current.close()
-      } catch (error) {
-        // Ignore errors during cleanup
-      }
-      eventSourceRef.current = null
-    }
     if (abortControllerRef.current) {
       try {
         abortControllerRef.current.abort()
@@ -181,6 +41,7 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
     }
     setIsConnected(false)
     setIsTyping(false)
+    currentStreamingMessageRef.current = null
   }, [])
 
   const handleSSEMessage = useCallback((event: MessageEvent, eventType: string) => {
@@ -193,12 +54,8 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
           setConnectionError(null)
           break
 
-        case 'thinking':
-          setIsTyping(true)
-          break
 
         case 'message':
-          // Unified message handling - all message types come as ParsedMessage format
           const message: Message = {
             id: data.id,
             type: data.type as MessageType,
@@ -208,77 +65,50 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
           }
 
           // Handle different message types
-          switch (data.type) {
-            case 'user':
-              dispatch({ type: 'ADD_USER_MESSAGE', payload: message })
-              break
-            
-            case 'agent':
-              if (message.metadata?.is_streaming) {
-                dispatch({
-                  type: 'ADD_CHUNK',
-                  payload: {
-                    messageId: message.id,
-                    content: message.content,
-                    timestamp: message.timestamp
-                  }
-                })
-              } else {
-                dispatch({ type: 'ADD_USER_MESSAGE', payload: message })
-              }
-              break
-            
-            case 'tool_call':
-              dispatch({ type: 'ADD_TOOL_CALL', payload: message })
-              break
-            
-            case 'tool_result':
-              // Check if the tool result contains artifact data
-              const artifactData = parseArtifactData(message.content);
+          if (message.type === 'agent' && message.metadata?.is_streaming) {
+            // Streaming agent message - accumulate content
+            setMessages(prev => {
+              // Find existing message with same ID
+              const existingIndex = prev.findIndex(msg => msg.id === message.id)
               
-              if (artifactData && onArtifactUpdate) {
-                onArtifactUpdate(artifactData);
-              }
-              
-              dispatch({ type: 'ADD_TOOL_RESULT', payload: message })
-              break
-            
-            case 'role_transition':
-              // Get role info for consistent styling and metadata
-              const roleTransitionMeta = message.metadata as { to_role?: string; task_description?: string }
-              const roleInfo = getRoleInfo(roleTransitionMeta?.to_role || '')
-              
-              const roleTransitionMessage: Message = {
-                ...message,
-                content: roleInfo.transitionMessage, // Use getRoleInfo for consistent display
-                metadata: {
-                  ...message.metadata,
-                  roleInfo // Add role info to metadata for styling
+              if (existingIndex >= 0) {
+                // Update existing message with same ID
+                const updated = [...prev]
+                updated[existingIndex] = {
+                  ...updated[existingIndex],
+                  content: updated[existingIndex].content + message.content
                 }
+                return updated
+              } else {
+                // Create new streaming message (new ID means new agent response)
+                return [...prev, message]
               }
-              dispatch({ type: 'ADD_ROLE_TRANSITION', payload: roleTransitionMessage })
-              break
+            })
+          } else {
+            // Non-streaming message - add directly
+            setMessages(prev => [...prev, message])
             
-            case 'error':
-              dispatch({ type: 'ADD_ERROR', payload: message })
-              break
-            
-            default:
-              // Handle unknown message types as system messages
-              dispatch({ type: 'ADD_ERROR', payload: { ...message, type: 'system' } })
+            // Handle artifact messages
+            if (message.type === 'artifact' && message.metadata && onArtifactUpdate) {
+              const artifactData: ArtifactData = {
+                title: message.metadata.title || message.content,
+                description: message.metadata.description || '',
+                html_content: message.metadata.html_content || ''
+              }
+              onArtifactUpdate(artifactData)
+            }
           }
           break
 
         case 'title_update':
           if (data.type === 'title_update') {
-            // Call the title update callback if provided
             onTitleUpdate?.(data.session_id, data.title)
           }
           break
 
         case 'artifact_loading':
           if (data.type === 'artifact_loading') {
-            // Open artifact panel with loading state
+            // Show loading artifact
             onArtifactUpdate?.({ 
               title: '正在创建内容...', 
               description: '请稍候，正在生成内容中...', 
@@ -326,22 +156,13 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
                       font-size: 14px;
                       opacity: 0.8;
                     }
-                    .dots {
-                      animation: dots 1.5s steps(4, end) infinite;
-                    }
-                    @keyframes dots {
-                      0%, 20% { content: ''; }
-                      40% { content: '.'; }
-                      60% { content: '..'; }
-                      80%, 100% { content: '...'; }
-                    }
                   </style>
                 </head>
                 <body>
                   <div class="loading-container">
                     <div class="spinner"></div>
                     <div class="loading-text">正在创建内容</div>
-                    <div class="loading-subtitle">请稍候<span class="dots"></span></div>
+                    <div class="loading-subtitle">请稍候...</div>
                   </div>
                 </body>
                 </html>
@@ -353,11 +174,14 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
 
         case 'complete':
           if (data.type === 'agent_complete') {
-            dispatch({
-              type: 'MARK_COMPLETE',
-              payload: { messageId: data.message_id }
-            })
+            // Mark streaming message as complete
+            setMessages(prev => prev.map(msg => 
+              msg.id === currentStreamingMessageRef.current
+                ? { ...msg, metadata: { ...msg.metadata, is_streaming: false } }
+                : msg
+            ))
             setIsTyping(false)
+            currentStreamingMessageRef.current = null
           }
           break
 
@@ -365,28 +189,15 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
           if (data.type === 'agent_stopped') {
             console.log('Agent execution stopped:', data.message)
             setIsTyping(false)
-            // Add a stop message to show the stop
-            const stopMessage: Message = {
-              id: `${Date.now()}_stopped`,
-              type: 'stop' as MessageType,
-              content: '执行已停止',
-              timestamp: Date.now(),
-            }
-            dispatch({ type: 'ADD_ERROR', payload: stopMessage })
+            currentStreamingMessageRef.current = null
           }
           break
 
         case 'error':
           console.error('SSE Error:', data)
-          const errorMessage: Message = {
-            id: `${Date.now()}_${Math.random()}`,
-            type: 'error' as MessageType,
-            content: data.content || 'An error occurred',
-            timestamp: data.timestamp || Date.now(),
-          }
-          dispatch({ type: 'ADD_ERROR', payload: errorMessage })
           setConnectionError(data.content || 'An error occurred')
           setIsTyping(false)
+          currentStreamingMessageRef.current = null
           break
 
         default:
@@ -395,23 +206,24 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
     } catch (error) {
       console.error('Error parsing SSE message:', error, 'Raw data:', event.data)
     }
-  }, [])
+  }, [onTitleUpdate, onArtifactUpdate])
 
   const sendMessage = useCallback(async (message: string, filesToShow?: AttachedFile[]) => {
     if (!message.trim()) return
 
     try {
-      // Add user message to messages immediately
+      // Add user message immediately
       const userMessage: Message = {
-        id: `${Date.now()}_${Math.random()}`,
+        id: `user_${Date.now()}_${Math.random()}`,
         type: 'user' as MessageType,
         content: message.trim(),
         timestamp: Date.now(),
         metadata: { attached_files: filesToShow },
       }
-      dispatch({ type: 'ADD_USER_MESSAGE', payload: userMessage })
+      setMessages(prev => [...prev, userMessage])
       setIsTyping(true)
       setConnectionError(null)
+      currentStreamingMessageRef.current = null
 
       // Create new abort controller for this request
       abortControllerRef.current = new AbortController()
@@ -470,8 +282,6 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
 
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        // Stream was aborted (likely due to stop button) - don't change isTyping here
-        // Let the 'stopped' event from backend handle it
         console.log('Stream aborted (stop button clicked)')
         return
       }
@@ -479,22 +289,12 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
       console.error('Error sending message:', error)
       setConnectionError(`Failed to send message: ${error.message}`)
       setIsTyping(false)
-      
-      // Add error message to chat
-      const errorMessage: Message = {
-        id: `${Date.now()}_${Math.random()}`,
-        type: 'error' as MessageType,
-        content: `Failed to send message: ${error.message}`,
-        timestamp: Date.now(),
-      }
-      dispatch({ type: 'ADD_ERROR', payload: errorMessage })
+      currentStreamingMessageRef.current = null
     }
   }, [endpoint, sessionId, handleSSEMessage])
 
   const stopMessage = useCallback(async () => {
     try {
-      // Don't abort stream - let backend finish current work naturally
-      
       // Send stop request to backend
       const response = await fetch(`${endpoint}/chat/stop/${sessionId}`, {
         method: 'POST',
@@ -510,10 +310,8 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
       const result = await response.json()
       console.log('Stop requested:', result.message)
       
-      // Change UI state immediately - show send button instead of stop button
       setIsTyping(false)
-      
-      // Backend will naturally finish current work and send "stopped" event
+      currentStreamingMessageRef.current = null
       
     } catch (error: any) {
       console.error('Error stopping message:', error)
@@ -524,23 +322,21 @@ export function useSSEChat({ sessionId, endpoint = 'http://localhost:8000', onTi
   const retryConnection = useCallback(() => {
     setConnectionError(null)
     setIsConnected(false)
-    // For SSE, connection is established per message, so we don't need to do anything here
   }, [])
 
   const setInitialMessages = useCallback((initialMessages: Message[]) => {
-    dispatch({ type: 'SET_INITIAL_MESSAGES', payload: initialMessages })
+    setMessages(initialMessages)
+    currentStreamingMessageRef.current = null
   }, [])
 
   useEffect(() => {
-    // SSE connections are established per message, so we just set initial state
     setIsConnected(true)
     setConnectionError(null)
-
     return cleanup
   }, [cleanup])
 
   return {
-    messages: messageState.messages,
+    messages,
     isConnected,
     isTyping,
     connectionError,

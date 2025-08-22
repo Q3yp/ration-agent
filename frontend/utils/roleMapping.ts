@@ -102,3 +102,46 @@ export function getRoleInfo(role: string): RoleInfo {
     }
   }
 }
+
+// Tool name mapping to Chinese
+export const toolNameMapping: Record<string, string> = {
+  // Core tools
+  'bash_command_for_session': '执行命令',
+  'create_artifact': '创建可视化',
+  'artifact_tool': '创建可视化',
+  
+  // File management
+  'write_file': '写入文件',
+  'list_directory': '列出目录',
+  
+  // Excel tools
+  'excel_metadata': 'Excel元数据',
+  'excel_query': 'Excel查询',
+  'read_excel': '读取Excel',
+  'read_excel_file': '读取Excel文件',
+  'write_excel_file': '写入Excel文件', 
+  'analyze_excel_data': '分析Excel数据',
+  
+  // Search tools
+  'duckduckgo_search': '网页搜索',
+  'duckduckgo_news_search': '新闻搜索',
+  'search_knowledge_base': '知识库搜索',
+  'research_topic_comprehensive': '综合研究',
+  'search_and_crawl': '搜索抓取',
+  
+  // Web crawling
+  'crawl_website': '网页抓取',
+  'crawl_multiple_urls': '批量抓取',
+  
+  // Formulation tools
+  'add_feed': '添加饲料',
+  'check_feeds': '检查饲料',
+  'formulate_ration': '配方制作',
+  
+  // Fallback
+  'unknown': '未知工具'
+}
+
+export function getToolName(toolName: string): string {
+  return toolNameMapping[toolName] || toolName
+}

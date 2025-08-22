@@ -156,9 +156,10 @@ class FormulationOptimizer:
                         for feed_name in selected_feeds:
                             feed_nutrients = self.feeds[feed_name]["nutrients"]
                             nutrient_content = feed_nutrients.get(attribute, 0.0)
-                            # Convert to daily intake: (nutrient_content/100) * (dmi/100) * feed_percentage
-                            constraint_row_min.append(nutrient_content * dmi_min / 10000)
-                            constraint_row_max.append(nutrient_content * dmi_max / 10000)
+                            # Convert to daily intake: (nutrient_content/100) * (dmi/1) * (feed_percentage/100)
+                            # Since feed_percentage is the variable, coefficient is: nutrient_content * dmi / 100
+                            constraint_row_min.append(nutrient_content * dmi_min / 100)
+                            constraint_row_max.append(nutrient_content * dmi_max / 100)
                         
                         # Add target constraint with tolerance
                         # Use min DMI for lower bound, max DMI for upper bound to allow flexibility

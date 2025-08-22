@@ -5,8 +5,7 @@ import { Send, AlertTriangle, Upload, Loader2, Square } from 'lucide-react'
 import MessageList from './MessageList'
 import FileUpload from './FileUpload'
 import HtmlArtifact from './HtmlArtifact'
-import { useSSEChat } from '@/hooks/useSSEChat'
-import { useSessionHistory } from '@/hooks/useSessionHistory'
+import { useMessages } from '@/hooks/useMessages'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -24,49 +23,32 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
   const [showFileUpload, setShowFileUpload] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<AttachedFile[]>([])
   const [pendingFileNotifications, setPendingFileNotifications] = useState<string[]>([])
-  const [historyInitialized, setHistoryInitialized] = useState(false)
   const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const {
     messages,
+    isLoading,
+    isStreaming,
     isConnected,
+    connectionState,
+    error,
     isTyping,
-    connectionError,
     sendMessage,
     stopMessage,
-    retryConnection,
-    setInitialMessages,
-  } = useSSEChat({ 
-    sessionId, 
-    endpoint, 
+    retryConnection
+  } = useMessages({
+    sessionId,
+    endpoint,
+    autoLoadHistory: true,
     onTitleUpdate,
     onArtifactUpdate: setCurrentArtifact
   })
 
-  const {
-    messages: historyMessages,
-    isLoading: historyLoading,
-    error: historyError
-  } = useSessionHistory({ sessionId, endpoint })
-
-  // Load session history when component mounts or session changes
+  // Clear artifact when switching sessions
   useEffect(() => {
-    if (historyMessages.length > 0 && !historyInitialized) {
-      setInitialMessages(historyMessages)
-      setHistoryInitialized(true)
-    } else if (!historyLoading && !historyError && historyMessages.length === 0 && !historyInitialized) {
-      // No history found, start with empty messages
-      setInitialMessages([])
-      setHistoryInitialized(true)
-    }
-  }, [historyMessages, historyLoading, historyError, setInitialMessages, historyInitialized])
-
-  // Reset history initialized when session changes
-  useEffect(() => {
-    setHistoryInitialized(false)
-    setCurrentArtifact(null) // Clear artifact when switching sessions
+    setCurrentArtifact(null)
   }, [sessionId])
 
   const scrollToBottom = () => {
@@ -126,6 +108,27 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
     }
   }
 
+  const handleFileDownload = async (filename: string, sessionId: string) => {
+    try {
+      const downloadUrl = `${endpoint || 'http://localhost:8000'}/files/download/${sessionId}/${filename}`
+      
+      // Create a temporary link element to trigger download
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = filename
+      link.style.display = 'none'
+      
+      // Add to document, click, and remove
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+    } catch (error) {
+      console.error('File download failed:', error)
+      // Could add toast notification here
+    }
+  }
+
   return (
     <div className="flex h-full max-h-full overflow-hidden gap-4">
       {/* Chat Panel */}
@@ -136,26 +139,34 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
         <div className="px-4 py-3 border-b">
           <div className="flex items-center justify-between">
             <Badge
-              variant={historyLoading || !historyInitialized
-                ? "secondary"
-                : isConnected
-                ? "default"
-                : "destructive"
+              variant={
+                isLoading
+                  ? "secondary"
+                  : connectionState === 'connected'
+                  ? "default"
+                  : connectionState === 'connecting' || isTyping
+                  ? "secondary"
+                  : "destructive"
               }
               className="flex items-center gap-1"
             >
-              {historyLoading || !historyInitialized ? (
+              {isLoading ? (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" />
                   正在加载对话...
                 </>
-              ) : isConnected ? (
+              ) : connectionState === 'connected' ? (
                 <>已连接</>
+              ) : connectionState === 'connecting' || isTyping ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  正在连接...
+                </>
               ) : (
                 <>连接错误</>
               )}
             </Badge>
-            {connectionError && !historyLoading && (
+            {error && !isLoading && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -166,10 +177,10 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
               </Button>
             )}
           </div>
-          {(connectionError && !historyLoading) || historyError ? (
+          {error && !isLoading ? (
             <div className="mt-2 flex items-center text-sm text-muted-foreground">
               <AlertTriangle className="h-4 w-4 mr-1" />
-              {connectionError || historyError}
+              {error}
             </div>
           ) : null}
         </div>
@@ -178,8 +189,10 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
           <MessageList
             messages={messages}
-            isTyping={isTyping}
+            isTyping={isTyping || isStreaming}
             onArtifactOpen={setCurrentArtifact}
+            onFileDownload={handleFileDownload}
+            sessionId={sessionId}
           />
           <div ref={messagesEndRef} />
         </CardContent>
@@ -203,7 +216,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
               variant={showFileUpload ? "default" : "outline"}
               size="icon"
               onClick={() => setShowFileUpload(!showFileUpload)}
-              disabled={!isConnected || historyLoading || !historyInitialized}
+              disabled={!isConnected || isLoading || isTyping}
               title="切换文件上传"
             >
               <Upload className="h-4 w-4" />
@@ -214,10 +227,10 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="输入您的消息..."
-              disabled={!isConnected || isTyping || historyLoading || !historyInitialized}
+              disabled={!isConnected || isTyping || isStreaming || isLoading}
               className="flex-1"
             />
-            {isTyping ? (
+            {isTyping || isStreaming ? (
               <Button
                 onClick={stopMessage}
                 variant="destructive"
@@ -229,7 +242,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
             ) : (
               <Button
                 onClick={handleSendMessage}
-                disabled={!inputValue.trim() || !isConnected || historyLoading || !historyInitialized}
+                disabled={!inputValue.trim() || !isConnected || isLoading}
                 size="icon"
                 title="发送消息"
               >

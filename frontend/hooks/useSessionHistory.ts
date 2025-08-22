@@ -47,7 +47,7 @@ export function useSessionHistory({
       setIsLoading(true)
       setError(null)
       
-      const response = await fetch(`${endpoint}/sessions/${sessionId}/history?limit=50`)
+      const response = await fetch(`${endpoint}/sessions/${sessionId}/history`)
       
       if (!response.ok) {
         throw new Error(`Failed to load session history: ${response.statusText}`)

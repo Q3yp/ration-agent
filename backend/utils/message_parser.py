@@ -180,6 +180,9 @@ class UnifiedMessageParser:
                             message_id=f"{tool_id}_artifact",
                             timestamp=timestamp
                         ))
+                    elif tool_name == "export_formulation":
+                        # Don't send export_formulation tool calls to frontend
+                        pass
                     else:
                         # Regular tool call
                         result.append(create_tool_call_message(
@@ -206,19 +209,13 @@ class UnifiedMessageParser:
                     timestamp=timestamp
                 )]
             
-            # Skip create_artifact tool results (artifact already created from tool call)
-            # We need to infer tool name from message content or use additional_kwargs
+            # First, extract any special data and create events
+            result = []
             tool_name = getattr(message, 'name', message.additional_kwargs.get('tool_name', 'unknown'))
-            if tool_name == "create_artifact":
-                return []  # Don't send tool result to frontend
             
-            # Check for file export data
+            # Check for file export data and create file export event
             file_export_data = self._extract_file_export_data(message.content)
-            
             if file_export_data:
-                result = []
-                
-                # Create file export message
                 result.append(create_file_export_message(
                     filename=file_export_data['filename'],
                     file_type=file_export_data['file_type'],
@@ -226,24 +223,31 @@ class UnifiedMessageParser:
                     message_id=f"{tool_id}_export",
                     timestamp=timestamp
                 ))
-                
-                # Create tool result with original content
-                result.append(create_tool_result_message(
-                    content=message.content,
-                    tool_name="export_formulation",
-                    tool_id=tool_id,
+            
+            # Check for legacy artifact data and create artifact event
+            artifact_data = self._extract_artifact_data(message.content)
+            if artifact_data:
+                result.append(create_artifact_message(
+                    title=artifact_data['title'],
+                    description=artifact_data['description'],
+                    html_content=artifact_data['html_content'],
+                    message_id=f"{tool_id}_artifact",
                     timestamp=timestamp
                 ))
-                
+            
+            # Then decide whether to include the raw tool result message
+            if tool_name in ["create_artifact", "export_formulation"]:
+                # Don't include raw tool result for these tools
                 return result
             else:
-                # Regular tool result
-                return [create_tool_result_message(
+                # Include the tool result message for other tools
+                result.append(create_tool_result_message(
                     content=message.content,
                     tool_name=tool_name,
                     tool_id=tool_id,
                     timestamp=timestamp
-                )]
+                ))
+                return result
         
         # Skip system messages and other types
         return []
@@ -332,6 +336,9 @@ class UnifiedMessageParser:
                     message_id=f"{tool_id}_artifact",
                     timestamp=timestamp
                 )]
+            elif tool_name == "export_formulation":
+                # Don't send export_formulation tool calls to frontend
+                return []
             else:
                 # Regular tool call
                 return [create_tool_call_message(
@@ -360,17 +367,12 @@ class UnifiedMessageParser:
                     timestamp=timestamp
                 )]
             
-            # Skip create_artifact tool results (artifact already created from tool call)
-            if tool_name == "create_artifact":
-                return []  # Don't send tool result to frontend
+            # First, extract any special data and create events
+            result = []
             
-            # Check for file export data
+            # Check for file export data and create file export event
             file_export_data = self._extract_file_export_data(result_content)
-            
             if file_export_data:
-                result = []
-                
-                # Create file export message
                 result.append(create_file_export_message(
                     filename=file_export_data['filename'],
                     file_type=file_export_data['file_type'],
@@ -378,24 +380,31 @@ class UnifiedMessageParser:
                     message_id=f"{tool_id}_export",
                     timestamp=timestamp
                 ))
-                
-                # Create tool result with original content
+            
+            # Check for legacy artifact data and create artifact event
+            artifact_data = self._extract_artifact_data(result_content)
+            if artifact_data:
+                result.append(create_artifact_message(
+                    title=artifact_data['title'],
+                    description=artifact_data['description'],
+                    html_content=artifact_data['html_content'],
+                    message_id=f"{tool_id}_artifact",
+                    timestamp=timestamp
+                ))
+            
+            # Then decide whether to include the raw tool result message
+            if tool_name in ["create_artifact", "export_formulation"]:
+                # Don't include raw tool result for these tools
+                return result
+            else:
+                # Include the tool result message for other tools
                 result.append(create_tool_result_message(
                     content=result_content,
                     tool_name=tool_name,
                     tool_id=tool_id,
                     timestamp=timestamp
                 ))
-                
                 return result
-            else:
-                # Regular tool result
-                return [create_tool_result_message(
-                    content=result_content,
-                    tool_name=tool_name,
-                    tool_id=tool_id,
-                    timestamp=timestamp
-                )]
         
         # Unknown or unhandled event type
         return []

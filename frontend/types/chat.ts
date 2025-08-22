@@ -1,12 +1,15 @@
 export type MessageType = 
-  | 'user' 
-  | 'agent'
-  | 'tool_call' 
-  | 'tool_result' 
-  | 'role_transition'
-  | 'artifact'
-  | 'error' 
-  | 'system'
+  | 'user'           // User input message
+  | 'agent'          // Agent response content (streamable)
+  | 'tool_call'      // Tool execution indicator
+  | 'tool_result'    // Tool execution result
+  | 'role_transition' // Agent handoff/routing (single expandable bubble)
+  | 'artifact'       // HTML artifacts for visualization (clickable)
+  | 'file_export'    // File export with download capability
+
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
+
+export type MessageSource = 'history' | 'sse_stream' | 'user_input'
 
 export interface AttachedFile {
   name: string
@@ -21,7 +24,13 @@ export interface ArtifactData {
   isLoading?: boolean
 }
 
-// Unified message interface matching backend ParsedMessage
+export interface FileExportData {
+  filename: string
+  file_type: string
+  filepath: string
+}
+
+// Simplified message interface matching backend ParsedMessage
 export interface Message {
   id: string
   type: MessageType
@@ -35,15 +44,12 @@ export function getToolMetadata(message: Message) {
   return message.metadata as {
     tool_name?: string
     tool_args?: Record<string, any>
-    tool_id?: string
-    tool_call_id?: string
   } | undefined
 }
 
 export function getRoleTransitionMetadata(message: Message) {
   return message.metadata as {
     to_role?: string
-    task_description?: string
   } | undefined
 }
 
@@ -52,6 +58,14 @@ export function getArtifactMetadata(message: Message) {
     title?: string
     description?: string
     html_content?: string
+  } | undefined
+}
+
+export function getFileExportMetadata(message: Message) {
+  return message.metadata as {
+    filename?: string
+    file_type?: string
+    filepath?: string
   } | undefined
 }
 
