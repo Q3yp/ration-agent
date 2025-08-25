@@ -11,7 +11,6 @@ from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 from langchain_community.agent_toolkits import FileManagementToolkit
 from duckduckgo_search import DDGS
-from .ragflow_integration import create_ragflow_tools_for_session
 from .excel_tools import get_excel_tools
 from .formulation_tools import create_formulation_tools
 
@@ -530,17 +529,10 @@ async def search_and_crawl(query: str, max_search_results: int = 3) -> str:
 
 def get_search_tools():
     """Get search-specific tools for the search worker"""
-    # Import here to avoid circular imports
-    from .ragflow_integration import get_ragflow_tools
-
     search_tools = [
         duckduckgo_search,
         crawl_website
     ]
-
-    # Add RAGFlow knowledge base search tool to search worker
-    ragflow_tools = get_ragflow_tools()
-    search_tools.extend(ragflow_tools)
 
     return search_tools
 
@@ -567,7 +559,6 @@ async def get_coder_tools(session_id: str):
     # Get Excel tools for the session
     excel_tools = await get_excel_tools(session_id)
 
-    # Note: RAGFlow tools are now only available to search worker via get_search_tools()
     return [session_bash_tool, artifact_tool] + file_tools + excel_tools
 
 
@@ -585,5 +576,4 @@ async def get_tools(session_id: str):
     # Get Excel tools for the session
     excel_tools = await get_excel_tools(session_id)
 
-    # Note: RAGFlow tools are now only available to search worker via get_search_tools()
     return [session_bash_tool, artifact_tool] + file_tools + excel_tools
