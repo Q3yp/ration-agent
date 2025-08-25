@@ -3,7 +3,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from langchain_core.messages import HumanMessage
 from models import (
@@ -16,6 +16,8 @@ from services.chat_history_service import chat_history_service
 from utils.model_config import get_model_config
 from utils.prompt_loader import env
 from utils.stop_manager import StopManager
+from auth.config import current_active_user
+from auth.models import User
 
 
 router = APIRouter()
@@ -84,10 +86,13 @@ async def health():
 
 
 @router.post("/sessions/create", response_model=SessionCreateResponse)
-async def create_session(request: SessionCreateRequest):
+async def create_session(
+    request: SessionCreateRequest,
+    current_user: User = Depends(current_active_user)
+):
     """Create a new session with workspace and agent context"""
     try:
-        session_context = await session_manager.create_session(request.session_id)
+        session_context = await session_manager.create_session(request.session_id, str(current_user.id))
         
         return {
             "session_id": session_context.session_id,
@@ -102,16 +107,19 @@ async def create_session(request: SessionCreateRequest):
 
 
 @router.get("/sessions/{session_id}/stats", response_model=SessionStatsResponse)
-async def get_session_stats(session_id: str):
+async def get_session_stats(
+    session_id: str,
+    current_user: User = Depends(current_active_user)
+):
     """Get session statistics and metadata"""
     stats = await session_manager.get_session_stats(session_id)
     return stats
 
 
 @router.get("/sessions/list")
-async def list_sessions():
-    """List all active sessions"""
-    active_sessions = await session_manager.list_active_sessions()
+async def list_sessions(current_user: User = Depends(current_active_user)):
+    """List user's active sessions"""
+    active_sessions = await session_manager.list_user_sessions(str(current_user.id))
     return {
         "active_sessions": active_sessions,
         "total_count": len(active_sessions)
@@ -119,11 +127,11 @@ async def list_sessions():
 
 
 @router.delete("/sessions/delete-all")
-async def delete_all_sessions():
-    """Soft delete all sessions - marks as deleted but preserves data and history"""
+async def delete_all_sessions(current_user: User = Depends(current_active_user)):
+    """Soft delete all user sessions - marks as deleted but preserves data and history"""
     try:
         # Use soft delete to preserve conversation history and data
-        result = await session_manager.soft_delete_all_sessions()
+        result = await session_manager.soft_delete_user_sessions(str(current_user.id))
 
         return {}
 
@@ -132,7 +140,10 @@ async def delete_all_sessions():
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(
+    session_id: str,
+    current_user: User = Depends(current_active_user)
+):
     """Soft delete a session - marks as deleted but preserves data and history"""
     session_stats = await session_manager.get_session_stats(session_id)
     if not session_stats["exists"]:
@@ -149,7 +160,10 @@ async def delete_session(session_id: str):
 
 
 @router.get("/sessions/{session_id}/history")
-async def get_session_history(session_id: str):
+async def get_session_history(
+    session_id: str,
+    current_user: User = Depends(current_active_user)
+):
     """Get chat history for a session"""
     session_context = await session_manager.get_session(session_id)
     if not session_context:
@@ -189,7 +203,10 @@ async def get_session_history(session_id: str):
 
 
 @router.post("/chat/stop/{session_id}")
-async def stop_chat(session_id: str):
+async def stop_chat(
+    session_id: str,
+    current_user: User = Depends(current_active_user)
+):
     """Request stop for an active chat session"""
     logger.info(f"STOP: Stop request received for session {session_id}")
     
@@ -226,7 +243,11 @@ async def stop_chat(session_id: str):
 
 
 @router.post("/chat/stream/{session_id}")
-async def stream_chat(session_id: str, request: ChatRequest):
+async def stream_chat(
+    session_id: str,
+    request: ChatRequest,
+    current_user: User = Depends(current_active_user)
+):
     """HTTP Server-Sent Events streaming endpoint for real-time chat"""
     user_message = request.message.strip()
     if not user_message:
@@ -409,7 +430,11 @@ async def stream_chat(session_id: str, request: ChatRequest):
 
 
 @router.post("/files/upload/{session_id}", response_model=FileUploadResponse)
-async def upload_file(session_id: str, file: UploadFile = File(...)):
+async def upload_file(
+    session_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(current_active_user)
+):
     """Upload a file to the session's workspace"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
@@ -456,7 +481,11 @@ async def upload_file(session_id: str, file: UploadFile = File(...)):
 
 
 @router.delete("/files/delete/{session_id}/{filename}", response_model=FileDeleteResponse)
-async def delete_file(session_id: str, filename: str):
+async def delete_file(
+    session_id: str,
+    filename: str,
+    current_user: User = Depends(current_active_user)
+):
     """Delete a file from the session's workspace"""
     session_context = await session_manager.get_session(session_id)
     if not session_context:
@@ -483,7 +512,11 @@ async def delete_file(session_id: str, filename: str):
 
 
 @router.get("/files/download/{session_id}/{filename}")
-async def download_file(session_id: str, filename: str):
+async def download_file(
+    session_id: str,
+    filename: str,
+    current_user: User = Depends(current_active_user)
+):
     """Download a file from the session's workspace"""
     session_context = await session_manager.get_session(session_id)
     if not session_context:

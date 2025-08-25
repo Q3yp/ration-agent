@@ -610,6 +610,76 @@ class SessionManager:
             "failed_count": len(session_ids) - deleted_count
         }
 
+    async def list_user_sessions(self, user_id: str) -> list:
+        """Get list of active session IDs for a specific user"""
+        if not self._db_pool:
+            logger.warning("Database pool not initialized")
+            return []
+
+        try:
+            async with self._db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        SELECT session_id, user_id, workspace_path, created_at, last_accessed, active, deleted, metadata
+                        FROM user_sessions
+                        WHERE user_id = %s AND active = TRUE AND deleted = FALSE
+                        ORDER BY last_accessed DESC
+                        """, 
+                        (user_id,)
+                    )
+                    rows = await cur.fetchall()
+                    columns = [desc[0] for desc in cur.description]
+
+                    sessions = []
+                    for row_data in rows:
+                        row = dict(zip(columns, row_data))
+                        metadata = row.get('metadata', {})
+                        
+                        sessions.append({
+                            "session_id": row['session_id'],
+                            "user_id": row['user_id'],
+                            "title": metadata.get('title', 'New Conversation'),
+                            "created_at": row['created_at'].isoformat(),
+                            "last_accessed": row['last_accessed'].isoformat(),
+                            "active": row['active'],
+                            "workspace_path": row['workspace_path']
+                        })
+
+                    return sessions
+
+        except Exception as e:
+            logger.error(f"Failed to list user sessions for {user_id}: {e}")
+            return []
+
+    async def soft_delete_user_sessions(self, user_id: str) -> dict:
+        """Soft delete all sessions for a specific user"""
+        if not self._db_pool:
+            logger.warning("Database pool not initialized")
+            return {"total_processed": 0, "deleted_count": 0, "failed_count": 0}
+
+        # Get all sessions for the user
+        user_sessions = await self.list_user_sessions(user_id)
+        session_ids = [session["session_id"] for session in user_sessions]
+
+        if not session_ids:
+            return {"total_processed": 0, "deleted_count": 0, "failed_count": 0}
+
+        deleted_count = 0
+        for session_id in session_ids:
+            try:
+                await self.soft_delete_session(session_id)
+                deleted_count += 1
+            except Exception as e:
+                logger.error(f"Error soft deleting session {session_id} for user {user_id}: {e}")
+                continue
+        
+        return {
+            "total_processed": len(session_ids),
+            "deleted_count": deleted_count,
+            "failed_count": len(session_ids) - deleted_count
+        }
+
 
 # Global session manager instance
 session_manager = SessionManager()

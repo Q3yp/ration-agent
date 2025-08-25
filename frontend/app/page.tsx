@@ -1,12 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageCircle } from 'lucide-react'
+import { MessageCircle, User, LogOut } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
 import ConversationSidebar from '@/components/ConversationSidebar'
+import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { useAuthContext } from '@/contexts/AuthContext'
+import Link from 'next/link'
 
 export default function Home() {
+  const { user, logout } = useAuthContext()
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [chatKey, setChatKey] = useState(0) // Force ChatInterface re-render when session changes
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>({})
@@ -29,25 +34,43 @@ export default function Home() {
   }
 
   return (
-    <main className="h-screen bg-gradient-to-br from-background to-muted">
-      <div className="h-full flex">
-        {/* Sidebar */}
-        <ConversationSidebar
-          currentSessionId={sessionId}
-          onSessionSelect={handleSessionSelect}
-          onNewSession={handleNewSession}
-          sessionTitles={sessionTitles}
-        />
-        
-        {/* Main content */}
-        <div className="flex-1 flex flex-col">
-          <header className="py-4 px-6 border-b">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent mb-1">
-                辉途智能配方助手
-              </h1>
-            </div>
-          </header>
+    <ProtectedRoute>
+      <main className="h-screen bg-gradient-to-br from-background to-muted">
+        <div className="h-full flex">
+          {/* Sidebar */}
+          <ConversationSidebar
+            currentSessionId={sessionId}
+            onSessionSelect={handleSessionSelect}
+            onNewSession={handleNewSession}
+            sessionTitles={sessionTitles}
+          />
+          
+          {/* Main content */}
+          <div className="flex-1 flex flex-col">
+            <header className="py-4 px-6 border-b">
+              <div className="flex justify-between items-center">
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                  辉途智能配方助手
+                </h1>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    欢迎，{user?.username}
+                  </span>
+                  {user?.is_superuser && (
+                    <Link href="/admin">
+                      <Button variant="outline" size="sm">
+                        <User className="h-4 w-4 mr-1" />
+                        用户管理
+                      </Button>
+                    </Link>
+                  )}
+                  <Button variant="outline" size="sm" onClick={logout}>
+                    <LogOut className="h-4 w-4 mr-1" />
+                    退出登录
+                  </Button>
+                </div>
+              </div>
+            </header>
           
           <div className="flex-1 p-6 min-h-0">
             {sessionId ? (
@@ -71,6 +94,7 @@ export default function Home() {
           </div>
         </div>
       </div>
-    </main>
+      </main>
+    </ProtectedRoute>
   )
 }

@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { getAuthHeadersWithDefaults } from '@/utils/authHeaders'
 interface ConversationSidebarProps {
   currentSessionId: string | null
   onSessionSelect: (sessionId: string) => void
@@ -37,7 +38,9 @@ export default function ConversationSidebar({
   const fetchSessions = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch(`${endpoint}/sessions/list`)
+      const response = await fetch(`${endpoint}/sessions/list`, {
+        headers: getAuthHeadersWithDefaults()
+      })
       if (!response.ok) {
         throw new Error(`Failed to fetch sessions: ${response.statusText}`)
       }
@@ -62,9 +65,9 @@ export default function ConversationSidebar({
     try {
       const response = await fetch(`${endpoint}/sessions/create`, {
         method: 'POST',
-        headers: {
+        headers: getAuthHeadersWithDefaults({
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({ session_id: newSessionId }),
       })
       
@@ -99,6 +102,7 @@ export default function ConversationSidebar({
     try {
       const response = await fetch(`${endpoint}/sessions/${sessionId}`, {
         method: 'DELETE',
+        headers: getAuthHeadersWithDefaults()
       })
       
       if (!response.ok) {
@@ -126,6 +130,7 @@ export default function ConversationSidebar({
     try {
       const response = await fetch(`${endpoint}/sessions/delete-all`, {
         method: 'DELETE',
+        headers: getAuthHeadersWithDefaults()
       })
       
       if (!response.ok) {

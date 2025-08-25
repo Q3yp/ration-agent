@@ -16,6 +16,7 @@ import {
   MessageSource 
 } from '@/utils/messageProcessor'
 import { ErrorHandler } from '@/utils/errorHandler'
+import { getAuthHeadersWithDefaults } from '@/utils/authHeaders'
 
 interface UseMessagesConfig {
   sessionId: string
@@ -210,7 +211,9 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       setIsLoading(true)
       updateState({ error: null })
 
-      const response = await fetch(`${endpoint}/sessions/${sessionId}/history`)
+      const response = await fetch(`${endpoint}/sessions/${sessionId}/history`, {
+        headers: getAuthHeadersWithDefaults()
+      })
       
       if (!response.ok) {
         throw new Error(`Failed to load session history: ${response.statusText}`)
@@ -271,10 +274,10 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       // Send message to SSE endpoint
       const response = await fetch(`${endpoint}/chat/stream/${sessionId}`, {
         method: 'POST',
-        headers: {
+        headers: getAuthHeadersWithDefaults({
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
-        },
+        }),
         body: JSON.stringify({ message: message.trim() }),
         signal: abortControllerRef.current.signal,
       })
@@ -356,9 +359,9 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       // Send stop request to backend
       const response = await fetch(`${endpoint}/chat/stop/${sessionId}`, {
         method: 'POST',
-        headers: {
+        headers: getAuthHeadersWithDefaults({
           'Content-Type': 'application/json',
-        },
+        }),
       })
       
       if (!response.ok) {

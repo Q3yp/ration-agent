@@ -29,6 +29,10 @@ dependencies = [
     "langgraph-swarm>=0.0.14",
     "matplotlib>=3.10.5",
     "seaborn>=0.13.2",
+    "fastapi-users[sqlalchemy]>=13.0.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "passlib[bcrypt]>=1.7.4",
 ]
 
 [tool.uv]

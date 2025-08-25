@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 import tiktoken
 
 from api.routes import router
+from auth.routes import auth_router
+from auth.admin_routes import admin_router
+from auth.database import create_db_and_tables
 from services.session_manager import session_manager
 from core.agent import cleanup_shared_resources
 
@@ -17,6 +20,13 @@ TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
     
+    # Initialize database and create tables
+    try:
+        await create_db_and_tables()
+    except Exception as e:
+        print(f"Failed to initialize database: {e}")
+        raise
+
     # Initialize SessionManager with database connection
     try:
         await session_manager.initialize()
@@ -47,6 +57,8 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(auth_router, prefix="/auth")
+app.include_router(admin_router)
 
 def start():
     """Entry point for uv run start command"""
