@@ -13,7 +13,7 @@ export async function GET() {
       uptime: process.uptime(),
       version: process.env.npm_package_version || '0.1.0'
     }, { status: 200 })
-  } catch (error) {
+  } catch {
     return NextResponse.json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),

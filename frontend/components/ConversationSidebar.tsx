@@ -21,7 +21,7 @@ export default function ConversationSidebar({
   onSessionSelect,
   onNewSession,
   sessionTitles,
-  endpoint = 'http://localhost:8000'
+  endpoint = '/api'
 }: ConversationSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [isLoading, setIsLoading] = useState(true)

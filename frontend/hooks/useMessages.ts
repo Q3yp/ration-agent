@@ -53,7 +53,7 @@ interface UseMessagesReturn {
 export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
   const {
     sessionId,
-    endpoint = 'http://localhost:8000',
+    endpoint = '/api',
     autoLoadHistory = true,
     onTitleUpdate,
     onArtifactUpdate,

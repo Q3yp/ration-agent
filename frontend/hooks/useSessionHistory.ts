@@ -30,7 +30,7 @@ interface UseSessionHistoryReturn {
 
 export function useSessionHistory({ 
   sessionId, 
-  endpoint = 'http://localhost:8000' 
+  endpoint = '/api' 
 }: UseSessionHistoryProps): UseSessionHistoryReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)

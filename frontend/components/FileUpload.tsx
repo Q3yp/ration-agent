@@ -18,7 +18,7 @@ interface UploadedFile {
   path: string
 }
 
-export default function FileUpload({ sessionId, endpoint = 'http://localhost:8000', onFileUploaded, onFilesChange }: FileUploadProps) {
+export default function FileUpload({ sessionId, endpoint = '/api', onFileUploaded, onFilesChange }: FileUploadProps) {
   const [uploading, setUploading] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [error, setError] = useState<string | null>(null)

@@ -110,7 +110,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
 
   const handleFileDownload = async (filename: string, sessionId: string) => {
     try {
-      const downloadUrl = `${endpoint || 'http://localhost:8000'}/files/download/${sessionId}/${filename}`
+      const downloadUrl = `${endpoint || '/api'}/files/download/${sessionId}/${filename}`
       
       // Create a temporary link element to trigger download
       const link = document.createElement('a')
