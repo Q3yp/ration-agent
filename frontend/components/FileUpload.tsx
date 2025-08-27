@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, File, Loader2, Paperclip, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { getAuthHeaders } from '@/utils/authHeaders'
 
 interface FileUploadProps {
   sessionId: string
@@ -61,6 +62,7 @@ export default function FileUpload({ sessionId, endpoint = 'http://localhost:800
         const response = await fetch(`${endpoint}/files/upload/${sessionId}`, {
           method: 'POST',
           body: formData,
+          headers: getAuthHeaders(),
         })
 
         if (!response.ok) {
@@ -136,6 +138,7 @@ export default function FileUpload({ sessionId, endpoint = 'http://localhost:800
     try {
       const response = await fetch(`${endpoint}/files/delete/${sessionId}/${filename}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
       })
 
       if (!response.ok) {

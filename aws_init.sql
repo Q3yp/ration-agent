@@ -53,17 +53,21 @@ INSERT INTO users (
     is_superuser,
     is_verified,
     role,
-    full_name
+    full_name,
+    created_at,
+    updated_at
 ) VALUES (
     gen_random_uuid(),
     'admin@example.com',
     'admin',
-    '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', -- hashed "admin123"
+    '$2b$12$SIZFiRUJXtoTgNqipUB1FOoDqBL2WqHp6wK2dxLDxIYNyshtvGgwm', -- hashed "admin123"
     TRUE,
     TRUE,
     TRUE,
     'admin',
-    'Administrator'
+    'Administrator',
+    NOW(),
+    NOW()
 ) ON CONFLICT (email) DO NOTHING;
 
 -- LangGraph checkpoint tables will be auto-created by the application

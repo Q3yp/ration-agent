@@ -25,7 +25,9 @@ async def run_migration():
     engine = create_async_engine(DATABASE_URL, echo=True)
     
     async with engine.begin() as conn:
-        # Create users table
+        # Ensure required extensions exist
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
+        # Create users table (ensure timestamps have defaults)
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS users (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -35,11 +37,30 @@ async def run_migration():
                 is_active BOOLEAN DEFAULT TRUE,
                 is_superuser BOOLEAN DEFAULT FALSE,
                 is_verified BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                 full_name VARCHAR(200),
                 role VARCHAR(50) DEFAULT 'user'
             );
+        """))
+
+        # Ensure defaults exist if columns already present without defaults
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name='users' AND column_name='created_at'
+                ) THEN
+                    EXECUTE 'ALTER TABLE users ALTER COLUMN created_at SET DEFAULT NOW()';
+                END IF;
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name='users' AND column_name='updated_at'
+                ) THEN
+                    EXECUTE 'ALTER TABLE users ALTER COLUMN updated_at SET DEFAULT NOW()';
+                END IF;
+            END$$;
         """))
         
         # Create indexes for better performance
@@ -87,15 +108,18 @@ async def run_migration():
             admin_id = uuid.uuid4()
             admin_password = pwd_context.hash("admin123") if pwd_context else "admin123"  # Default admin password
             
+            now_ts = datetime.utcnow()
             await conn.execute(text("""
-                INSERT INTO users (id, email, username, hashed_password, is_active, is_superuser, is_verified, role, full_name)
-                VALUES (:id, :email, :username, :password, TRUE, TRUE, TRUE, 'admin', :full_name);
+                INSERT INTO users (id, email, username, hashed_password, is_active, is_superuser, is_verified, role, full_name, created_at, updated_at)
+                VALUES (:id, :email, :username, :password, TRUE, TRUE, TRUE, 'admin', :full_name, :created_at, :updated_at);
             """), {
                 "id": admin_id,
                 "email": "admin@example.com",
                 "username": "admin",
                 "password": admin_password,
-                "full_name": "Administrator"
+                "full_name": "Administrator",
+                "created_at": now_ts,
+                "updated_at": now_ts
             })
             
             print(f"Created default admin user:")

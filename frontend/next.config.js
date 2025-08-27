@@ -2,6 +2,9 @@ const path = require('path');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Enable standalone output for Docker deployment
+  output: 'standalone',
+  
   webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
@@ -16,19 +19,25 @@ const nextConfig = {
     
     return config;
   },
+  
   async rewrites() {
+    // Use different backend URL for Docker vs development
+    const backendUrl = process.env.NODE_ENV === 'production' 
+      ? 'http://backend:8000'  // Docker container name
+      : 'http://localhost:8000';  // Development
+      
     return [
       {
         source: '/auth/:path*',
-        destination: 'http://localhost:8000/auth/:path*',
+        destination: `${backendUrl}/auth/:path*`,
       },
       {
         source: '/admin/:path*',
-        destination: 'http://localhost:8000/admin/:path*',
+        destination: `${backendUrl}/admin/:path*`,
       },
       {
         source: '/api/:path*',
-        destination: 'http://localhost:8000/:path*',
+        destination: `${backendUrl}/:path*`,
       },
     ];
   },

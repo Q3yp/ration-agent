@@ -1,17 +1,119 @@
 services:
+  # =============================================================================
+  # Database Service (PostgreSQL + pgvector)
+  # =============================================================================
   postgres:
-    image: pgvector/pgvector:0.8.0-pg17
+    image: docker.1ms.run/pgvector/pgvector:0.8.0-pg17
     container_name: ration_agent_postgres
     environment:
       POSTGRES_DB: ration_agent
       POSTGRES_USER: ration_user
-      POSTGRES_PASSWORD: ration_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ration_user -d ration_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
+    networks:
+      - ration_network
 
+  # =============================================================================
+  # Backend Service (FastAPI + LangGraph)
+  # =============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ration_agent_backend
+    environment:
+      # Database Configuration
+      - DATABASE_URL=postgresql+asyncpg://ration_user:${POSTGRES_PASSWORD}@postgres:5432/ration_agent
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=ration_agent
+      - POSTGRES_USER=ration_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - CHAT_HISTORY_TABLE=chat_history
+      
+      # AI Model Configuration
+      - OPENAI_ENDPOINT=${OPENAI_ENDPOINT}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL}
+      
+      # Agent-specific Models
+      - NUTRITIONIST_MODEL=${NUTRITIONIST_MODEL}
+      - RESEARCHER_MODEL=${RESEARCHER_MODEL}
+      - CODER_MODEL=${CODER_MODEL}
+      - TITLE_GENERATION_MODEL=${TITLE_GENERATION_MODEL}
+      
+      # Agent Temperature Settings
+      - SUPERVISOR_TEMPERATURE=${SUPERVISOR_TEMPERATURE:-0.7}
+      - RESEARCHER_TEMPERATURE=${RESEARCHER_TEMPERATURE:-0}
+      - CODER_TEMPERATURE=${CODER_TEMPERATURE:-0.7}
+      - TITLE_GENERATION_TEMPERATURE=${TITLE_GENERATION_TEMPERATURE:-0.3}
+      
+      # Authentication
+      - JWT_SECRET=${JWT_SECRET}
+      
+      # LangGraph Configuration
+      - LANGGRAPH_RECURSION_LIMIT=${LANGGRAPH_RECURSION_LIMIT:-500}
+      
+      # LangSmith Configuration (Optional)
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-ration-agent-docker}
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_files:/app/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ration_network
+
+  # =============================================================================
+  # Frontend Service (Next.js)
+  # =============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ration_agent_frontend
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - ration_network
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  ration_network:
+    driver: bridge
+    name: ration_agent_network
+
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   postgres_data:
+    name: ration_agent_postgres_data
+  backend_files:
+    name: ration_agent_backend_files
