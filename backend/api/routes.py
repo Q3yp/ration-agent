@@ -66,10 +66,16 @@ async def generate_title_for_session(session_id: str, user_message: str, title_q
     await title_queue.put(generated_title)
 
 
+# easier to filter health check logs
+@router.get("/health", response_class=JSONResponse)
+async def health():
+    """Health check endpoint"""
+    return {"status": "healthy", "timestamp": time.time()}
+
 @router.get("/", response_class=JSONResponse)
 async def root():
     """Health check endpoint"""
-    return {"message": "LangGraph ReAct Agent API is running!", "version": "0.1.0"}
+    return {"status": "healthy", "timestamp": time.time()}
 
 
 @router.get("/health", response_class=JSONResponse)

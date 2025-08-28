@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import tiktoken
@@ -11,7 +11,16 @@ from auth.database import create_db_and_tables
 from services.session_manager import session_manager
 from core.agent import cleanup_shared_resources
 
+import logging
+
 load_dotenv()
+
+class HealthCheckFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        print('either to filter ', record)
+        return '/health' not in record.getMessage()
+
+logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
 # Initialize tiktoken encoder at app startup
 TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
