@@ -21,7 +21,7 @@ interface UseSSEChatReturn {
   setInitialMessages: (messages: Message[]) => void
 }
 
-export function useSSEChat({ sessionId, endpoint = 'http://47.104.108.233:8000', onTitleUpdate, onArtifactUpdate }: UseSSEChatProps): UseSSEChatReturn {
+export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArtifactUpdate }: UseSSEChatProps): UseSSEChatReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
