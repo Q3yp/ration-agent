@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { AttachedFile, ArtifactData } from '@/types/chat'
+import { getAuthHeaders } from '@/utils/authHeaders'
 
 interface ChatInterfaceProps {
   sessionId: string
@@ -110,18 +111,32 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
 
   const handleFileDownload = async (filename: string, sessionId: string) => {
     try {
-      const downloadUrl = `${endpoint || '/api'}/files/download/${sessionId}/${filename}`
-      
-      // Create a temporary link element to trigger download
+      const downloadUrl = `${endpoint || '/api'}/files/download/${sessionId}/${encodeURIComponent(filename)}`
+
+      const res = await fetch(downloadUrl, {
+        method: 'GET',
+        headers: {
+          ...getAuthHeaders(),
+          'Accept': 'application/octet-stream'
+        },
+      })
+
+      if (!res.ok) {
+        throw new Error(`下载失败: HTTP ${res.status}`)
+      }
+
+      const blob = await res.blob()
+      const objectUrl = window.URL.createObjectURL(blob)
+
       const link = document.createElement('a')
-      link.href = downloadUrl
+      link.href = objectUrl
       link.download = filename
       link.style.display = 'none'
-      
-      // Add to document, click, and remove
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
+      // 延迟释放 URL，确保浏览器已开始下载
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
       
     } catch (error) {
       console.error('File download failed:', error)
