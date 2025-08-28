@@ -53,7 +53,8 @@ interface UseMessagesReturn {
 export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
   const {
     sessionId,
-    endpoint = '/api',
+    // endpoint = process.env.NODE_ENV === 'production' ? 'http://47.104.108.233:8000' : 'http://localhost:8000', // avoid sse buffer
+    endpoint = 'http://47.104.108.233:8000',
     autoLoadHistory = true,
     onTitleUpdate,
     onArtifactUpdate,

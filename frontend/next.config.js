@@ -41,6 +41,18 @@ const nextConfig = {
       },
     ];
   },
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'Connection', value: 'keep-alive' },
+          { key: 'X-Accel-Buffering', value: 'no' },
+        ]
+      }
+    ]
+  }
 };
 
 module.exports = nextConfig;

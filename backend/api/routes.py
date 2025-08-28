@@ -424,7 +424,8 @@ async def stream_chat(
             "X-Accel-Buffering": "no",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "Cache-Control",
-            "Access-Control-Expose-Headers": "Content-Type"
+            "Access-Control-Expose-Headers": "Content-Type",
+            "X-Proxy-Buffer": "no"
         }
     )
 
