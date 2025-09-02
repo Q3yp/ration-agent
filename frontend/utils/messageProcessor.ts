@@ -284,10 +284,24 @@ export class MessageProcessor {
       return []
     }
 
-    return historyData
+    // Normalize, validate and sort
+    const normalized = historyData
       .map(data => MessageProcessor.createMessage(data, 'history'))
       .filter(msg => MessageProcessor.isValidMessage(msg))
-      .sort((a, b) => a.timestamp - b.timestamp) // Ensure chronological order
+      .sort((a, b) => a.timestamp - b.timestamp)
+
+    // Ensure IDs are unique within history to avoid collapsing multiple
+    // events that may share the same backend id (e.g., analysis/formulation completes)
+    const idCounts = new Map<string, number>()
+    const withUniqueIds = normalized.map((msg) => {
+      const seenCount = idCounts.get(msg.id) || 0
+      idCounts.set(msg.id, seenCount + 1)
+      if (seenCount === 0) return msg
+      // Suffix duplicates deterministically while preserving order
+      return { ...msg, id: `${msg.id}__dup_${seenCount + 1}` }
+    })
+
+    return withUniqueIds
   }
 
   /**

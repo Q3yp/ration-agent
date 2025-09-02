@@ -8,7 +8,7 @@ Instructions:
 - Do not use markdown, bold, italics, or any special formatting
 - Do not include quotes, asterisks, or symbols
 - Return only plain text
-- title should be in the same language with user message(not this prompt language)
+- title should be in chinese
 
 User message: {{ user_message }}
 

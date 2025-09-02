@@ -559,7 +559,11 @@ async def get_coder_tools(session_id: str):
     # Get Excel tools for the session
     excel_tools = await get_excel_tools(session_id)
 
-    return [session_bash_tool, artifact_tool] + file_tools + excel_tools
+    # Get specific formulation tools for coder (add_feed and check_feeds only)
+    all_formulation_tools = create_formulation_tools(session_id)
+    feed_tools = [tool for tool in all_formulation_tools if tool.name in ['add_feed', 'check_feeds']]
+
+    return [session_bash_tool, artifact_tool] + file_tools + excel_tools + feed_tools
 
 
 async def get_tools(session_id: str):

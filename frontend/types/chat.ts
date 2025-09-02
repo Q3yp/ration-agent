@@ -6,6 +6,12 @@ export type MessageType =
   | 'role_transition' // Agent handoff/routing (single expandable bubble)
   | 'artifact'       // HTML artifacts for visualization (clickable)
   | 'file_export'    // File export with download capability
+  | 'analysis_start' // Start of Excel analysis block
+  | 'analysis_update' // Live update to Excel analysis
+  | 'analysis_complete' // Final Excel analysis summary
+  | 'formulation_start' // Start of feed formulation block
+  | 'formulation_update' // Live update to feed formulation
+  | 'formulation_complete' // Final feed formulation summary
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -66,6 +72,28 @@ export function getFileExportMetadata(message: Message) {
     filename?: string
     file_type?: string
     filepath?: string
+  } | undefined
+}
+
+export function getAnalysisMetadata(message: Message) {
+  return message.metadata as {
+    analysis_type?: string
+    operation?: string
+    operations_count?: number
+    operations?: string[]
+    completed?: boolean
+  } | undefined
+}
+
+export function getFormulationMetadata(message: Message) {
+  return message.metadata as {
+    formulation_type?: string
+    operation?: string
+    operation_data?: any
+    operations_count?: number
+    operations?: string[]
+    formulation_results?: any
+    completed?: boolean
   } | undefined
 }
 

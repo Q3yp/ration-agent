@@ -79,7 +79,7 @@ export default function ConversationSidebar({
       await response.json() // consume response
       const newSession: Session = {
         session_id: newSessionId,
-        title: 'New Conversation',
+        title: '新对话',
         created_at: new Date().toISOString()
       }
       setSessions(prev => [newSession, ...prev])

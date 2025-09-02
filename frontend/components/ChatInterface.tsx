@@ -36,6 +36,8 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
     connectionState,
     error,
     isTyping,
+    analysisState,
+    formulationState,
     sendMessage,
     stopMessage,
     retryConnection
@@ -205,6 +207,8 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
           <MessageList
             messages={messages}
             isTyping={isTyping || isStreaming}
+            analysisState={analysisState}
+            formulationState={formulationState}
             onArtifactOpen={setCurrentArtifact}
             onFileDownload={handleFileDownload}
             sessionId={sessionId}
@@ -266,7 +270,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
             )}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
-            按 Enter 发送 • Shift+Enter 换行 • {showFileUpload ? '文件上传已启用' : '点击 📁 上传文件'} • 使用服务器发送事件
+            按 Enter 发送消息 • Shift+Enter 换行 • {showFileUpload ? '上传牧场信息和饲料数据文件进行配方优化' : '点击上传按钮添加牧场信息和饲料数据'} • 支持Excel格式的牛群和饲料文件
             {uploadedFiles.length > 0 && (
               <span className="ml-2 text-primary">• 已附加 {uploadedFiles.length} 个文件</span>
             )}

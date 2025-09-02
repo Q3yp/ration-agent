@@ -8,10 +8,37 @@ from dataclasses import dataclass, field
 from psycopg_pool import AsyncConnectionPool
 from core.agent import create_agent_for_session, cleanup_agent_session
 from utils.message_parser import UnifiedMessageParser
+import tiktoken
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize tiktoken encoder for token counting - MUST succeed
+TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
+logger.info("Tiktoken encoder initialized successfully in session manager")
+
+
+def check_token_limit(text: str, max_tokens: int = 7000) -> tuple[bool, int, str]:
+    """
+    Universal token limit checker that can be used by any tool.
+    
+    Args:
+        text: The text to check token count for
+        max_tokens: Maximum allowed tokens (default: 7000)
+    
+    Returns:
+        tuple: (is_within_limit, token_count, error_message_if_exceeded)
+    """
+    token_count = len(TIKTOKEN_ENCODER.encode(text))
+    logger.info(f"Token count: {token_count}")
+    
+    if token_count > max_tokens:
+        error_msg = f"Result exceeded token limit of {max_tokens} tokens (got {token_count} tokens). Please refine your query to return less data."
+        logger.warning(f"Exceeded token limit: {token_count} tokens")
+        return False, token_count, error_msg
+    
+    return True, token_count, ""
 
 
 def create_session_file_workspace(session_id: str, base_dir: str = None) -> str:
@@ -48,7 +75,7 @@ class SessionContext:
     active_connections: int = 0
     active: bool = True
     deleted: bool = False
-    title: str = "New Conversation"
+    title: str = "新对话"
     title_generated: bool = False
     
     def resolve_file_path(self, filepath: str) -> str:
@@ -190,7 +217,7 @@ class SessionManager:
                         last_accessed=row['last_accessed'],
                         active=row['active'],
                         deleted=row.get('deleted', False),
-                        title=metadata.get('title', 'New Conversation'),
+                        title=metadata.get('title', '新对话'),
                         title_generated=metadata.get('title_generated', False)
                     )
 
@@ -315,7 +342,7 @@ class SessionManager:
                         "last_accessed": row['last_accessed'].isoformat(),
                         "active_connections": active_connections,
                         "agent_ready": True,
-                        "title": metadata.get('title', 'New Conversation')
+                        "title": metadata.get('title', '新对话')
                     })
                 
                 return sessions
@@ -385,7 +412,7 @@ class SessionManager:
                         last_accessed=row['last_accessed'],
                         active=row['active'],
                         deleted=row.get('deleted', False),
-                        title=metadata.get('title', 'New Conversation'),
+                        title=metadata.get('title', '新对话'),
                         title_generated=metadata.get('title_generated', False)
                     )
         except Exception as e:
@@ -639,7 +666,7 @@ class SessionManager:
                         sessions.append({
                             "session_id": row['session_id'],
                             "user_id": row['user_id'],
-                            "title": metadata.get('title', 'New Conversation'),
+                            "title": metadata.get('title', '新对话'),
                             "created_at": row['created_at'].isoformat(),
                             "last_accessed": row['last_accessed'].isoformat(),
                             "active": row['active'],

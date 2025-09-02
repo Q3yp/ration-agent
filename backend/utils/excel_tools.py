@@ -189,12 +189,12 @@ async def excel_query_impl(filepath: str, sheet: str, query_string: str, session
             
             formatted_output = "\n".join(output_lines)
             
-            # Check token count using shared tiktoken encoder
-            from main import TIKTOKEN_ENCODER
-            token_count = len(TIKTOKEN_ENCODER.encode(formatted_output))
+            # Check token count using universal token checker
+            from services.session_manager import check_token_limit
+            is_within_limit, token_count, error_message = check_token_limit(formatted_output, max_tokens=7000)
             
-            if token_count > 10000:
-                return f"Query result exceeded token limit of 10000 tokens (got {token_count} tokens). Please refine your query to return less data."
+            if not is_within_limit:
+                return error_message
             
             return formatted_output
             
@@ -239,7 +239,16 @@ async def read_excel_impl(filepath: str, sheet: str, coordinates: str, session_i
                         # Single cell
                         result_rows.append(str(row.value) if row.value is not None else "")
                 
-                return f"Excel range {coordinates} from sheet '{sheet}':\n\n" + "\n".join(result_rows)
+                result_output = f"Excel range {coordinates} from sheet '{sheet}':\n\n" + "\n".join(result_rows)
+                
+                # Check token count using universal token checker
+                from services.session_manager import check_token_limit
+                is_within_limit, token_count, error_message = check_token_limit(result_output, max_tokens=7000)
+                
+                if not is_within_limit:
+                    return error_message
+                
+                return result_output
                 
             elif coordinates.isdigit() or ':' in coordinates and all(part.isdigit() for part in coordinates.split(':')):
                 # Row number format like "1" or "1:5"
@@ -250,7 +259,16 @@ async def read_excel_impl(filepath: str, sheet: str, coordinates: str, session_i
                     row_num = int(coordinates)
                     df = pd.read_excel(full_path, sheet_name=sheet, header=None, skiprows=row_num-1, nrows=1)
                 
-                return f"Excel rows {coordinates} from sheet '{sheet}':\n\n" + df.to_string(index=False, header=False)
+                result_output = f"Excel rows {coordinates} from sheet '{sheet}':\n\n" + df.to_string(index=False, header=False)
+                
+                # Check token count using universal token checker
+                from services.session_manager import check_token_limit
+                is_within_limit, token_count, error_message = check_token_limit(result_output, max_tokens=7000)
+                
+                if not is_within_limit:
+                    return error_message
+                
+                return result_output
             
             else:
                 return f"Error: Invalid coordinate format '{coordinates}'. Use formats like 'A1:C5', '1:3', or '1'"
@@ -304,7 +322,7 @@ def create_excel_query_tool(session_id: str):
             header_row: Row number to use as column headers (default: 0)
             
         Returns:
-            Formatted results from context dictionary, or token limit message if exceeded
+            Formatted results from context dictionary, or token limit message if exceeded. The limit is 7000 token.
         """
         return await excel_query_impl(filepath, sheet, query_string, session_id, header_row)
     

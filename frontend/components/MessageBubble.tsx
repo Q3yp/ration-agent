@@ -1,10 +1,12 @@
 'use client'
 
-import { Message, ArtifactData, getArtifactMetadata, getRoleTransitionMetadata, getToolMetadata, getFileExportMetadata } from '@/types/chat'
+import { Message, ArtifactData, getArtifactMetadata, getRoleTransitionMetadata, getToolMetadata, getFileExportMetadata, getAnalysisMetadata, getFormulationMetadata } from '@/types/chat'
 import {
   Settings,
   CheckCircle,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   User,
   Bot,
   File,
@@ -453,6 +455,138 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
     )
   }
 
+  const renderAnalysis = () => {
+    const analysisMeta = getAnalysisMetadata(message)
+    const isComplete = message.type === 'analysis_complete'
+    const operations = analysisMeta?.operations || []
+    
+    return (
+      <div className="flex justify-start items-start gap-2">
+        <div className="w-8 h-8 flex items-center justify-center">
+          <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+        </div>
+        <Card className="min-w-[400px] max-w-[600px] bg-blue-50 border-blue-200">
+          <CardContent className="p-3">
+            {isComplete ? (
+              // Completed state - same style as TypingIndicator, show expandable list
+              <div className="space-y-2">
+                <div 
+                  className="flex items-center justify-between cursor-pointer"
+                  onClick={() => setIsExpanded(!isExpanded)}
+                >
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                    <span className="text-muted-foreground text-sm ml-2">
+                      {message.content}
+                    </span>
+                  </div>
+                  {operations.length > 0 && (
+                    <div className="flex items-center">
+                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Expandable operations list */}
+                {isExpanded && operations.length > 0 && (
+                  <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                    {operations.map((operation, index) => (
+                      <div 
+                        key={`${operation}-${index}`}
+                        className="flex items-center space-x-1 text-xs text-gray-500"
+                      >
+                        <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+                        <span className="ml-2">{operation}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Non-complete states (start/update) - simple display
+              <div className="flex items-center space-x-1">
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                <span className="text-muted-foreground text-sm ml-2">
+                  {message.content}
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  const renderFormulation = () => {
+    const formulationMeta = getFormulationMetadata(message)
+    const isComplete = message.type === 'formulation_complete'
+    const operations = formulationMeta?.operations || []
+    
+    return (
+      <div className="flex justify-start items-start gap-2">
+        <div className="w-8 h-8 flex items-center justify-center">
+          <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+        </div>
+        <Card className="min-w-[400px] max-w-[600px] bg-green-50 border-green-200">
+          <CardContent className="p-3">
+            {isComplete ? (
+              // Completed state - same style as FormulationIndicator, show expandable list
+              <div className="space-y-2">
+                <div 
+                  className="flex items-center justify-between cursor-pointer"
+                  onClick={() => setIsExpanded(!isExpanded)}
+                >
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                    <span className="text-muted-foreground text-sm ml-2">
+                      {message.content}
+                    </span>
+                  </div>
+                  {operations.length > 0 && (
+                    <div className="flex items-center">
+                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Expandable operations list with structured data */}
+                {isExpanded && operations.length > 0 && (
+                  <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
+                    {operations.map((operation, index) => (
+                      <div 
+                        key={`${operation}-${index}`}
+                        className="flex items-start space-x-2 text-xs"
+                      >
+                        <div className="w-1 h-1 bg-green-400 rounded-full mt-2"></div>
+                        <div className="flex-1">
+                          <div className="text-gray-700 font-medium">{operation}</div>
+                          {/* Show structured data if available */}
+                          {formulationMeta?.formulation_results && Object.keys(formulationMeta.formulation_results).length > 0 && index === operations.length - 1 && (
+                            <div className="mt-1 text-gray-500 text-xs">
+                              <div>配方结果已生成</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Non-complete states (start/update) - simple display
+              <div className="flex items-center space-x-1">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-muted-foreground text-sm ml-2">
+                  {message.content}
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   // Route to appropriate renderer based on message type
   switch (message.type) {
     case 'user':
@@ -469,6 +603,14 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
       return renderArtifact()
     case 'file_export':
       return renderFileExport()
+    case 'analysis_start':
+    case 'analysis_update':
+    case 'analysis_complete':
+      return renderAnalysis()
+    case 'formulation_start':
+    case 'formulation_update':
+    case 'formulation_complete':
+      return renderFormulation()
     default:
       // Unknown message type fallback
       return (

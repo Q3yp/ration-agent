@@ -28,6 +28,23 @@ interface UseMessagesConfig {
   onError?: (error: string) => void
 }
 
+interface AnalysisState {
+  isActive: boolean
+  content: string
+  isComplete: boolean
+  operationsCount?: number
+  operations?: string[]  // Track all operations for rotary effect
+}
+
+interface FormulationState {
+  isActive: boolean
+  content: string
+  isComplete: boolean
+  operationsCount?: number
+  operations?: string[]
+  operationData?: any[]  // Track structured data for each operation
+}
+
 interface UseMessagesReturn {
   // Core state
   messages: Message[]
@@ -37,6 +54,8 @@ interface UseMessagesReturn {
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error'
   error: string | null
   isTyping: boolean  // Immediate typing state for responsive UX
+  analysisState?: AnalysisState
+  formulationState?: FormulationState
 
   // Actions
   sendMessage: (message: string, filesToShow?: AttachedFile[]) => Promise<void>
@@ -71,6 +90,8 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
 
   const [isLoading, setIsLoading] = useState(false)
   const [isTyping, setIsTyping] = useState(false)  // Immediate typing feedback
+  const [analysisState, setAnalysisState] = useState<AnalysisState | undefined>(undefined)
+  const [formulationState, setFormulationState] = useState<FormulationState | undefined>(undefined)
   const abortControllerRef = useRef<AbortController | null>(null)
   const historyLoadedRef = useRef(false)
 
@@ -104,15 +125,106 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       switch (event.type) {
         case 'message':
           const message = event.data as Message
+          
+          // Handle analysis events
+          if (message.type === 'analysis_start' || message.type === 'analysis_update' || message.type === 'analysis_complete') {
+            if (message.type === 'analysis_start') {
+              setAnalysisState({
+                isActive: true,
+                content: message.content,
+                isComplete: false,
+                operations: [message.content]  // Start with initialization message
+              })
+              // Stop typing when analysis starts
+              if (isTyping) {
+                setIsTyping(false)
+              }
+              // Don't add start events as regular messages
+              break
+            } else if (message.type === 'analysis_update') {
+              // Use the individual operation from metadata, or fall back to content
+              const operation = message.metadata?.operation || message.content
+              setAnalysisState(prev => {
+                if (!prev) return undefined
+                const currentOperations = prev.operations || []
+                return {
+                  ...prev,
+                  content: message.content,
+                  operations: [...currentOperations, operation]
+                }
+              })
+              // Don't add update events as regular messages
+              break
+            } else if (message.type === 'analysis_complete') {
+              // Immediately clear analysis state - completion creates permanent message
+              setAnalysisState(undefined)
+              
+              // Let analysis_complete create a permanent message - don't break
+            }
+          }
+          
+          // Handle formulation events
+          if (message.type === 'formulation_start' || message.type === 'formulation_update' || message.type === 'formulation_complete') {
+            if (message.type === 'formulation_start') {
+              setFormulationState({
+                isActive: true,
+                content: message.content,
+                isComplete: false,
+                operations: [message.content],
+                operationData: []
+              })
+              // Stop typing when formulation starts
+              if (isTyping) {
+                setIsTyping(false)
+              }
+              // Don't add start events as regular messages
+              break
+            } else if (message.type === 'formulation_update') {
+              // Use the individual operation from metadata, or fall back to content
+              const operation = message.metadata?.operation || message.content
+              const operationData = message.metadata?.operation_data
+              setFormulationState(prev => {
+                if (!prev) return undefined
+                const currentOperations = prev.operations || []
+                const currentOperationData = prev.operationData || []
+                return {
+                  ...prev,
+                  content: message.content,
+                  operations: [...currentOperations, operation],
+                  operationData: [...currentOperationData, operationData]
+                }
+              })
+              // Stop typing when formulation updates
+              if (isTyping) {
+                setIsTyping(false)
+              }
+              // Don't add update events as regular messages
+              break
+            } else if (message.type === 'formulation_complete') {
+              // Immediately clear formulation state - completion creates permanent message
+              setFormulationState(undefined)
+              
+              // Let formulation_complete create a permanent message - don't break
+            }
+          }
+          
           // Use functional update to ensure we have the latest messages
           updateState(prevState => ({
             messages: MessageProcessor.processStreamingMessage(prevState.messages, message),
             streamingMessageId: message.metadata?.is_streaming ? message.id : prevState.streamingMessageId
           }))
 
-          // Stop typing when first message arrives (regardless of type)
+          // Stop typing when first non-analysis message arrives
           if (isTyping) {
             setIsTyping(false)
+          }
+          
+          // Clear analysis state when regular agent messages arrive (analysis is done)
+          if (message.type === 'agent' && analysisState?.isComplete) {
+            // Set a timeout to clear analysis state after completion state is seen
+            setTimeout(() => {
+              setAnalysisState(undefined)
+            }, 2000)  // Longer delay to let users see the completion
           }
 
           // Handle artifact messages
@@ -197,7 +309,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           break
       }
     }
-  }, [updateState, onTitleUpdate, onArtifactUpdate, onConnectionChange, onError, state])
+  }, [updateState, onTitleUpdate, onArtifactUpdate, onConnectionChange, onError, state, analysisState])
 
   /**
    * Load session history
@@ -267,6 +379,9 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       
       // Set typing immediately for responsive UX
       setIsTyping(true)
+      // Clear any previous analysis and formulation state when starting new message
+      setAnalysisState(undefined)
+      setFormulationState(undefined)
 
       // Create new abort controller for this request
       abortControllerRef.current = new AbortController()
@@ -500,6 +615,8 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       error: null
     })
     setIsTyping(false)  // Reset typing state
+    setAnalysisState(undefined)  // Reset analysis state
+    setFormulationState(undefined)  // Reset formulation state
     historyLoadedRef.current = false
   }, [sessionId, updateState])
 
@@ -512,6 +629,8 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     connectionState: state.connectionState,
     error: state.error,
     isTyping,  // Immediate responsive typing state
+    analysisState,
+    formulationState,
 
     // Actions
     sendMessage,

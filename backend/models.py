@@ -76,7 +76,13 @@ MessageType = Literal[
     "tool_result",    # Tool execution result
     "role_transition", # Agent handoff/routing (single expandable bubble)
     "artifact",       # HTML artifacts for visualization (clickable)
-    "file_export"     # File export with download capability
+    "file_export",    # File export with download capability
+    "analysis_start", # Start of Excel analysis block
+    "analysis_update", # Live update to Excel analysis
+    "analysis_complete", # Final Excel analysis summary
+    "formulation_start", # Start of feed formulation block
+    "formulation_update", # Live update to feed formulation
+    "formulation_complete" # Final feed formulation summary
 ]
 
 class ParsedMessage(BaseModel):
@@ -178,5 +184,85 @@ def create_file_export_message(filename: str, file_type: str, filepath: str, mes
             "filename": filename,
             "file_type": file_type,
             "filepath": filepath
+        }
+    )
+
+def create_analysis_start_message(analysis_type: str, message_id: str, timestamp: float) -> ParsedMessage:
+    """Start of analysis status block"""
+    return ParsedMessage(
+        id=message_id,
+        type="analysis_start",
+        content=f"{analysis_type}: 正在初始化...",
+        timestamp=timestamp,
+        metadata={
+            "analysis_type": analysis_type,
+            "operations": []
+        }
+    )
+
+def create_analysis_update_message(operation: str, message_id: str, timestamp: float) -> ParsedMessage:
+    """Live update to analysis progress"""
+    return ParsedMessage(
+        id=message_id,
+        type="analysis_update", 
+        content=operation,
+        timestamp=timestamp,
+        metadata={
+            "operation": operation
+        }
+    )
+
+def create_analysis_complete_message(summary: str, message_id: str, timestamp: float, operations_count: int = 0, operations: list = None) -> ParsedMessage:
+    """Final analysis summary"""
+    return ParsedMessage(
+        id=message_id,
+        type="analysis_complete",
+        content=summary,
+        timestamp=timestamp,
+        metadata={
+            "operations_count": operations_count,
+            "operations": operations or [],
+            "completed": True
+        }
+    )
+
+def create_formulation_start_message(formulation_type: str, message_id: str, timestamp: float) -> ParsedMessage:
+    """Start of feed formulation block"""
+    return ParsedMessage(
+        id=message_id,
+        type="formulation_start",
+        content=f"{formulation_type}: 正在初始化...",
+        timestamp=timestamp,
+        metadata={
+            "formulation_type": formulation_type,
+            "operations": []
+        }
+    )
+
+def create_formulation_update_message(operation: str, message_id: str, timestamp: float, operation_data: dict = None) -> ParsedMessage:
+    """Live update to feed formulation progress"""
+    return ParsedMessage(
+        id=message_id,
+        type="formulation_update", 
+        content=operation,
+        timestamp=timestamp,
+        metadata={
+            "operation": operation,
+            "operation_data": operation_data or {}
+        }
+    )
+
+def create_formulation_complete_message(summary: str, message_id: str, timestamp: float, operations_count: int = 0, operations: list = None, formulation_results: dict = None) -> ParsedMessage:
+    """Final feed formulation summary"""
+    return ParsedMessage(
+        id=message_id,
+        type="formulation_complete",
+        content=summary,
+        timestamp=timestamp,
+        metadata={
+            "operations_count": operations_count,
+            "operations": operations or [],
+            "formulation_results": formulation_results or {},
+            "completed": True
         }
     )

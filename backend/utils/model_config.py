@@ -39,6 +39,7 @@ def get_model_config(model_name: str) -> ChatOpenAI:
         temperature=config["temperature"],
         streaming=config["streaming"],
         #openai_api_base="https://openrouter.ai/api/v1",
+        max_tokens=4000,
         openai_api_base=os.getenv("OPENAI_ENDPOINT"),
         openai_api_key=os.getenv("OPENROUTER_API_KEY"),
         stream_usage=False

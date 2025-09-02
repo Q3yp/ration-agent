@@ -31,6 +31,10 @@ def replace_string(x: str, y: str) -> str:
     """Reducer function to replace string values"""
     return y
 
+def replace_list(x: list, y: list) -> list:
+    """Reducer function to replace list values"""
+    return y
+
 # Fix for Windows async event loop
 if os.name == 'nt':  # Windows
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -51,7 +55,7 @@ class FormulationState(AgentState):
     # Feed formulation state (core business logic)
     feed_database: Annotated[dict, merge_dicts] = {}  # Feed name -> feed data
     current_formulation: Annotated[dict, replace_dict] = {}  # Last formulation result
-    formulation_constraints: Annotated[list, add_messages] = []  # Nutritional constraints used in optimization
+    formulation_constraints: Annotated[list, replace_list] = []  # Nutritional constraints used in optimization
     feed_constraints: Annotated[dict, replace_dict] = {}  # Feed inclusion constraints
     
     # Task delegation context for swarm agents
@@ -64,7 +68,7 @@ class FormulationSwarmState(SwarmState):
     # Feed formulation state (core business logic) 
     feed_database: Annotated[dict, merge_dicts] = {}  # Feed name -> feed data
     current_formulation: Annotated[dict, replace_dict] = {}  # Last formulation result
-    formulation_constraints: Annotated[list, add_messages] = []  # Nutritional constraints used in optimization
+    formulation_constraints: Annotated[list, replace_list] = []  # Nutritional constraints used in optimization
     feed_constraints: Annotated[dict, replace_dict] = {}  # Feed inclusion constraints
 
 class SharedConnectionManager:

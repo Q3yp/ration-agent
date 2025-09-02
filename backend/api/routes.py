@@ -525,12 +525,17 @@ async def download_file(
     current_user: User = Depends(current_active_user)
 ):
     """Download a file from the session's workspace"""
+    from urllib.parse import unquote
+    
+    # URL-decode the filename to handle Chinese characters
+    decoded_filename = unquote(filename)
+    
     session_context = await session_manager.get_session(session_id)
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found")
     
     workspace_dir = Path(session_context.workspace_path)
-    file_path = workspace_dir / filename
+    file_path = workspace_dir / decoded_filename
     
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -550,12 +555,16 @@ async def download_file(
         elif file_path.suffix.lower() == '.txt':
             media_type = "text/plain"
         
+        # Encode filename for Content-Disposition header (RFC 5987)
+        from urllib.parse import quote
+        encoded_filename = quote(decoded_filename.encode('utf-8'))
+        
         return FileResponse(
             path=str(file_path),
-            filename=filename,
+            filename=decoded_filename,
             media_type=media_type,
             headers={
-                "Content-Disposition": f"attachment; filename=\"{filename}\"",
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
                 "Cache-Control": "no-cache"
             }
         )

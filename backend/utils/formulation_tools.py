@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Dict, List, Any, Optional, Annotated
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,35 @@ from langgraph.types import Command
 from formulation.optimizer import create_optimizer
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_feed_name(name: str) -> str:
+    """
+    Sanitize feed names for Excel export by removing control characters and null bytes.
+    
+    Args:
+        name: Original feed name
+        
+    Returns:
+        Sanitized feed name safe for Excel
+    """
+    if not isinstance(name, str):
+        return str(name)
+    
+    # Remove control characters (0x00-0x1F and 0x7F-0x9F)
+    sanitized = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', name)
+    
+    # Remove any remaining null bytes
+    sanitized = sanitized.replace('\x00', '')
+    
+    # Strip whitespace
+    sanitized = sanitized.strip()
+    
+    # If name becomes empty after sanitization, provide a default
+    if not sanitized:
+        sanitized = "饲料"
+    
+    return sanitized
 
 
 def create_formulation_tools(session_id: str = None):
@@ -98,15 +128,16 @@ def create_formulation_tools(session_id: str = None):
                 "cost_per_kg": cost_per_kg
             }
             
-            # Update state directly
+            # Sanitize feed name and update state directly
+            sanitized_name = sanitize_feed_name(name)
             current_feed_db = state.get("feed_database", {})
-            updated_feed_db = {**current_feed_db, name: feed_data}
+            updated_feed_db = {**current_feed_db, sanitized_name: feed_data}
             
             # Return Command with state update and tool message
             return Command(update={
                     "feed_database": updated_feed_db,
                     "messages": [
-                        ToolMessage(f"Successfully added feed '{name}' to database", tool_call_id=tool_call_id)
+                        ToolMessage(f"Successfully added feed '{sanitized_name}' to database", tool_call_id=tool_call_id)
                     ]
                 }
             )
@@ -567,8 +598,9 @@ def create_formulation_tools(session_id: str = None):
                 # Sheet 1: 饲料数据库 (Feed Database)
                 feed_data_list = []
                 for feed_name, feed_info in feed_database.items():
+                    sanitized_name = sanitize_feed_name(feed_name)
                     base_data = {
-                        '饲料名称': feed_name,
+                        '饲料名称': sanitized_name,
                         '干物质含量 (%)': feed_info.get('dm_percent', ''),
                         '价格 (元/公斤)': feed_info.get('cost_per_kg', '')
                     }
@@ -618,8 +650,9 @@ def create_formulation_tools(session_id: str = None):
                 report_data.append(['饲料名称', '干物质比例 (%)', '日饲喂量 (kg)', '', '', ''])
                 
                 for feed_name, feed_data in current_formulation["formulation"].items():
+                    sanitized_name = sanitize_feed_name(feed_name)
                     report_data.append([
-                        feed_name,
+                        sanitized_name,
                         feed_data["percentage_dm"],
                         feed_data["kg_per_day"],
                         '', '', ''
@@ -750,7 +783,7 @@ def create_formulation_tools(session_id: str = None):
             return Command(
                 update={
                     "messages": [
-                        ToolMessage(f"✅ successfully exported {filename}. [FILE_EXPORT]{json.dumps(file_info)}[/FILE_EXPORT]", tool_call_id=tool_call_id)
+                        ToolMessage(f"✅ successfully exported {filename}. [FILE_EXPORT]{json.dumps(file_info, ensure_ascii=False)}[/FILE_EXPORT]", tool_call_id=tool_call_id)
                     ]
                 }
             )

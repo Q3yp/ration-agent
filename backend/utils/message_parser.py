@@ -16,7 +16,13 @@ from models import (
     create_tool_result_message,
     create_role_transition_message,
     create_artifact_message,
-    create_file_export_message
+    create_file_export_message,
+    create_analysis_start_message,
+    create_analysis_update_message,
+    create_analysis_complete_message,
+    create_formulation_start_message,
+    create_formulation_update_message,
+    create_formulation_complete_message
 )
 
 logger = logging.getLogger(__name__)
@@ -39,6 +45,24 @@ class UnifiedMessageParser:
         self.pending_delegations = {}  # tool_id -> (tool_name, tool_args, timestamp)
         self.agent_message_counter = 0
         self.current_agent_message_id = None
+        
+        # Tool analysis tracking
+        self.excel_tools = {"excel_metadata", "excel_query", "read_excel"}
+        self.file_tools = {"write_file", "list_directory", "read_file"}
+        self.bash_tools = {"bash_command_for_session"}
+        self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation"}
+        self.active_analysis = None  # {"message_id": str, "operations": [], "start_time": float}
+        self.active_formulation = None  # {"message_id": str, "operations": [], "start_time": float, "results": {}}
+        self.analysis_operation_counter = 0
+    
+    def reset_state(self):
+        """Reset parser state - call this before parsing history to avoid state carryover"""
+        self.pending_delegations = {}
+        self.agent_message_counter = 0
+        self.current_agent_message_id = None
+        self.active_analysis = None
+        self.active_formulation = None
+        self.analysis_operation_counter = 0
     
     def _extract_artifact_data(self, content: str) -> Optional[Dict[str, str]]:
         """Extract artifact data from tool result content (legacy fallback)"""
@@ -130,6 +154,186 @@ class UnifiedMessageParser:
         }
         return mapping.get(tool_name)
     
+    def _is_analysis_tool(self, tool_name: str) -> str:
+        """Check if tool is part of analysis and return tool type"""
+        if tool_name in self.excel_tools:
+            return "excel"
+        elif tool_name in self.file_tools:
+            return "file"
+        elif tool_name in self.bash_tools:
+            return "bash"
+        return ""
+    
+    def _is_formulation_tool(self, tool_name: str) -> bool:
+        """Check if tool is part of formulation"""
+        return tool_name in self.formulation_tools
+    
+    def _should_start_analysis(self, tool_name: str) -> bool:
+        """Check if we should start a new analysis block"""
+        return self._is_analysis_tool(tool_name) and self.active_analysis is None
+    
+    def _should_end_analysis(self, tool_name: str) -> bool:
+        """Check if we should end the current analysis block"""
+        if self.active_analysis is None:
+            return False
+        
+        # End only if it's NOT an analysis tool (allows all analysis tools to contribute to same block)
+        return not self._is_analysis_tool(tool_name)
+    
+    def _get_operation_description(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
+        """Get human-readable description for tool operation with detailed context"""
+        # Excel tools
+        if tool_name == "excel_metadata":
+            filepaths = tool_args.get("filepaths", [])
+            if len(filepaths) == 1:
+                filename = filepaths[0].split('/')[-1]
+                return f"分析 {filename} 文件结构"
+            else:
+                return f"分析 {len(filepaths)} 个文件结构"
+                
+        elif tool_name == "excel_query":
+            filepath = tool_args.get("filepath", "文件")
+            sheet = tool_args.get("sheet", "工作表")
+            query_string = tool_args.get("query_string", "")
+            filename = filepath.split('/')[-1]
+            
+            # Extract meaningful info from query if possible
+            query_preview = ""
+            if "head(" in query_string:
+                query_preview = " (预览数据)"
+            elif "describe(" in query_string:
+                query_preview = " (统计信息)"
+            elif "groupby" in query_string:
+                query_preview = " (数据分组)"
+            elif "filter" in query_string or "[" in query_string:
+                query_preview = " (数据筛选)"
+            elif "count" in query_string or "len(" in query_string:
+                query_preview = " (记录计数)"
+            
+            return f"查询 {filename}:{sheet}{query_preview}"
+            
+        elif tool_name == "read_excel":
+            filepath = tool_args.get("filepath", "文件")
+            coordinates = tool_args.get("coordinates", "单元格")
+            filename = filepath.split('/')[-1]
+            
+            # Make coordinates more readable
+            coord_desc = coordinates
+            if ":" in coordinates:
+                coord_desc = f"范围 {coordinates}"
+            elif coordinates.isdigit():
+                coord_desc = f"第 {coordinates} 行"
+            
+            return f"读取 {filename} 中的{coord_desc}"
+            
+        # File tools
+        elif tool_name == "write_file":
+            file_path = tool_args.get("file_path", "文件")
+            filename = file_path.split('/')[-1] if "/" in file_path else file_path
+            return f"写入文件 {filename}"
+            
+        elif tool_name == "list_directory":
+            dir_path = tool_args.get("dir_path", "目录")
+            if dir_path == "." or dir_path == "":
+                return "列出当前目录内容"
+            else:
+                dirname = dir_path.split('/')[-1] if "/" in dir_path else dir_path
+                return f"列出目录 {dirname} 内容"
+                
+        elif tool_name == "read_file":
+            file_path = tool_args.get("file_path", "文件")
+            filename = file_path.split('/')[-1] if "/" in file_path else file_path
+            return f"读取文件 {filename}"
+            
+        # Bash tools
+        elif tool_name == "bash_command_for_session":
+            command = tool_args.get("command", "命令")
+            # Extract first part of command for description
+            cmd_parts = command.strip().split()
+            if cmd_parts:
+                main_cmd = cmd_parts[0]
+                if main_cmd in ["ls", "ll"]:
+                    return "列出文件"
+                elif main_cmd == "cd":
+                    return "切换目录"
+                elif main_cmd in ["mkdir"]:
+                    return "创建目录"
+                elif main_cmd in ["rm", "rmdir"]:
+                    return "删除文件"
+                elif main_cmd in ["cp", "mv"]:
+                    return "移动/复制文件"
+                elif main_cmd in ["grep", "find"]:
+                    return "搜索文件内容"
+                elif main_cmd in ["cat", "head", "tail"]:
+                    return "查看文件内容"
+                else:
+                    return f"执行 {main_cmd} 命令"
+            else:
+                return "执行命令"
+        
+        else:
+            return f"执行 {tool_name}"
+    
+    def _get_formulation_operation_description(self, tool_name: str, tool_args: Dict[str, Any]) -> tuple[str, dict]:
+        """Get description and structured data for formulation operation"""
+        if tool_name == "add_feed":
+            name = tool_args.get("name", "饲料")
+            dm_percent = tool_args.get("dry_matter_percent", 0)
+            cost = tool_args.get("cost_per_kg", 0)
+            nutrients = tool_args.get("nutrients", {})
+            
+            operation_data = {
+                "feed_name": name,
+                "dry_matter": f"{dm_percent}%",
+                "cost_per_kg": f"¥{cost:.2f}",
+                "nutrients": nutrients
+            }
+            return f"添加饲料 {name} (干物质{dm_percent}%, ¥{cost:.2f}/kg)", operation_data
+            
+        elif tool_name == "formulate_ration":
+            target_animals = tool_args.get("target_animals", "奶牛")
+            requirements = tool_args.get("requirements", {})
+            constraints = tool_args.get("constraints", {})
+            
+            operation_data = {
+                "target_animals": target_animals,
+                "requirements": requirements,
+                "constraints": constraints
+            }
+            return f"进行配方优化", operation_data
+            
+        elif tool_name == "check_feeds":
+            operation_data = {"action": "检查可用饲料"}
+            return "检查可用饲料库", operation_data
+            
+        elif tool_name == "export_formulation":
+            format_type = tool_args.get("format", "Excel")
+            operation_data = {"export_format": format_type}
+            return f"导出配方为 {format_type} 格式", operation_data
+            
+        else:
+            return f"执行配方工具 {tool_name}", {}
+    
+    def _create_analysis_summary(self) -> str:
+        """Create final summary of analysis"""
+        if not self.active_analysis:
+            return "数据分析: 已完成"
+        
+        operations = self.active_analysis["operations"]
+        operation_count = len(operations)
+        
+        return f"数据分析: {operation_count}项操作 已完成"
+    
+    def _create_formulation_summary(self) -> str:
+        """Create final summary of formulation"""
+        if not self.active_formulation:
+            return "配方制作: 已完成"
+        
+        operations = self.active_formulation["operations"]
+        operation_count = len(operations)
+        
+        return f"配方制作: {operation_count}项操作 已完成"
+    
     def parse_message(self, message: BaseMessage, context: str = "history") -> List[ParsedMessage]:
         """
         Parse a single message. Context can be 'streaming' or 'history'.
@@ -180,9 +384,6 @@ class UnifiedMessageParser:
                             message_id=f"{tool_id}_artifact",
                             timestamp=timestamp
                         ))
-                    elif tool_name == "export_formulation":
-                        # Don't send export_formulation tool calls to frontend
-                        pass
                     else:
                         # Regular tool call
                         result.append(create_tool_call_message(
@@ -235,9 +436,9 @@ class UnifiedMessageParser:
                     timestamp=timestamp
                 ))
             
-            # Then decide whether to include the raw tool result message
-            if tool_name in ["create_artifact", "export_formulation"]:
-                # Don't include raw tool result for these tools
+            # Then decide whether to include the raw tool result message  
+            if tool_name in ["create_artifact"]:
+                # Don't include raw tool result for artifact tools (already handled above)
                 return result
             else:
                 # Include the tool result message for other tools
@@ -254,6 +455,9 @@ class UnifiedMessageParser:
     
     def parse_messages(self, messages: List[BaseMessage]) -> List[ParsedMessage]:
         """Parse list of messages (for history context)"""
+        # Reset parser state to avoid carryover from previous parsing
+        self.reset_state()
+        
         # Convert dict messages to BaseMessage objects if needed
         converted_messages = []
         for msg in messages:
@@ -280,11 +484,238 @@ class UnifiedMessageParser:
             else:
                 converted_messages.append(msg)
         
-        # Parse all messages
+        # Process messages sequentially, tracking tool calls and ending groups appropriately
         result = []
+        
+        # Log message types for debugging
+        message_types = [type(msg).__name__ for msg in converted_messages]
+        logger.info(f"Processing {len(converted_messages)} messages: {message_types}")
+        
         for msg in converted_messages:
-            parsed = self.parse_message(msg, context="history")
-            result.extend(parsed)
+            timestamp = getattr(msg, 'timestamp', msg.additional_kwargs.get('timestamp', 0))
+            if timestamp == 0:
+                timestamp = msg.additional_kwargs.get('created_at', 0)
+            
+            # Handle AIMessage - both with and without tool calls
+            if isinstance(msg, AIMessage):
+                # First handle tool calls if present
+                has_tool_calls = hasattr(msg, 'tool_calls') and msg.tool_calls
+                
+                if has_tool_calls:
+                    # Check each tool call to see if we need to end current groups or start new ones
+                    for tool_call in msg.tool_calls:
+                        tool_name = tool_call.get("name", "")
+                        tool_args = tool_call.get("args", {})
+                        tool_id = tool_call.get("id", f"tool_{int(timestamp * 1000000)}")
+                        
+                        # Check if we should end current analysis (non-analysis tool starting)
+                        if self._should_end_analysis(tool_name):
+                            summary = self._create_analysis_summary()
+                            result.append(create_analysis_complete_message(
+                                summary=summary,
+                                message_id=self.active_analysis["message_id"],
+                                timestamp=timestamp,
+                                operations_count=len(self.active_analysis["operations"]),
+                                operations=self.active_analysis["operations"]
+                            ))
+                            self.active_analysis = None
+                        
+                        # Check if we should end current formulation (non-formulation tool starting) 
+                        if self._is_formulation_tool(tool_name):
+                            # Continue formulation - don't end it
+                            pass
+                        elif self.active_formulation:
+                            # End formulation when switching to non-formulation tool
+                            summary = self._create_formulation_summary()
+                            result.append(create_formulation_complete_message(
+                                summary=summary,
+                                message_id=self.active_formulation["message_id"],
+                                timestamp=timestamp,
+                                operations_count=len(self.active_formulation["operations"]),
+                                operations=self.active_formulation["operations"],
+                                formulation_results=self.active_formulation.get("results", {})
+                            ))
+                            self.active_formulation = None
+                        
+                        # Check if we should start new analysis
+                        if self._should_start_analysis(tool_name):
+                            analysis_message_id = f"{self.session_id}_history_analysis_{int(timestamp * 1000000)}"
+                            self.active_analysis = {
+                                "message_id": analysis_message_id,
+                                "operations": [],
+                                "start_time": timestamp
+                            }
+                        
+                        # Check if we should start new formulation
+                        if self._is_formulation_tool(tool_name) and not self.active_formulation:
+                            formulation_message_id = f"{self.session_id}_history_formulation_{int(timestamp * 1000000)}"
+                            self.active_formulation = {
+                                "message_id": formulation_message_id,
+                                "operations": [],
+                                "start_time": timestamp,
+                                "results": {}
+                            }
+                        
+                        # Handle analysis tools - add operations but don't emit individual tool calls
+                        current_tool_type = self._is_analysis_tool(tool_name)
+                        if current_tool_type:
+                            if self.active_analysis:
+                                operation = self._get_operation_description(tool_name, tool_args)
+                                self.active_analysis["operations"].append(operation)
+                            # Don't add individual tool_call messages for analysis tools
+                            continue
+                        
+                        # Handle formulation tools - add operations but don't emit individual tool calls
+                        if self._is_formulation_tool(tool_name):
+                            if self.active_formulation:
+                                operation, operation_data = self._get_formulation_operation_description(tool_name, tool_args)
+                                self.active_formulation["operations"].append(operation)
+                            # Don't add individual tool_call messages for formulation tools
+                            continue
+                        
+                        # Handle delegation tools (store for later combination)
+                        if tool_name in self.delegation_tools:
+                            self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
+                            continue
+                        elif tool_name == "create_artifact":
+                            # Create artifact message directly
+                            result.append(create_artifact_message(
+                                title=tool_args.get('title', ''),
+                                description=tool_args.get('description', ''),
+                                html_content=tool_args.get('html_content', ''),
+                                message_id=f"{tool_id}_artifact",
+                                timestamp=timestamp
+                            ))
+                            continue
+                        else:
+                            # Regular tool call
+                            result.append(create_tool_call_message(
+                                tool_name=tool_name,
+                                tool_args=tool_args,
+                                tool_id=tool_id,
+                                timestamp=timestamp
+                            ))
+                else:
+                    # AIMessage without tool calls - end any active groups
+                    if self.active_analysis:
+                        summary = self._create_analysis_summary()
+                        result.append(create_analysis_complete_message(
+                            summary=summary,
+                            message_id=self.active_analysis["message_id"],
+                            timestamp=timestamp,
+                            operations_count=len(self.active_analysis["operations"]),
+                            operations=self.active_analysis["operations"]
+                        ))
+                        self.active_analysis = None
+                    
+                    if self.active_formulation:
+                        summary = self._create_formulation_summary()
+                        result.append(create_formulation_complete_message(
+                            summary=summary,
+                            message_id=self.active_formulation["message_id"],
+                            timestamp=timestamp,
+                            operations_count=len(self.active_formulation["operations"]),
+                            operations=self.active_formulation["operations"],
+                            formulation_results=self.active_formulation.get("results", {})
+                        ))
+                        self.active_formulation = None
+                
+                # Process AI message content if present (for both cases)
+                if msg.content.strip():
+                    result.append(create_agent_message(
+                        content=msg.content,
+                        message_id=f"msg_{hash(str(msg.content))}_{int(timestamp * 1000000)}",
+                        timestamp=timestamp,
+                        is_streaming=False
+                    ))
+                    
+            elif isinstance(msg, ToolMessage):
+                tool_name = getattr(msg, 'name', msg.additional_kwargs.get('tool_name', 'unknown'))
+                tool_id = getattr(msg, 'tool_call_id', f"tool_{int(timestamp * 1000000)}")
+                
+                # Skip tool results for grouped tools completely
+                if (self._is_analysis_tool(tool_name) and self.active_analysis) or \
+                   (self._is_formulation_tool(tool_name) and self.active_formulation) or \
+                   tool_name in ["create_artifact"]:
+                    continue  # Skip processing this ToolMessage entirely
+                
+                # Check for delegation tool results and handle role transitions
+                if tool_id in self.pending_delegations:
+                    tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
+                    to_role = self._get_delegation_role(tool_name)
+                    
+                    result.append(create_role_transition_message(
+                        to_role=to_role,
+                        message_id=f"{tool_id}_transition",
+                        timestamp=timestamp
+                    ))
+                    continue
+                
+                # Regular tool result
+                result.append(create_tool_result_message(
+                    content=msg.content,
+                    tool_name=tool_name,
+                    tool_id=tool_id,
+                    timestamp=timestamp
+                ))
+                
+            elif isinstance(msg, HumanMessage):
+                # End any active groups when user sends a new message
+                if self.active_analysis:
+                    summary = self._create_analysis_summary()
+                    result.append(create_analysis_complete_message(
+                        summary=summary,
+                        message_id=self.active_analysis["message_id"],
+                        timestamp=timestamp,
+                        operations_count=len(self.active_analysis["operations"]),
+                        operations=self.active_analysis["operations"]
+                    ))
+                    self.active_analysis = None
+                
+                if self.active_formulation:
+                    summary = self._create_formulation_summary()
+                    result.append(create_formulation_complete_message(
+                        summary=summary,
+                        message_id=self.active_formulation["message_id"],
+                        timestamp=timestamp,
+                        operations_count=len(self.active_formulation["operations"]),
+                        operations=self.active_formulation["operations"],
+                        formulation_results=self.active_formulation.get("results", {})
+                    ))
+                    self.active_formulation = None
+                
+                # Add user message
+                result.append(create_user_message(
+                    content=msg.content,
+                    message_id=f"msg_{hash(str(msg.content))}_{int(timestamp * 1000000)}",
+                    timestamp=timestamp
+                ))
+            
+            # Skip SystemMessage and other types
+        
+        # Complete any remaining groups at the end
+        if self.active_analysis:
+            summary = self._create_analysis_summary()
+            result.append(create_analysis_complete_message(
+                summary=summary,
+                message_id=self.active_analysis["message_id"],
+                timestamp=timestamp,
+                operations_count=len(self.active_analysis["operations"]),
+                operations=self.active_analysis["operations"]
+            ))
+            self.active_analysis = None
+        
+        if self.active_formulation:
+            summary = self._create_formulation_summary()
+            result.append(create_formulation_complete_message(
+                summary=summary,
+                message_id=self.active_formulation["message_id"],
+                timestamp=timestamp,
+                operations_count=len(self.active_formulation["operations"]),
+                operations=self.active_formulation["operations"],
+                formulation_results=self.active_formulation.get("results", {})
+            ))
+            self.active_formulation = None
         
         return result
     
@@ -310,10 +741,43 @@ class UnifiedMessageParser:
                     is_streaming=True
                 )]
         
-        elif event_type == "on_chat_model_end":
-            # AI response finished - reset current message ID
-            self.current_agent_message_id = None
-            return []  # Don't send anything
+        # elif event_type == "on_chat_model_end":
+        #     # AI response finished - reset current message ID
+        #     self.current_agent_message_id = None
+        #     return []  # Don't complete analysis here - it's too frequent
+        
+        elif event_type == "on_chain_end":
+            # Check if this is the main LangGraph chain ending
+            name = event.get("name", "")
+            result = []
+            
+            if name == "LangGraph":
+                # Complete any active analysis
+                if self.active_analysis:
+                    summary = self._create_analysis_summary()
+                    result.append(create_analysis_complete_message(
+                        summary=summary,
+                        message_id=self.active_analysis["message_id"],
+                        timestamp=timestamp,
+                        operations_count=len(self.active_analysis["operations"]),
+                        operations=self.active_analysis["operations"]
+                    ))
+                    self.active_analysis = None
+                
+                # Complete any active formulation
+                if self.active_formulation:
+                    summary = self._create_formulation_summary()
+                    result.append(create_formulation_complete_message(
+                        summary=summary,
+                        message_id=self.active_formulation["message_id"],
+                        timestamp=timestamp,
+                        operations_count=len(self.active_formulation["operations"]),
+                        operations=self.active_formulation["operations"],
+                        formulation_results=self.active_formulation.get("results", {})
+                    ))
+                    self.active_formulation = None
+                    
+            return result
         
         elif event_type == "on_tool_start":
             # Tool call started
@@ -322,31 +786,123 @@ class UnifiedMessageParser:
             tool_args = event["data"].get("input", {})
             tool_id = event.get("run_id", f"tool_{int(timestamp * 1000000)}")
             
+            result = []
             
+            # Check if we should end current analysis (non-analysis tool starting)
+            if self._should_end_analysis(tool_name):
+                summary = self._create_analysis_summary()
+                result.append(create_analysis_complete_message(
+                    summary=summary,
+                    message_id=self.active_analysis["message_id"],
+                    timestamp=timestamp,
+                    operations_count=len(self.active_analysis["operations"]),
+                    operations=self.active_analysis["operations"]
+                ))
+                self.active_analysis = None
+                
+            # Check if we should end current formulation (non-formulation tool starting)
+            if self._is_formulation_tool(tool_name):
+                # Continue formulation - don't end it
+                pass
+            elif self.active_formulation:
+                # End formulation when switching to non-formulation tool
+                summary = self._create_formulation_summary()
+                result.append(create_formulation_complete_message(
+                    summary=summary,
+                    message_id=self.active_formulation["message_id"],
+                    timestamp=timestamp,
+                    operations_count=len(self.active_formulation["operations"]),
+                    operations=self.active_formulation["operations"],
+                    formulation_results=self.active_formulation.get("results", {})
+                ))
+                self.active_formulation = None
+                
+            # Check if we should start new analysis
+            if self._should_start_analysis(tool_name):
+                analysis_message_id = f"{self.session_id}_analysis_{int(timestamp * 1000000)}"
+                self.active_analysis = {
+                    "message_id": analysis_message_id,
+                    "operations": [],
+                    "start_time": timestamp
+                }
+                
+                result.append(create_analysis_start_message(
+                    analysis_type="数据分析",
+                    message_id=analysis_message_id,
+                    timestamp=timestamp
+                ))
+            
+            # Check if we should start new formulation
+            if self._is_formulation_tool(tool_name) and not self.active_formulation:
+                formulation_message_id = f"{self.session_id}_formulation_{int(timestamp * 1000000)}"
+                self.active_formulation = {
+                    "message_id": formulation_message_id,
+                    "operations": [],
+                    "start_time": timestamp,
+                    "results": {}
+                }
+                
+                result.append(create_formulation_start_message(
+                    formulation_type="饲料配方",
+                    message_id=formulation_message_id,
+                    timestamp=timestamp
+                ))
+            
+            # Handle analysis tools with live updates
+            current_tool_type = self._is_analysis_tool(tool_name)
+            if current_tool_type:
+                if self.active_analysis:
+                    operation = self._get_operation_description(tool_name, tool_args)
+                    self.active_analysis["operations"].append(operation)
+                    result.append(create_analysis_update_message(
+                        operation=operation,
+                        message_id=self.active_analysis["message_id"],
+                        timestamp=timestamp
+                    ))
+                # Don't send individual tool_call messages for analysis tools
+                return result
+            
+            # Handle formulation tools with live updates
+            if self._is_formulation_tool(tool_name):
+                if self.active_formulation:
+                    operation, operation_data = self._get_formulation_operation_description(tool_name, tool_args)
+                    self.active_formulation["operations"].append(operation)
+                    result.append(create_formulation_update_message(
+                        operation=operation,
+                        message_id=self.active_formulation["message_id"],
+                        timestamp=timestamp,
+                        operation_data=operation_data
+                    ))
+                # Don't send individual tool_call messages for formulation tools
+                return result
+            
+            # Handle other tool types
             if tool_name in self.delegation_tools:
                 # Store delegation for later combination
                 self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
-                return []  # Don't send anything yet
+                return result  # Return any analysis events but don't add tool call
             elif tool_name == "create_artifact":
                 # Create artifact message directly from tool args
-                return [create_artifact_message(
+                result.append(create_artifact_message(
                     title=tool_args.get('title', ''),
                     description=tool_args.get('description', ''),
                     html_content=tool_args.get('html_content', ''),
                     message_id=f"{tool_id}_artifact",
                     timestamp=timestamp
-                )]
-            elif tool_name == "export_formulation":
-                # Don't send export_formulation tool calls to frontend
-                return []
+                ))
+                return result
+            elif tool_name == "export_formulation" or self._is_formulation_tool(tool_name):
+                # Don't send formulation tool calls to frontend
+                return result
             else:
                 # Regular tool call
-                return [create_tool_call_message(
+                result.append(create_tool_call_message(
                     tool_name=tool_name,
                     tool_args=tool_args,
                     tool_id=tool_id,
                     timestamp=timestamp
-                )]
+                ))
+                return result
         
         elif event_type == "on_tool_end":
             # Tool call completed
@@ -393,8 +949,10 @@ class UnifiedMessageParser:
                 ))
             
             # Then decide whether to include the raw tool result message
-            if tool_name in ["create_artifact", "export_formulation"]:
-                # Don't include raw tool result for these tools
+            current_tool_type = self._is_analysis_tool(tool_name)
+            is_formulation_tool = self._is_formulation_tool(tool_name)
+            if tool_name in ["create_artifact", "export_formulation"] or current_tool_type or is_formulation_tool:
+                # Don't include raw tool result for these tools (handled by analysis/formulation updates)
                 return result
             else:
                 # Include the tool result message for other tools
@@ -406,7 +964,9 @@ class UnifiedMessageParser:
                 ))
                 return result
         
-        # Unknown or unhandled event type
+        # Unknown or unhandled event type  
         return []
+    
+    
 
 # No global parser - create per session

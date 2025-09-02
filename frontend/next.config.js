@@ -2,8 +2,10 @@ const path = require('path');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Disable React Strict Mode to prevent double requests in development
+  reactStrictMode: false,
   // Enable standalone output for Docker deployment
-  output: 'standalone',
+  //output: 'standalone',
   
   webpack: (config) => {
     config.resolve.fallback = {
@@ -23,7 +25,7 @@ const nextConfig = {
   async rewrites() {
     // Use different backend URL for Docker vs development
     const backendUrl = process.env.NODE_ENV === 'production' 
-      ? 'http://backend:8000'  // Docker container name
+      ? 'http://localhost:8000'  // Docker container name
       : 'http://localhost:8000';  // Development
       
     return [
