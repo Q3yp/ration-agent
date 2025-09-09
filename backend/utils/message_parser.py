@@ -633,10 +633,36 @@ class UnifiedMessageParser:
                 tool_name = getattr(msg, 'name', msg.additional_kwargs.get('tool_name', 'unknown'))
                 tool_id = getattr(msg, 'tool_call_id', f"tool_{int(timestamp * 1000000)}")
                 
-                # Skip tool results for grouped tools completely
+                # First, extract any special data and create events BEFORE skipping
+                result_for_this_tool = []
+                
+                # Check for file export data and create file export event
+                file_export_data = self._extract_file_export_data(msg.content)
+                if file_export_data:
+                    result_for_this_tool.append(create_file_export_message(
+                        filename=file_export_data['filename'],
+                        file_type=file_export_data['file_type'],
+                        filepath=file_export_data['filepath'],
+                        message_id=f"{tool_id}_export",
+                        timestamp=timestamp
+                    ))
+                
+                # Check for legacy artifact data and create artifact event
+                artifact_data = self._extract_artifact_data(msg.content)
+                if artifact_data:
+                    result_for_this_tool.append(create_artifact_message(
+                        title=artifact_data['title'],
+                        description=artifact_data['description'],
+                        html_content=artifact_data['html_content'],
+                        message_id=f"{tool_id}_artifact",
+                        timestamp=timestamp
+                    ))
+                
+                # Skip tool results for grouped tools completely, but add any extracted events
                 if (self._is_analysis_tool(tool_name) and self.active_analysis) or \
                    (self._is_formulation_tool(tool_name) and self.active_formulation) or \
                    tool_name in ["create_artifact"]:
+                    result.extend(result_for_this_tool)  # Add any file export/artifact events
                     continue  # Skip processing this ToolMessage entirely
                 
                 # Check for delegation tool results and handle role transitions
@@ -651,7 +677,8 @@ class UnifiedMessageParser:
                     ))
                     continue
                 
-                # Regular tool result
+                # Regular tool result - add any extracted events first, then the tool result
+                result.extend(result_for_this_tool)
                 result.append(create_tool_result_message(
                     content=msg.content,
                     tool_name=tool_name,
