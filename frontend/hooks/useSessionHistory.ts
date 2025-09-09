@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Message } from '@/types/chat'
+import { httpClient } from '@/utils/httpClient'
 
 interface UseSessionHistoryProps {
   sessionId: string | null
-  endpoint?: string
 }
 
 interface SessionHistoryResponse {
@@ -29,8 +29,7 @@ interface UseSessionHistoryReturn {
 }
 
 export function useSessionHistory({ 
-  sessionId, 
-  endpoint = '/api' 
+  sessionId
 }: UseSessionHistoryProps): UseSessionHistoryReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -47,13 +46,7 @@ export function useSessionHistory({
       setIsLoading(true)
       setError(null)
       
-      const response = await fetch(`${endpoint}/sessions/${sessionId}/history`)
-      
-      if (!response.ok) {
-        throw new Error(`Failed to load session history: ${response.statusText}`)
-      }
-      
-      const data: SessionHistoryResponse = await response.json()
+      const data: SessionHistoryResponse = await httpClient.getJson(`/sessions/${sessionId}/history`)
       
       // Backend now returns ParsedMessage format directly with proper metadata
       setMessages(data.messages || [])
@@ -64,7 +57,7 @@ export function useSessionHistory({
     } finally {
       setIsLoading(false)
     }
-  }, [sessionId, endpoint])
+  }, [sessionId])
 
   useEffect(() => {
     loadSessionHistory()

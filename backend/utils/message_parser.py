@@ -278,7 +278,7 @@ class UnifiedMessageParser:
         """Get description and structured data for formulation operation"""
         if tool_name == "add_feed":
             name = tool_args.get("name", "饲料")
-            dm_percent = tool_args.get("dry_matter_percent", 0)
+            dm_percent = tool_args.get("dm_percent", tool_args.get("dry_matter_percent", 0))
             cost = tool_args.get("cost_per_kg", 0)
             nutrients = tool_args.get("nutrients", {})
             

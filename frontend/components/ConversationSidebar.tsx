@@ -7,13 +7,12 @@ import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { getAuthHeadersWithDefaults } from '@/utils/authHeaders'
+import { httpClient } from '@/utils/httpClient'
 interface ConversationSidebarProps {
   currentSessionId: string | null
   onSessionSelect: (sessionId: string) => void
   onNewSession: (sessionId: string) => void
   sessionTitles: Record<string, string>
-  endpoint?: string
 }
 
 export default function ConversationSidebar({
@@ -21,7 +20,6 @@ export default function ConversationSidebar({
   onSessionSelect,
   onNewSession,
   sessionTitles,
-  endpoint = '/api'
 }: ConversationSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -38,13 +36,7 @@ export default function ConversationSidebar({
   const fetchSessions = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch(`${endpoint}/sessions/list`, {
-        headers: getAuthHeadersWithDefaults()
-      })
-      if (!response.ok) {
-        throw new Error(`Failed to fetch sessions: ${response.statusText}`)
-      }
-      const data = await response.json()
+      const data = await httpClient.getJson(`/sessions/list`)
       const sessions = data.active_sessions || []
       setSessions(sessions)
       
@@ -63,20 +55,9 @@ export default function ConversationSidebar({
   const createNewSession = async () => {
     const newSessionId = uuidv4()
     try {
-      const response = await fetch(`${endpoint}/sessions/create`, {
-        method: 'POST',
-        headers: getAuthHeadersWithDefaults({
-          'Content-Type': 'application/json',
-        }),
-        body: JSON.stringify({ session_id: newSessionId }),
-      })
-      
-      if (!response.ok) {
-        throw new Error(`Failed to create session: ${response.statusText}`)
-      }
+      await httpClient.postJson(`/sessions/create`, { session_id: newSessionId })
       
       // Add new session to local state instead of refetching all sessions
-      await response.json() // consume response
       const newSession: Session = {
         session_id: newSessionId,
         title: '新对话',
@@ -100,14 +81,7 @@ export default function ConversationSidebar({
     }
 
     try {
-      const response = await fetch(`${endpoint}/sessions/${sessionId}`, {
-        method: 'DELETE',
-        headers: getAuthHeadersWithDefaults()
-      })
-      
-      if (!response.ok) {
-        throw new Error(`Failed to delete session: ${response.statusText}`)
-      }
+      await httpClient.deleteJson(`/sessions/${sessionId}`)
       
       // Remove session from local state instead of refetching all sessions
       setSessions(prev => prev.filter(session => session.session_id !== sessionId))
@@ -128,14 +102,7 @@ export default function ConversationSidebar({
     }
 
     try {
-      const response = await fetch(`${endpoint}/sessions/delete-all`, {
-        method: 'DELETE',
-        headers: getAuthHeadersWithDefaults()
-      })
-      
-      if (!response.ok) {
-        throw new Error(`Failed to delete all sessions: ${response.statusText}`)
-      }
+      await httpClient.deleteJson(`/sessions/delete-all`)
       
       // Clear all sessions from local state
       setSessions([])

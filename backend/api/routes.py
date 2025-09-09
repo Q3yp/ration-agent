@@ -2,14 +2,17 @@ import asyncio
 import json
 import logging
 import time
+import io
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from langchain_core.messages import HumanMessage
+import pandas as pd
 from models import (
     ChatRequest, FileUploadResponse, FileDeleteResponse,
     SessionCreateRequest, SessionCreateResponse, SessionStatsResponse,
-    ParsedMessage
+    ParsedMessage, FeedbaseListResponse, FeedbaseResponse, 
+    FeedbaseUpdateRequest, FeedbaseDeleteResponse, FeedbaseData
 )
 from services.session_manager import session_manager
 from services.chat_history_service import chat_history_service
@@ -284,7 +287,10 @@ async def stream_chat(
         agent_config = get_agent_config()
 
         config = {
-            "configurable": {"thread_id": session_id},
+            "configurable": {
+                "thread_id": session_id,
+                "user_id": str(current_user.id)  # Add user_id for store operations
+            },
             "recursion_limit": agent_config["recursion_limit"]
         }
 
@@ -571,3 +577,224 @@ async def download_file(
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
+
+
+# Feedbase Management Endpoints
+
+@router.get("/feedbases/list", response_model=FeedbaseListResponse)
+async def list_feedbases(current_user: User = Depends(current_active_user)):
+    """List all feedbases for the current user"""
+    try:
+        from core.agent import _connection_manager
+        
+        # Get shared store instance
+        store = await _connection_manager.get_shared_store()
+        user_id = str(current_user.id)
+        namespace = ("feedbases", user_id)
+        
+        # Get all feedbases for this user
+        feedbase_entries = await store.asearch(namespace)
+        feedbase_names = []
+        
+        for entry in feedbase_entries:
+            # Extract feedbase name from namespace tuple
+            if len(entry.namespace) >= 3:
+                feedbase_name = entry.namespace[2]  # ("feedbases", user_id, feedbase_name)
+                if feedbase_name not in feedbase_names:
+                    feedbase_names.append(feedbase_name)
+        
+        return FeedbaseListResponse(feedbases=sorted(feedbase_names))
+        
+    except Exception as e:
+        logger.error(f"Error listing feedbases for user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list feedbases: {str(e)}")
+
+
+@router.get("/feedbases/{feedbase_name}", response_model=FeedbaseResponse)
+async def get_feedbase(feedbase_name: str, current_user: User = Depends(current_active_user)):
+    """Get feedbase details by name"""
+    try:
+        from core.agent import _connection_manager
+        
+        # Get shared store instance
+        store = await _connection_manager.get_shared_store()
+        user_id = str(current_user.id)
+        namespace = ("feedbases", user_id, feedbase_name)
+        
+        # Get feedbase data
+        result = await store.aget(namespace, "data")
+        
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Feedbase '{feedbase_name}' not found")
+        
+        # Validate and return feedbase data
+        feedbase_data = FeedbaseData(**result.value)
+        return FeedbaseResponse(name=feedbase_name, data=feedbase_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting feedbase {feedbase_name} for user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get feedbase: {str(e)}")
+
+
+@router.put("/feedbases/{feedbase_name}", response_model=FeedbaseResponse)
+async def update_feedbase(
+    feedbase_name: str, 
+    request: FeedbaseUpdateRequest,
+    current_user: User = Depends(current_active_user)
+):
+    """Update or create a feedbase"""
+    try:
+        from core.agent import _connection_manager
+        
+        # Get shared store instance
+        store = await _connection_manager.get_shared_store()
+        user_id = str(current_user.id)
+        namespace = ("feedbases", user_id, feedbase_name)
+        
+        # Store the feedbase data
+        feedbase_dict = request.data.model_dump()
+        await store.aput(namespace, "data", feedbase_dict)
+        
+        logger.info(f"Updated feedbase {feedbase_name} for user {current_user.id}")
+        return FeedbaseResponse(name=feedbase_name, data=request.data)
+        
+    except Exception as e:
+        logger.error(f"Error updating feedbase {feedbase_name} for user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update feedbase: {str(e)}")
+
+
+@router.delete("/feedbases/{feedbase_name}", response_model=FeedbaseDeleteResponse)
+async def delete_feedbase(feedbase_name: str, current_user: User = Depends(current_active_user)):
+    """Delete a feedbase"""
+    try:
+        from core.agent import _connection_manager
+        
+        # Get shared store instance
+        store = await _connection_manager.get_shared_store()
+        user_id = str(current_user.id)
+        namespace = ("feedbases", user_id, feedbase_name)
+        
+        # Check if feedbase exists
+        result = await store.aget(namespace, "data")
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Feedbase '{feedbase_name}' not found")
+        
+        # Delete the feedbase
+        await store.adelete(namespace, "data")
+        
+        logger.info(f"Deleted feedbase {feedbase_name} for user {current_user.id}")
+        return FeedbaseDeleteResponse(
+            message=f"Feedbase '{feedbase_name}' deleted successfully",
+            feedbase_name=feedbase_name
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting feedbase {feedbase_name} for user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete feedbase: {str(e)}")
+
+
+@router.get("/feedbases/{feedbase_name}/export")
+async def export_feedbase(feedbase_name: str, current_user: User = Depends(current_active_user)):
+    """Export feedbase as Excel file"""
+    try:
+        from core.agent import _connection_manager
+        
+        # Get shared store instance
+        store = await _connection_manager.get_shared_store()
+        user_id = str(current_user.id)
+        namespace = ("feedbases", user_id, feedbase_name)
+        
+        # Get feedbase data
+        result = await store.aget(namespace, "data")
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Feedbase '{feedbase_name}' not found")
+        
+        # Parse the feedbase data
+        if hasattr(result, 'value'):
+            # If result has a value attribute, it might be a string that needs parsing
+            feedbase_data = json.loads(result.value) if isinstance(result.value, str) else result.value
+        else:
+            # If result doesn't have a value attribute, use the result directly
+            feedbase_data = result
+            
+        # Handle case where feedbase_data might still be a string
+        if isinstance(feedbase_data, str):
+            feedbase_data = json.loads(feedbase_data)
+            
+        feeds = feedbase_data.get('feeds', {})
+        
+        # Prepare data for Excel export
+        rows = []
+        for feed_name, feed_data in feeds.items():
+            row = {
+                '饲料名称': feed_name,
+                '干物质含量(%)': feed_data.get('dm_percent', 0),
+                '成本(¥/kg)': feed_data.get('cost_per_kg', 0)
+            }
+            
+            # Add nutrients as separate columns
+            nutrients = feed_data.get('nutrients', {})
+            for nutrient_name, nutrient_value in nutrients.items():
+                row[nutrient_name] = nutrient_value
+                
+            rows.append(row)
+        
+        # Create DataFrame and Excel file
+        if not rows:
+            # Create empty DataFrame with basic structure
+            df = pd.DataFrame(columns=['饲料名称', '干物质含量(%)', '成本(¥/kg)'])
+        else:
+            df = pd.DataFrame(rows)
+        
+        # Create Excel file in memory
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Feedbase', index=False)
+            
+            # Auto-adjust column widths
+            worksheet = writer.sheets['Feedbase']
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        excel_buffer.seek(0)
+        
+        # Create filename with proper encoding for international characters
+        import urllib.parse
+        
+        # Create a safe ASCII filename as fallback
+        safe_feedbase_name = "".join(c for c in feedbase_name if c.isascii() and (c.isalnum() or c in (' ', '-', '_'))).strip()
+        if not safe_feedbase_name:
+            safe_feedbase_name = "feedbase"
+        ascii_filename = f"{safe_feedbase_name}.xlsx"
+        
+        # Create properly encoded filename for UTF-8 support
+        utf8_filename = f"{feedbase_name}.xlsx"
+        encoded_filename = urllib.parse.quote(utf8_filename.encode('utf-8'))
+        
+        # Return file response with proper Content-Disposition header
+        return StreamingResponse(
+            io.BytesIO(excel_buffer.read()),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename={ascii_filename}; filename*=UTF-8''{encoded_filename}"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exporting feedbase {feedbase_name} for user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to export feedbase: {str(e)}")

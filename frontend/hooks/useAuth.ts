@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, createContext, useContext } from 'react'
+import { httpClient } from '@/utils/httpClient'
 
 interface User {
   id: string
@@ -47,38 +48,21 @@ export const useAuth = (): AuthContextType => {
 
   const verifyToken = async (token: string) => {
     try {
-      const response = await fetch('/auth/users/me', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const user = await httpClient.getJson('/auth/users/me')
+      setAuthState({
+        user,
+        token,
+        isLoading: false,
+        error: null
       })
-
-      if (response.ok) {
-        const user = await response.json()
-        setAuthState({
-          user,
-          token,
-          isLoading: false,
-          error: null
-        })
-      } else {
-        // Token invalid, remove it
-        localStorage.removeItem('auth_token')
-        setAuthState({
-          user: null,
-          token: null,
-          isLoading: false,
-          error: null
-        })
-      }
     } catch (error) {
+      // Token invalid, remove it
       localStorage.removeItem('auth_token')
       setAuthState({
         user: null,
         token: null,
         isLoading: false,
-        error: 'Failed to verify authentication'
+        error: null
       })
     }
   }

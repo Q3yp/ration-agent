@@ -7,8 +7,10 @@ from pathlib import Path
 import pandas as pd
 from langchain_core.tools import tool, InjectedToolCallId
 from langchain_core.messages import ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
+from langgraph.config import get_store
 
 from formulation.optimizer import create_optimizer
 
@@ -52,28 +54,41 @@ def create_formulation_tools(session_id: str = None):
     """
     
     @tool
-    def add_feed(
+    async def add_feed(
+        feed_base_name: str,
         name: str,
-        dry_matter_percent: float,
-        nutrients: Dict[str, float],
-        cost_per_kg: float,
-        state: Annotated[dict, InjectedState],
-        tool_call_id: Annotated[str, InjectedToolCallId]
+        dm_percent: Optional[float] = None,
+        dry_matter_percent: Optional[float] = None,
+        nutrients: Dict[str, float] = None,
+        cost_per_kg: float = 0.0,
+        state: Annotated[dict, InjectedState] = None,
+        tool_call_id: Annotated[str, InjectedToolCallId] = None,
+        config: RunnableConfig = None
     ) -> Command:
         """
-        Add or update feed ingredient in the feed database.
+        Add or update feed ingredient in a specific feedbase.
         
         Args:
+            feed_base_name: Name of the feedbase to add the feed to
             name: Feed name (will replace if exists)
-            dry_matter_percent: Dry matter percentage (0-100)
+            dm_percent: Dry matter percentage (0-100)
             nutrients: Nutrient composition on dry matter basis (e.g., {"CP": 18.5, "NEL": 1.65})
             cost_per_kg: Cost per kg as-fed
             
         Returns:
-            State update with confirmation message
+            Confirmation message
         """
         try:
             # Validate inputs
+            if not isinstance(feed_base_name, str) or not feed_base_name.strip():
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("Error: Feedbase name must be a non-empty string", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+                
             if not isinstance(name, str) or not name.strip():
                 return Command(
                     update={
@@ -83,7 +98,18 @@ def create_formulation_tools(session_id: str = None):
                     }
                 )
             
-            if not 0 < dry_matter_percent <= 100:
+            # Accept legacy param name
+            if dm_percent is None and dry_matter_percent is not None:
+                dm_percent = dry_matter_percent
+            if dm_percent is None:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("Error: dm_percent (dry matter %) is required", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+            if not 0 < dm_percent <= 100:
                 return Command(
                     update={
                         "messages": [
@@ -121,23 +147,47 @@ def create_formulation_tools(session_id: str = None):
                         }
                     )
             
+            # Get user_id from config and access store
+            user_id = config["configurable"].get("user_id")
+            if not user_id:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+            
+            store = get_store()
+            namespace = ("feedbases", user_id, feed_base_name)
+            
+            # Get existing feedbase or create new one
+            existing_feedbase = await store.aget(namespace, "data")
+            if existing_feedbase:
+                feedbase_data = existing_feedbase.value
+            else:
+                # Create new feedbase
+                feedbase_data = {"feeds": {}}
+            
             # Format feed data
             feed_data = {
-                "dm_percent": dry_matter_percent,
+                "dm_percent": dm_percent,
                 "nutrients": nutrients,
                 "cost_per_kg": cost_per_kg
             }
             
-            # Sanitize feed name and update state directly
+            # Add feed to feedbase
             sanitized_name = sanitize_feed_name(name)
-            current_feed_db = state.get("feed_database", {})
-            updated_feed_db = {**current_feed_db, sanitized_name: feed_data}
+            feedbase_data["feeds"][sanitized_name] = feed_data
             
-            # Return Command with state update and tool message
-            return Command(update={
-                    "feed_database": updated_feed_db,
+            # Store updated feedbase
+            await store.aput(namespace, "data", feedbase_data)
+            
+            # Return success message
+            return Command(
+                update={
                     "messages": [
-                        ToolMessage(f"Successfully added feed '{sanitized_name}' to database", tool_call_id=tool_call_id)
+                        ToolMessage(f"Successfully added feed '{sanitized_name}' to feedbase '{feed_base_name}'", tool_call_id=tool_call_id)
                     ]
                 }
             )
@@ -153,11 +203,81 @@ def create_formulation_tools(session_id: str = None):
             )
     
     @tool
-    def formulate_ration(
+    async def list_feed_bases(
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        config: RunnableConfig
+    ) -> Command:
+        """
+        List all available feedbases for the user.
+        
+        Returns:
+            List of available feedbase names
+        """
+        try:
+            # Get user_id from config and access store
+            user_id = config["configurable"].get("user_id")
+            if not user_id:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+            
+            store = get_store()
+            namespace = ("feedbases", user_id)
+            
+            # Search for all feedbases for this user
+            feedbase_entries = await store.asearch(namespace)
+            
+            if not feedbase_entries:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("No feedbases found for this user.", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+            
+            # Extract feedbase names from namespace
+            feedbase_info = []
+            feedbase_info.append(f"Available Feedbases ({len(feedbase_entries)}):\n")
+            
+            for entry in feedbase_entries:
+                # Namespace structure: ("feedbases", user_id, feedbase_name)
+                feedbase_name = entry.namespace[2]  # Get feedbase name from namespace
+                feedbase_data = entry.value
+                feed_count = len(feedbase_data.get("feeds", {}))
+                feedbase_info.append(f"- **{feedbase_name}** ({feed_count} feeds)")
+            
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage("\n".join(feedbase_info), tool_call_id=tool_call_id)
+                    ]
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"List feedbases error: {e}")
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(f"Error listing feedbases: {str(e)}", tool_call_id=tool_call_id)
+                    ]
+                }
+            )
+    
+    @tool
+    async def formulate_ration(
+        feed_base_name: str,
         nutritional_constraints: List[Dict[str, Any]],
         selected_feeds: List[str],
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
+        config: RunnableConfig,
         feed_constraints: Optional[Dict[str, Dict]] = None,
         optimization_goal: str = "minimize_cost"
     ) -> Command:
@@ -166,6 +286,7 @@ def create_formulation_tools(session_id: str = None):
         Automatically calculates daily feed amounts when DMI is specified in constraints.
         
         Args:
+            feed_base_name: Name of the feedbase to use for formulation
             nutritional_constraints: List of constraint dictionaries:
                 - {"type": "concentration", "nutrient": "CP", "min": 16.0, "max": 18.0}
                 - {"type": "daily_total", "attribute": "dmi", "target": 18.0, "tolerance_percent": 10.0}
@@ -188,6 +309,15 @@ def create_formulation_tools(session_id: str = None):
         """
         try:
             # Validate inputs
+            if not isinstance(feed_base_name, str) or not feed_base_name.strip():
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("Error: Feedbase name must be a non-empty string", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+                
             if not isinstance(nutritional_constraints, list):
                 return Command(
                     update={
@@ -254,13 +384,38 @@ def create_formulation_tools(session_id: str = None):
                             }
                         )
             
-            # Get feed database from state
-            feed_database = state.get("feed_database", {})
+            # Get user_id from config and access store
+            user_id = config["configurable"].get("user_id")
+            if not user_id:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+            
+            store = get_store()
+            namespace = ("feedbases", user_id, feed_base_name)
+            
+            # Get feedbase from store
+            feedbase_entry = await store.aget(namespace, "data")
+            if not feedbase_entry:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage(f"Error: Feedbase '{feed_base_name}' not found. Please create it first using add_feed tool.", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+            
+            feedbase_data = feedbase_entry.value
+            feed_database = feedbase_data.get("feeds", {})
             if not feed_database:
                 return Command(
                     update={
                         "messages": [
-                            ToolMessage("Error: No feed database found. Please add feeds first using add_feed tool.", tool_call_id=tool_call_id)
+                            ToolMessage(f"Error: Feedbase '{feed_base_name}' is empty. Please add feeds first using add_feed tool.", tool_call_id=tool_call_id)
                         ]
                     }
                 )
@@ -320,6 +475,8 @@ def create_formulation_tools(session_id: str = None):
             # Only store constraints in state if optimization succeeded
             state_update = {
                 "current_formulation": optimization_result,
+                "current_feedbase_name": feed_base_name,  # Store feedbase reference for export
+                "current_user_id": user_id,  # Store user ID for export
                 "messages": [
                     ToolMessage(json.dumps(optimization_result, indent=2), tool_call_id=tool_call_id)
                 ]
@@ -342,32 +499,72 @@ def create_formulation_tools(session_id: str = None):
             )
     
     @tool
-    def check_feeds(
+    async def check_feeds(
+        feed_base_name: str,
         state: Annotated[dict, InjectedState],
-        tool_call_id: Annotated[str, InjectedToolCallId]
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        config: RunnableConfig
     ) -> Command:
         """
-        Check and list all feeds in the current feed database.
+        Check and list all feeds in a specific feedbase.
         
+        Args:
+            feed_base_name: Name of the feedbase to check
+            
         Returns:
-            Formatted string with complete feed database information
+            Formatted string with complete feedbase information
         """
         try:
-            # Get feed database from state
-            feed_database = state.get("feed_database", {})
+            # Validate feedbase name
+            if not isinstance(feed_base_name, str) or not feed_base_name.strip():
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("Error: Feedbase name must be a non-empty string", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+            
+            # Get user_id from config and access store
+            user_id = config["configurable"].get("user_id")
+            if not user_id:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+            
+            store = get_store()
+            namespace = ("feedbases", user_id, feed_base_name)
+            
+            # Get feedbase from store
+            feedbase_entry = await store.aget(namespace, "data")
+            if not feedbase_entry:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage(f"Feedbase '{feed_base_name}' not found.", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+            
+            feedbase_data = feedbase_entry.value
+            feed_database = feedbase_data.get("feeds", {})
             
             if not feed_database:
                 return Command(
                     update={
                         "messages": [
-                            ToolMessage("No feeds currently in the database.", tool_call_id=tool_call_id)
+                            ToolMessage(f"Feedbase '{feed_base_name}' is empty.", tool_call_id=tool_call_id)
                         ]
                     }
                 )
             
             # Format feed information for all feeds
             feed_info = []
-            feed_info.append(f"Complete Feed Database ({len(feed_database)} feeds):\n")
+            feed_info.append(f"Feedbase '{feed_base_name}' ({len(feed_database)} feeds):\n")
             
             for feed_name, feed_data in feed_database.items():
                 feed_info.append(f"**{feed_name}**")
@@ -405,6 +602,7 @@ def create_formulation_tools(session_id: str = None):
         description: str,
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
+        config: RunnableConfig,
         filename: Optional[str] = None
     ) -> Command:
         """
@@ -431,9 +629,12 @@ def create_formulation_tools(session_id: str = None):
         try:
             # Get all required data from state
             current_formulation = state.get("current_formulation", {})
-            feed_database = state.get("feed_database", {})
             formulation_constraints = state.get("formulation_constraints", [])
             feed_constraints = state.get("feed_constraints", {})
+            
+            # Get feedbase references from state
+            feedbase_name = state.get("current_feedbase_name", "")
+            user_id = state.get("current_user_id", "")
             
             if not current_formulation or current_formulation.get("status") != "success":
                 return Command(
@@ -444,11 +645,24 @@ def create_formulation_tools(session_id: str = None):
                     }
                 )
             
+            # Get feed database from store using state references
+            feed_database = {}
+            if feedbase_name and user_id:
+                try:
+                    store = get_store()
+                    namespace = ("feedbases", user_id, feedbase_name)
+                    feedbase_entry = await store.aget(namespace, "data")
+                    if feedbase_entry:
+                        feedbase_data = feedbase_entry.value
+                        feed_database = feedbase_data.get("feeds", {})
+                except Exception as e:
+                    logger.error(f"Failed to get feedbase data from store: {e}")
+            
             if not feed_database:
                 return Command(
                     update={
                         "messages": [
-                            ToolMessage("未找到饲料数据库。", tool_call_id=tool_call_id)
+                            ToolMessage("未找到饲料数据库。导出可能不包含完整的饲料信息。", tool_call_id=tool_call_id)
                         ]
                     }
                 )
@@ -834,5 +1048,5 @@ def create_formulation_tools(session_id: str = None):
                 }
             )
 
-    return [add_feed, formulate_ration, check_feeds, export_formulation]
+    return [add_feed, formulate_ration, check_feeds, list_feed_bases, export_formulation]
 

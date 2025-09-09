@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Message, MessageType, AttachedFile, ArtifactData } from '@/types/chat'
+import { backendClient } from '@/utils/httpClient'
 
 interface UseSSEChatProps {
   sessionId: string
@@ -229,19 +230,14 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
       abortControllerRef.current = new AbortController()
 
       // Send message to SSE endpoint
-      const response = await fetch(`${endpoint}/chat/stream/${sessionId}`, {
+      const response = await backendClient.stream(`/chat/stream/${sessionId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
         },
         body: JSON.stringify({ message: message.trim() }),
         signal: abortControllerRef.current.signal,
       })
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-      }
 
       if (!response.body) {
         throw new Error('No response body for streaming')
@@ -296,18 +292,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
   const stopMessage = useCallback(async () => {
     try {
       // Send stop request to backend
-      const response = await fetch(`${endpoint}/chat/stop/${sessionId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-      
-      if (!response.ok) {
-        throw new Error(`Failed to stop: ${response.statusText}`)
-      }
-      
-      const result = await response.json()
+      const result = await backendClient.postJson(`/chat/stop/${sessionId}`)
       console.log('Stop requested:', result.message)
       
       setIsTyping(false)
@@ -317,7 +302,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
       console.error('Error stopping message:', error)
       setConnectionError(`Failed to stop: ${error.message}`)
     }
-  }, [endpoint, sessionId])
+  }, [sessionId])
 
   const retryConnection = useCallback(() => {
     setConnectionError(null)

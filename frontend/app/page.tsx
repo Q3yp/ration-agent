@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageCircle, User, LogOut } from 'lucide-react'
+import { MessageCircle, User, LogOut, Database } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
 import ConversationSidebar from '@/components/ConversationSidebar'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
@@ -56,6 +56,12 @@ export default function Home() {
                   <span className="text-sm text-muted-foreground">
                     欢迎，{user?.username}
                   </span>
+                  <Link href="/feedbases">
+                    <Button variant="outline" size="sm">
+                      <Database className="h-4 w-4 mr-1" />
+                      饲料库管理
+                    </Button>
+                  </Link>
                   {user?.is_superuser && (
                     <Link href="/admin">
                       <Button variant="outline" size="sm">

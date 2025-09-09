@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices
 import uuid
 
 
@@ -67,7 +67,7 @@ class SessionTitleResponse(BaseModel):
 
 
 # Simplified message format for frontend communication
-from typing import Dict, Any, Optional, Literal
+from typing import Dict, Any, Optional, Literal, List
 
 MessageType = Literal[
     "user",           # User input message
@@ -266,3 +266,41 @@ def create_formulation_complete_message(summary: str, message_id: str, timestamp
             "completed": True
         }
     )
+
+
+# Feedbase management models
+class FeedData(BaseModel):
+    """Individual feed data structure"""
+    dm_percent: float = Field(
+        ..., ge=0, le=100, description="Dry matter percentage",
+        validation_alias=AliasChoices("dm_percent", "dry_matter_percent")
+    )
+    nutrients: Dict[str, float] = Field(..., description="Nutrient composition")
+    cost_per_kg: float = Field(..., ge=0, description="Cost per kilogram")
+
+
+class FeedbaseData(BaseModel):
+    """Complete feedbase structure"""
+    feeds: Dict[str, FeedData] = Field(default_factory=dict, description="Collection of feeds")
+
+
+class FeedbaseListResponse(BaseModel):
+    """Response for listing user's feedbases"""
+    feedbases: List[str] = Field(default_factory=list, description="List of feedbase names")
+
+
+class FeedbaseResponse(BaseModel):
+    """Response for getting feedbase details"""
+    name: str = Field(..., description="Feedbase name")
+    data: FeedbaseData = Field(..., description="Feedbase data")
+
+
+class FeedbaseUpdateRequest(BaseModel):
+    """Request for updating/creating a feedbase"""
+    data: FeedbaseData = Field(..., description="Feedbase data to store")
+
+
+class FeedbaseDeleteResponse(BaseModel):
+    """Response for feedbase deletion"""
+    message: str = Field(..., description="Success/error message")
+    feedbase_name: str = Field(..., description="Name of deleted feedbase")
