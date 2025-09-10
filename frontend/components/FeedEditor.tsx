@@ -89,152 +89,150 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
 
 
   return (
-    <div className="h-full p-6 space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex-shrink-0">
+      <div>
         <h2 className="text-lg font-semibold">饲料详细信息</h2>
       </div>
       
-      <div className="space-y-6">
-        {/* Basic Info */}
-        <div className="space-y-4 flex-shrink-0">
-          <div className="flex items-center gap-2 pb-2 border-b">
-            <h3 className="font-semibold text-foreground">基本信息</h3>
+      {/* Basic Info */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 pb-2 border-b">
+          <h3 className="font-semibold text-foreground">基本信息</h3>
+        </div>
+        
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-2 text-foreground">饲料名称</label>
+            <Input
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                handleChange()
+              }}
+              placeholder="请输入饲料名称"
+              className="focus:ring-2 focus:ring-primary"
+            />
           </div>
-          
-          <div className="space-y-3">
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2 text-foreground">饲料名称</label>
+              <label className="block text-sm font-medium mb-2 text-foreground">干物质含量 (%)</label>
               <Input
-                value={name}
+                type="number"
+                value={dryMatterPercent}
                 onChange={(e) => {
-                  setName(e.target.value)
+                  setDryMatterPercent(e.target.value)
                   handleChange()
                 }}
-                placeholder="请输入饲料名称"
-                className="focus:ring-2 focus:ring-primary"
+                onWheel={(e) => e.currentTarget.blur()}
+                placeholder="90"
+                min="0"
+                max="100"
+                step="0.1"
+                className="focus:ring-2 focus:ring-primary [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2 text-foreground">干物质含量 (%)</label>
-                <Input
-                  type="number"
-                  value={dryMatterPercent}
-                  onChange={(e) => {
-                    setDryMatterPercent(e.target.value)
-                    handleChange()
-                  }}
-                  onWheel={(e) => e.currentTarget.blur()}
-                  placeholder="90"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  className="focus:ring-2 focus:ring-primary [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2 text-foreground">成本 (¥/kg)</label>
-                <Input
-                  type="number"
-                  value={costPerKg}
-                  onChange={(e) => {
-                    setCostPerKg(e.target.value)
-                    handleChange()
-                  }}
-                  onWheel={(e) => e.currentTarget.blur()}
-                  placeholder="0.00"
-                  min="0"
-                  step="0.01"
-                  className="focus:ring-2 focus:ring-primary [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Nutrients */}
-        <div className="space-y-4 flex-shrink-0">
-          <div className="flex items-center gap-2 pb-2 border-b">
-            <h3 className="font-semibold text-foreground">营养成分</h3>
-            <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-              {Object.keys(nutrients).length} 项
-            </span>
-          </div>
-
-          {/* Current nutrients */}
-          {Object.keys(nutrients).length === 0 ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <div className="text-center">
-                <div className="text-sm">暂无营养成分</div>
-                <div className="text-xs mt-1">使用下方输入框添加营养成分</div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {Object.entries(nutrients).map(([key, value]) => (
-                <Card key={key} className="p-3">
-                  <div className="flex gap-3 items-center">
-                    <div className="flex-1 min-w-24">
-                      <label className="block text-xs font-medium text-muted-foreground mb-1 truncate" title={key}>
-                        {key}
-                      </label>
-                      <Input
-                        type="number"
-                        value={value}
-                        onChange={(e) => {
-                          setNutrients({ ...nutrients, [key]: e.target.value })
-                          handleChange()
-                        }}
-                        onWheel={(e) => e.currentTarget.blur()}
-                        placeholder="0.0"
-                        min="0"
-                        step="0.01"
-                        className="h-9 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-9 w-9 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => removeNutrient(key)}
-                      title={`删除 ${key}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-
-          {/* Add custom nutrient */}
-          <Card className="p-3 bg-muted/30">
-            <div className="flex gap-2">
+            <div>
+              <label className="block text-sm font-medium mb-2 text-foreground">成本 (¥/kg)</label>
               <Input
-                value={newNutrientName}
-                onChange={(e) => setNewNutrientName(e.target.value)}
-                placeholder="输入营养成分名称（如：crude_protein）"
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    addNutrient()
-                  }
+                type="number"
+                value={costPerKg}
+                onChange={(e) => {
+                  setCostPerKg(e.target.value)
+                  handleChange()
                 }}
-                className="flex-1"
+                onWheel={(e) => e.currentTarget.blur()}
+                placeholder="0.00"
+                min="0"
+                step="0.01"
+                className="focus:ring-2 focus:ring-primary [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
-              <Button 
-                onClick={() => addNutrient()} 
-                disabled={!newNutrientName.trim()}
-                className="flex items-center gap-2"
-              >
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">添加</span>
-              </Button>
             </div>
-          </Card>
+          </div>
         </div>
+      </div>
+
+      {/* Nutrients */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 pb-2 border-b">
+          <h3 className="font-semibold text-foreground">营养成分</h3>
+          <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+            {Object.keys(nutrients).length} 项
+          </span>
+        </div>
+
+        {/* Current nutrients */}
+        {Object.keys(nutrients).length === 0 ? (
+          <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <div className="text-center">
+              <div className="text-sm">暂无营养成分</div>
+              <div className="text-xs mt-1">使用下方输入框添加营养成分</div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {Object.entries(nutrients).map(([key, value]) => (
+              <Card key={key} className="p-3">
+                <div className="flex gap-3 items-center">
+                  <div className="flex-1 min-w-24">
+                    <label className="block text-xs font-medium text-muted-foreground mb-1 truncate" title={key}>
+                      {key}
+                    </label>
+                    <Input
+                      type="number"
+                      value={value}
+                      onChange={(e) => {
+                        setNutrients({ ...nutrients, [key]: e.target.value })
+                        handleChange()
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      placeholder="0.0"
+                      min="0"
+                      step="0.01"
+                      className="h-9 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 w-9 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => removeNutrient(key)}
+                    title={`删除 ${key}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Add custom nutrient */}
+        <Card className="p-3 bg-muted/30">
+          <div className="flex gap-2">
+            <Input
+              value={newNutrientName}
+              onChange={(e) => setNewNutrientName(e.target.value)}
+              placeholder="输入营养成分名称（如：crude_protein）"
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  addNutrient()
+                }
+              }}
+              className="flex-1"
+            />
+            <Button 
+              onClick={() => addNutrient()} 
+              disabled={!newNutrientName.trim()}
+              className="flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">添加</span>
+            </Button>
+          </div>
+        </Card>
       </div>
     </div>
   )

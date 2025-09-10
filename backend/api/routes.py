@@ -179,8 +179,8 @@ async def get_session_history(
         raise HTTPException(status_code=404, detail="Session not found")
     
     try:
-        # Get complete messages from supervisor and all worker subgraphs
-        raw_messages = await chat_history_service.get_complete_session_messages(session_id)
+        # Get both messages and summary in single optimized call
+        raw_messages, summary = await chat_history_service.get_session_data(session_id)
         logger.info(f"API: Retrieved {len(raw_messages)} raw messages for session {session_id}")
         
         # Use session-specific parser for consistent formatting
@@ -191,9 +191,6 @@ async def get_session_history(
         # Convert to dict format for JSON serialization
         messages_for_frontend = [msg.dict() for msg in parsed_messages]
         logger.info(f"API: Returning {len(messages_for_frontend)} messages to frontend for session {session_id}")
-        
-        # Get summary
-        summary = await chat_history_service.get_session_summary_async(session_id)
         
         return {
             "session_id": session_id,
@@ -326,6 +323,7 @@ async def stream_chat(
             agent_events = session_agent.astream_events(
                 agent_input,
                 config=config,
+                durability="async",
                 subgraphs=True
             )
 

@@ -50,7 +50,7 @@ class UnifiedMessageParser:
         self.excel_tools = {"excel_metadata", "excel_query", "read_excel"}
         self.file_tools = {"write_file", "list_directory", "read_file"}
         self.bash_tools = {"bash_command_for_session"}
-        self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation"}
+        self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation", "list_feed_bases"}
         self.active_analysis = None  # {"message_id": str, "operations": [], "start_time": float}
         self.active_formulation = None  # {"message_id": str, "operations": [], "start_time": float, "results": {}}
         self.analysis_operation_counter = 0
@@ -310,6 +310,10 @@ class UnifiedMessageParser:
             format_type = tool_args.get("format", "Excel")
             operation_data = {"export_format": format_type}
             return f"导出配方为 {format_type} 格式", operation_data
+            
+        elif tool_name == "list_feed_bases":
+            operation_data = {"action": "列出饲料基础库"}
+            return "获取饲料基础库列表", operation_data
             
         else:
             return f"执行配方工具 {tool_name}", {}

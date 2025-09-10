@@ -2,7 +2,7 @@
 Enhanced Chat History Service for managing conversation history across sessions
 Uses LangGraph's AsyncPostgresSaver with advanced state retrieval capabilities
 """
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 import asyncio
 import logging
@@ -74,51 +74,12 @@ class ChatHistoryService:
 
             # Get messages from main supervisor thread
             main_config = {"configurable": {"thread_id": session_id}}
-            logger.info(f"Checking main supervisor thread for session {session_id}")
             main_state = await checkpointer.aget_tuple(main_config)
-            if main_state:
-                logger.info(f"Main state found: checkpoint={bool(main_state.checkpoint)}, metadata={main_state.metadata}")
-                if main_state.checkpoint:
-                    channel_values = main_state.checkpoint.get("channel_values", {})
-                    logger.info(f"Main checkpoint has channel_values keys: {list(channel_values.keys())}")
-                    main_messages = channel_values.get("messages", [])
-                    logger.info(f"Retrieved {len(main_messages)} messages from main supervisor thread")
-                    all_messages.extend(main_messages)
-                else:
-                    logger.info("Main state exists but has no checkpoint")
-            else:
-                logger.info("No main supervisor state found")
+            if main_state and main_state.checkpoint:
+                channel_values = main_state.checkpoint.get("channel_values", {})
+                main_messages = channel_values.get("messages", [])
+                all_messages.extend(main_messages)
 
-            # Get messages from worker subgraphs (researcher and coder)
-            for worker in ["researcher", "coder"]:
-                logger.info(f"Checking {worker} worker thread for session {session_id}")
-                worker_config = {
-                    "configurable": {
-                        "thread_id": session_id,
-                        "checkpoint_ns": f"{worker}:"  # Subgraph namespace
-                    }
-                }
-                worker_state = await checkpointer.aget_tuple(worker_config)
-                if worker_state:
-                    logger.info(f"{worker} worker state found: checkpoint={bool(worker_state.checkpoint)}, metadata={worker_state.metadata}")
-                    if worker_state.checkpoint:
-                        channel_values = worker_state.checkpoint.get("channel_values", {})
-                        logger.info(f"{worker} checkpoint has channel_values keys: {list(channel_values.keys())}")
-                        worker_messages = channel_values.get("messages", [])
-                        logger.info(f"Retrieved {len(worker_messages)} messages from {worker} worker")
-
-                        # Add role metadata to worker messages
-                        for msg in worker_messages:
-                            if isinstance(msg, dict) and "additional_kwargs" not in msg:
-                                msg["additional_kwargs"] = {}
-                            if isinstance(msg, dict):
-                                msg["additional_kwargs"]["agent_role"] = worker
-
-                        all_messages.extend(worker_messages)
-                    else:
-                        logger.info(f"{worker} worker state exists but has no checkpoint")
-                else:
-                    logger.info(f"No {worker} worker state found")
 
             # Sort messages by timestamp (if available) or creation order
             all_messages.sort(key=lambda msg: (
@@ -126,41 +87,57 @@ class ChatHistoryService:
                 else getattr(msg, "additional_kwargs", {}).get("timestamp", 0)
             ))
 
-            # Deduplicate while preserving chronological order
-            before = len(all_messages)
-            deduped_messages = self._deduplicate_messages(all_messages)
-            after = len(deduped_messages)
-            if after != before:
-                logger.info(f"Deduplicated messages: {before} -> {after}")
-
-            return deduped_messages
+            # Sort and deduplicate messages
+            all_messages.sort(key=lambda msg: (
+                msg.get("additional_kwargs", {}).get("timestamp", 0) if isinstance(msg, dict)
+                else getattr(msg, "additional_kwargs", {}).get("timestamp", 0)
+            ))
+            
+            return self._deduplicate_messages(all_messages)
 
         except Exception as e:
             return []
 
-    async def get_session_summary_async(self, session_id: str) -> Dict:
-        """Get summary statistics for a session from LangGraph checkpointer"""
+    def get_session_summary_from_messages(self, session_id: str, messages: List[Dict]) -> Dict:
+        """Generate summary statistics from provided messages (optimized - no database access)"""
         try:
-            # Use complete message retrieval for accurate counts
-            all_messages = await self.get_complete_session_messages(session_id)
-
-            # Count message types
-            human_count = sum(1 for msg in all_messages if isinstance(msg, dict) and msg.get("type") == "human")
-            ai_count = sum(1 for msg in all_messages if isinstance(msg, dict) and msg.get("type") == "ai")
-            system_count = sum(1 for msg in all_messages if isinstance(msg, dict) and msg.get("type") == "system")
-            tool_count = sum(1 for msg in all_messages if isinstance(msg, dict) and msg.get("type") == "tool")
+            # Count message types from provided messages
+            human_count = sum(1 for msg in messages if isinstance(msg, dict) and msg.get("type") == "human")
+            ai_count = sum(1 for msg in messages if isinstance(msg, dict) and msg.get("type") == "ai")
+            system_count = sum(1 for msg in messages if isinstance(msg, dict) and msg.get("type") == "system")
+            tool_count = sum(1 for msg in messages if isinstance(msg, dict) and msg.get("type") == "tool")
 
             return {
                 "session_id": session_id,
-                "total_messages": len(all_messages),
+                "total_messages": len(messages),
                 "human_messages": human_count,
                 "ai_messages": ai_count,
                 "system_messages": system_count,
                 "tool_messages": tool_count,
-                "has_history": len(all_messages) > 0
+                "has_history": len(messages) > 0
             }
 
         except Exception as e:
+            logger.error(f"Error generating summary from messages for session {session_id}: {e}")
+            return {
+                "session_id": session_id,
+                "total_messages": 0,
+                "human_messages": 0,
+                "ai_messages": 0,
+                "system_messages": 0,
+                "tool_messages": 0,
+                "has_history": False
+            }
+
+    async def get_session_summary_async(self, session_id: str) -> Dict:
+        """Get summary statistics for a session from LangGraph checkpointer (backwards compatibility)"""
+        try:
+            # Use complete message retrieval for accurate counts
+            all_messages = await self.get_complete_session_messages(session_id)
+            return self.get_session_summary_from_messages(session_id, all_messages)
+
+        except Exception as e:
+            logger.error(f"Error getting session summary for {session_id}: {e}")
             return {
                 "session_id": session_id,
                 "total_messages": 0,
@@ -183,6 +160,32 @@ class ChatHistoryService:
             pass
         except Exception as e:
             pass
+
+    async def get_session_data(self, session_id: str) -> tuple[List[Dict], Dict]:
+        """Get both complete messages and summary in a single optimized call"""
+        try:
+            # Single database access for messages
+            messages = await self.get_complete_session_messages(session_id)
+            
+            # Generate summary from retrieved messages (no additional database access)
+            summary = self.get_session_summary_from_messages(session_id, messages)
+            
+            logger.info(f"Retrieved {len(messages)} messages and generated summary for session {session_id}")
+            return messages, summary
+            
+        except Exception as e:
+            logger.error(f"Error getting session data for {session_id}: {e}")
+            # Return empty data with error summary
+            empty_summary = {
+                "session_id": session_id,
+                "total_messages": 0,
+                "human_messages": 0,
+                "ai_messages": 0,
+                "system_messages": 0,
+                "tool_messages": 0,
+                "has_history": False
+            }
+            return [], empty_summary
 
     def clear_session_history(self, session_id: str):
         """Sync wrapper for clearing session history"""

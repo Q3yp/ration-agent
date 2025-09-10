@@ -141,8 +141,8 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
       {/* Content */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6">
         {/* Feed List */}
-        <div className="w-full lg:w-80 lg:flex-shrink-0">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
+        <div className="w-full lg:w-80 lg:flex-shrink-0 flex flex-col min-h-0">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 flex-shrink-0">
             <h3 className="font-semibold text-lg">饲料列表 ({feedNames.length})</h3>
             <Button size="sm" onClick={addNewFeed} className="flex items-center gap-2">
               <Plus className="h-4 w-4" />
@@ -150,7 +150,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
             </Button>
           </div>
 
-          <div className="h-64 lg:h-full lg:min-h-0 overflow-auto">
+          <div className="flex-1 min-h-0 overflow-auto">
             {feedNames.length === 0 ? (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center py-12">

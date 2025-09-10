@@ -32,8 +32,7 @@ async def create_researcher_agent(session_id: str):
         tools=all_tools,
         state_schema=FormulationState,
         prompt=lambda state: apply_prompt_template("researcher", state),
-        name="researcher",
-        checkpointer=True
+        name="researcher"
     )
     
     return researcher
@@ -61,8 +60,7 @@ async def create_coder_agent(session_id: str):
         tools=all_tools,
         state_schema=FormulationState,
         prompt=lambda state: apply_prompt_template("coder", state),
-        name="coder",
-        checkpointer=True
+        name="coder"
     )
     
     return coder
@@ -90,8 +88,7 @@ async def create_nutritionist_agent(session_id: str):
         tools=all_tools,
         state_schema=FormulationState,
         prompt=lambda state: apply_prompt_template("nutritionist", state),
-        name="nutritionist",
-        checkpointer=True
+        name="nutritionist"
     )
     
     return nutritionist
