@@ -215,7 +215,6 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
               <div className="flex-1 min-h-0 overflow-hidden">
                 <div className="h-full overflow-y-auto">
                   <FeedEditor
-                    key={editingFeed}
                     feedName={editingFeed}
                     feedData={feeds[editingFeed]}
                     onChange={handleFeedChange}

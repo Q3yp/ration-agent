@@ -37,16 +37,21 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
     setNewNutrientName('')
   }, [feedName, feedData])
 
-  const handleChange = () => {
+  const handleChange = (newName?: string, newDM?: string, newCost?: string, newNutrients?: Record<string, string>) => {
+    const finalName = newName ?? name
+    const finalDM = newDM ?? dryMatterPercent
+    const finalCost = newCost ?? costPerKg
+    const finalNutrients = newNutrients ?? nutrients
+    
     const newFeedData: FeedData = {
-      dm_percent: parseFloat(dryMatterPercent) || 0,
-      cost_per_kg: parseFloat(costPerKg) || 0,
+      dm_percent: parseFloat(finalDM) || 0,
+      cost_per_kg: parseFloat(finalCost) || 0,
       nutrients: Object.fromEntries(
-        Object.entries(nutrients).map(([key, value]) => [key, parseFloat(value) || 0])
+        Object.entries(finalNutrients).map(([key, value]) => [key, parseFloat(value) || 0])
       )
     }
 
-    onChange(name.trim(), newFeedData)
+    onChange(finalName.trim(), newFeedData)
   }
 
   const addNutrient = () => {
@@ -59,14 +64,7 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
       setNewNutrientName('')
       
       // Immediately call handleChange to update parent state
-      const newFeedData: FeedData = {
-        dm_percent: parseFloat(dryMatterPercent) || 0,
-        cost_per_kg: parseFloat(costPerKg) || 0,
-        nutrients: Object.fromEntries(
-          Object.entries(updatedNutrients).map(([k, v]) => [k, parseFloat(v) || 0])
-        )
-      }
-      onChange(name.trim(), newFeedData)
+      handleChange(undefined, undefined, undefined, updatedNutrients)
     }
   }
 
@@ -76,14 +74,7 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
     setNutrients(updatedNutrients)
     
     // Immediately call handleChange to update parent state
-    const newFeedData: FeedData = {
-      dm_percent: parseFloat(dryMatterPercent) || 0,
-      cost_per_kg: parseFloat(costPerKg) || 0,
-      nutrients: Object.fromEntries(
-        Object.entries(updatedNutrients).map(([k, v]) => [k, parseFloat(v) || 0])
-      )
-    }
-    onChange(name.trim(), newFeedData)
+    handleChange(undefined, undefined, undefined, updatedNutrients)
   }
 
 
@@ -107,8 +98,9 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
             <Input
               value={name}
               onChange={(e) => {
-                setName(e.target.value)
-                handleChange()
+                const newValue = e.target.value
+                setName(newValue)
+                handleChange(newValue)
               }}
               placeholder="请输入饲料名称"
               className="focus:ring-2 focus:ring-primary"
@@ -122,8 +114,9 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
                 type="number"
                 value={dryMatterPercent}
                 onChange={(e) => {
-                  setDryMatterPercent(e.target.value)
-                  handleChange()
+                  const newValue = e.target.value
+                  setDryMatterPercent(newValue)
+                  handleChange(undefined, newValue)
                 }}
                 onWheel={(e) => e.currentTarget.blur()}
                 placeholder="90"
@@ -140,8 +133,9 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
                 type="number"
                 value={costPerKg}
                 onChange={(e) => {
-                  setCostPerKg(e.target.value)
-                  handleChange()
+                  const newValue = e.target.value
+                  setCostPerKg(newValue)
+                  handleChange(undefined, undefined, newValue)
                 }}
                 onWheel={(e) => e.currentTarget.blur()}
                 placeholder="0.00"
@@ -184,8 +178,10 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
                       type="number"
                       value={value}
                       onChange={(e) => {
-                        setNutrients({ ...nutrients, [key]: e.target.value })
-                        handleChange()
+                        const newValue = e.target.value
+                        const updatedNutrients = { ...nutrients, [key]: newValue }
+                        setNutrients(updatedNutrients)
+                        handleChange(undefined, undefined, undefined, updatedNutrients)
                       }}
                       onWheel={(e) => e.currentTarget.blur()}
                       placeholder="0.0"
