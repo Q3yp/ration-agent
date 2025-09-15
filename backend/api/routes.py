@@ -4,14 +4,14 @@ import logging
 import time
 import io
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Request
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from langchain_core.messages import HumanMessage
 import pandas as pd
 from models import (
     ChatRequest, FileUploadResponse, FileDeleteResponse,
     SessionCreateRequest, SessionCreateResponse, SessionStatsResponse,
-    ParsedMessage, FeedbaseListResponse, FeedbaseResponse, 
+    ParsedMessage, FeedbaseListResponse, FeedbaseResponse,
     FeedbaseUpdateRequest, FeedbaseDeleteResponse, FeedbaseData
 )
 from services.session_manager import session_manager
@@ -86,7 +86,7 @@ async def health():
     """Health check endpoint with detailed status"""
     active_sessions = await session_manager.list_active_sessions()
     return {
-        "status": "healthy", 
+        "status": "healthy",
         "agent_ready": True,  # Agents are created on-demand
         "active_connections": 0,
         "active_sessions": len(active_sessions),
@@ -102,7 +102,7 @@ async def create_session(
     """Create a new session with workspace and agent context"""
     try:
         session_context = await session_manager.create_session(request.session_id, str(current_user.id))
-        
+
         return {
             "session_id": session_context.session_id,
             "workspace_path": session_context.workspace_path,
@@ -110,7 +110,7 @@ async def create_session(
             "message": f"Session '{request.session_id}' created successfully",
             "title": session_context.title
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
 
@@ -171,40 +171,165 @@ async def delete_session(
 @router.get("/sessions/{session_id}/history")
 async def get_session_history(
     session_id: str,
+    request: Request,
     current_user: User = Depends(current_active_user)
 ):
-    """Get chat history for a session"""
+    """History endpoint with dual behavior:
+    - JSON (default): return full persisted history and summary
+    - SSE (Accept: text/event-stream): stream history first, then if a run is active
+      replay cached live events and tail until completion, otherwise end after history
+    """
     session_context = await session_manager.get_session(session_id)
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found")
-    
-    try:
-        # Get both messages and summary in single optimized call
-        raw_messages, summary = await chat_history_service.get_session_data(session_id)
-        logger.info(f"API: Retrieved {len(raw_messages)} raw messages for session {session_id}")
-        
-        # Use session-specific parser for consistent formatting
+
+    accept = (request.headers.get("accept") or "").lower()
+    if "text/event-stream" not in accept:
+        # JSON response (backward-compatible)
+        try:
+            raw_messages, summary = await chat_history_service.get_session_data(session_id)
+            logger.info(f"API: Retrieved {len(raw_messages)} raw messages for session {session_id}")
+            session_parser = session_manager.get_session_parser(session_id)
+            parsed_messages = session_parser.parse_messages(raw_messages)
+            logger.info(f"API: Parsed into {len(parsed_messages)} messages for session {session_id}")
+            messages_for_frontend = [msg.dict() for msg in parsed_messages]
+            logger.info(f"API: Returning {len(messages_for_frontend)} messages to frontend for session {session_id}")
+            return {
+                "session_id": session_id,
+                "messages": messages_for_frontend,
+                "summary": summary
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to get session history: {str(e)}")
+
+    # SSE response: stream history + (if active) live tail
+    async def generate_history_stream():
+        # Anti-buffer padding
+        yield f": {' ' * 2048}\n\n"
+        current_message_id = f"{session_id}_{int(time.time() * 1000000)}"
+
+        # Determine mode
+        is_active = await StopManager.is_stream_active(session_id)
+        mode = "stream" if is_active else "history"
+
+        # Connected event
+        yield (
+            "event: connected\n"
+            f"data: {json.dumps({'message_id': current_message_id, 'session_id': session_id, 'mode': mode})}\n\n"
+        )
+
+        # Load persisted history and stream it first
+        raw_messages, _summary = await chat_history_service.get_session_data(session_id)
         session_parser = session_manager.get_session_parser(session_id)
         parsed_messages = session_parser.parse_messages(raw_messages)
-        logger.info(f"API: Parsed into {len(parsed_messages)} messages for session {session_id}")
-        
-        # Convert to dict format for JSON serialization
-        messages_for_frontend = [msg.dict() for msg in parsed_messages]
-        logger.info(f"API: Returning {len(messages_for_frontend)} messages to frontend for session {session_id}")
-        
-        return {
-            "session_id": session_id,
-            "messages": messages_for_frontend,
-            "summary": summary
+        last_ts = 0.0
+        for msg in parsed_messages:
+            ts = msg.timestamp or time.time()
+            last_ts = max(last_ts, ts)
+            yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
+
+        if not is_active:
+            # No active run - end stream after history
+            completion_data = {
+                "type": "agent_complete",
+                "message_id": current_message_id,
+                "timestamp": time.time(),
+            }
+            yield f"event: complete\ndata: {json.dumps(completion_data, ensure_ascii=False)}\n\n"
+            return
+
+        # Active run - replay cached live events since last history timestamp, then tail
+        stop_manager = StopManager.get_instance()
+        parser = session_parser
+
+        cached = list(stop_manager.active_sessions.get(session_id, []))
+        # Replay only events newer than last_ts to minimize duplicates
+        for ev in cached:
+            try:
+                for msg in parser.parse_streaming_event(ev):
+                    yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
+            except Exception as e:
+                logger.error(f"HISTORY_SSE: Error replaying cached event: {e}")
+                continue
+
+        cursor = len(cached)
+        idle = 0
+        while True:
+            if session_id not in stop_manager.active_sessions:
+                break
+            events = stop_manager.active_sessions.get(session_id, [])
+            if cursor < len(events):
+                for ev in events[cursor:]:
+                    try:
+                        for msg in parser.parse_streaming_event(ev):
+                            yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
+                    except Exception as e:
+                        logger.error(f"HISTORY_SSE: Error parsing tailed event: {e}")
+                        continue
+                cursor = len(events)
+                idle = 0
+            else:
+                idle += 1
+                if idle % 10 == 0:
+                    yield ": keep-alive\n\n"
+                await asyncio.sleep(0.2)
+
+        completion_data = {
+            "type": "agent_complete",
+            "message_id": current_message_id,
+            "timestamp": time.time(),
         }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get session history: {str(e)}")
+        yield f"event: complete\ndata: {json.dumps(completion_data, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate_history_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control",
+            "Access-Control-Expose-Headers": "Content-Type",
+            "X-Proxy-Buffer": "no",
+            "Vary": "Accept",
+        },
+    )
 
 
 
 
 
+
+
+@router.get("/chat/status/{session_id}", response_class=JSONResponse)
+async def chat_status(
+    session_id: str,
+    current_user: User = Depends(current_active_user)
+):
+    """Return whether this session should be treated as live stream (resume/replay) or history.
+    - mode = "stream" when StopManager has an active stream lifecycle for this session
+    - mode = "history" otherwise
+    """
+    # Verify session exists
+    session_context = await session_manager.get_session(session_id)
+    if not session_context:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Check StopManager for active stream state
+    try:
+        is_active = await StopManager.is_stream_active(session_id)
+    except Exception:
+        is_active = False
+
+    return {
+        "session_id": session_id,
+        "mode": "stream" if is_active else "history",
+        "stream_active": is_active,
+        "timestamp": time.time(),
+    }
 
 
 
@@ -215,18 +340,19 @@ async def stop_chat(
 ):
     """Request stop for an active chat session"""
     logger.info(f"STOP: Stop request received for session {session_id}")
-    
+
     # Verify session exists
     session_context = await session_manager.get_session(session_id)
     if not session_context:
         logger.error(f"STOP: Session {session_id} not found for stop request")
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     try:
         # Cancel the active task immediately
         logger.info(f"STOP: Cancelling task for session {session_id}")
-        cancelled = await StopManager.cancel_task(session_id)
-        
+        stop_manager = StopManager.get_instance()
+        cancelled = await stop_manager.stop_stream(session_id)
+
         if cancelled:
             logger.info(f"STOP: Task cancelled successfully for session {session_id}")
             return {
@@ -242,7 +368,7 @@ async def stop_chat(
                 "session_id": session_id,
                 "timestamp": time.time()
             }
-    
+
     except Exception as e:
         logger.error(f"STOP: Failed to stop session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop session: {str(e)}")
@@ -258,27 +384,27 @@ async def stream_chat(
     user_message = request.message.strip()
     if not user_message:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
-    
+
     # Get session (must exist) and create agent
     session_context = await session_manager.get_session(session_id)
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found. Create session first.")
-    
+
     # Create title queue for single stream approach
     title_queue = asyncio.Queue()
 
     # Start title generation immediately if this is the first message
     if not session_context.title_generated:
         asyncio.create_task(generate_title_for_session(session_id, user_message, title_queue))
-    
+
     try:
         session_agent = await session_manager.get_session_agent(session_id)
     except RuntimeError as e:
         logger.error(f"Failed to get agent for session {session_id}: {e}")
         raise HTTPException(status_code=503, detail=str(e))
-    
+
     async def generate_sse_stream():
-        """Generate Server-Sent Events stream following SSE specification"""
+        """Delegate stream generation to StopManager"""
         # Import agent configuration for recursion limit
         from utils.model_config import get_agent_config
         agent_config = get_agent_config()
@@ -291,127 +417,32 @@ async def stream_chat(
             "recursion_limit": agent_config["recursion_limit"]
         }
 
-        logger.info(f"Starting agent stream for session {session_id} with recursion_limit={agent_config['recursion_limit']}")
-        current_message_id = f"{session_id}_{int(time.time() * 1000000)}"
-        accumulated_content = ""
-        tool_calls_processed = set()
-        artifact_loading_sent = False
+        # Add user message to appropriate thread based on workflow stage
+        user_msg = HumanMessage(content=user_message)
 
+        # Get current state to check workflow_stage
         try:
-            yield f"event: connected\ndata: {json.dumps({'message_id': current_message_id, 'session_id': session_id})}\n\n"
+            current_state = await session_agent.aget_state(config)
+            workflow_stage = current_state.values.get("workflow_stage") if current_state.values else None
+            logger.info(f"ROUTES: Current workflow_stage: {workflow_stage}")
 
-            # Register current task for cancellation support
-            current_task = asyncio.current_task()
-            await StopManager.register_task(session_id, current_task)
+            # Add to main messages - pre_model_hook will route to appropriate thread
+            agent_input = {"messages": [user_msg]}
+        except Exception as e:
+            logger.error(f"ROUTES: Failed to get state, defaulting to messages: {e}")
+            agent_input = {"messages": [user_msg]}
 
-            # Add user message to appropriate thread based on workflow stage
-            user_msg = HumanMessage(content=user_message)
-            
-            # Get current state to check workflow_stage
-            try:
-                current_state = await session_agent.aget_state(config)
-                workflow_stage = current_state.values.get("workflow_stage") if current_state.values else None
-                logger.info(f"ROUTES: Current workflow_stage: {workflow_stage}")
-                
-                # Add to main messages - pre_model_hook will route to appropriate thread
-                agent_input = {"messages": [user_msg]}
-            except Exception as e:
-                logger.error(f"ROUTES: Failed to get state, defaulting to messages: {e}")
-                agent_input = {"messages": [user_msg]}
-
-            # Create async iterator for agent events with subgraph streaming
-            agent_events = session_agent.astream_events(
-                agent_input,
-                config=config,
-                durability="async",
-                subgraphs=True
-            )
-
-            # Get session parser from session manager (persistent across events)
-            session_parser = session_manager.get_session_parser(session_id)
-            logger.info(f"STREAM: Using persistent message parser for session {session_id}")
-
-            # Process both agent events and title updates concurrently
-            async for event in agent_events:
-                
-                # Check for title updates first (non-blocking)
-                try:
-                    title = title_queue.get_nowait()
-                    title_data = {
-                        "type": "title_update",
-                        "title": title,
-                        "session_id": session_id,
-                        "timestamp": time.time()
-                    }
-                    yield f"event: title_update\ndata: {json.dumps(title_data, ensure_ascii=False)}\n\n"
-                except asyncio.QueueEmpty:
-                    pass  # No title update available
-
-                # Process agent event using session-specific parser
-                try:
-                    # Add timestamp to event
-                    event_with_timestamp = {**event, "timestamp": time.time()}
-                    
-                    # Parse event into ParsedMessage format
-                    parsed_messages = session_parser.parse_streaming_event(event_with_timestamp)
-                    
-                    # Send each ParsedMessage as SSE event
-                    for parsed_msg in parsed_messages:
-                        # Handle artifact loading detection for agent messages
-                        if parsed_msg.type == "agent" and "create_artifact" in parsed_msg.content and not artifact_loading_sent:
-                            artifact_loading_sent = True
-                            artifact_loading_data = {
-                                "type": "artifact_loading",
-                                "message_id": current_message_id,
-                                "timestamp": time.time()
-                            }
-                            yield f"event: artifact_loading\ndata: {json.dumps(artifact_loading_data, ensure_ascii=False)}\n\n"
-                        
-                        # Send ParsedMessage as SSE event
-                        message_data = parsed_msg.dict()
-                        yield f"event: message\ndata: {json.dumps(message_data, ensure_ascii=False)}\n\n"
-                        
-                except Exception as e:
-                    logger.error(f"Error processing streaming event: {e}")
-                    # Continue without failing the entire stream
-                
-            
-            # Note: Conversation history is automatically saved by LangGraph's checkpointer
-            # No need to manually save messages as they're preserved in the graph state
-
-            # Final check for title updates after agent completes
-            try:
-                title = title_queue.get_nowait()
-                title_data = {
-                    "type": "title_update",
-                    "title": title,
-                    "session_id": session_id,
-                    "timestamp": time.time()
-                }
-                yield f"event: title_update\ndata: {json.dumps(title_data, ensure_ascii=False)}\n\n"
-            except asyncio.QueueEmpty:
-                pass  # No title update available
-
-            completion_data = {
-                "type": "agent_complete",
-                "message_id": current_message_id,
-                "timestamp": time.time()
-            }
-            yield f"event: complete\ndata: {json.dumps(completion_data, ensure_ascii=False)}\n\n"
-            
-        except asyncio.CancelledError:
-            logger.info(f"STREAM: Task cancelled for session {session_id}")
-            # This was a user-requested stop via task cancellation
-            stopped_data = {
-                "type": "agent_stopped", 
-                "message": "Agent execution stopped by user request",
-                "session_id": session_id,
-                "timestamp": time.time()
-            }
-            yield f"event: stopped\ndata: {json.dumps(stopped_data, ensure_ascii=False)}\n\n"
-            
+        # Use StopManager as true middleware - direct streaming to frontend
+        stop_manager = StopManager.get_instance()
+        logger.error(f"ROUTES_DEBUG: About to call stream_to_frontend for {session_id}")
+        try:
+            async for event in stop_manager.stream_to_frontend(
+                session_id, session_agent, agent_input, config, title_queue
+            ):
+                yield event
         except Exception as e:
             logger.error(f"STREAM: Error in SSE stream for session {session_id}: {e}")
+            current_message_id = f"{session_id}_{int(time.time() * 1000000)}"
             error_data = {
                 "type": "error",
                 "content": f"Error processing message: {str(e)}",
@@ -420,24 +451,141 @@ async def stream_chat(
                 "timestamp": time.time()
             }
             yield f"event: error\ndata: {json.dumps(error_data, ensure_ascii=False)}\n\n"
-        
-        finally:
-            # Always cleanup the task from registry
-            await StopManager.cleanup_task(session_id)
-    
+
     return StreamingResponse(
         generate_sse_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            # Prevent intermediate proxies/CDNs from transforming or buffering
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
+            # Explicit content type with charset for some proxies
+            "Content-Type": "text/event-stream; charset=utf-8",
+            # Nginx: honor this to disable proxy buffering per response
             "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+            # CORS: allow frontend to connect
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "Cache-Control",
             "Access-Control-Expose-Headers": "Content-Type",
-            "X-Proxy-Buffer": "no"
+            # Custom hint header for non-nginx proxies
+            "X-Proxy-Buffer": "no",
+            # Help caches/proxies vary on Accept header (SSE vs JSON)
+            "Vary": "Accept"
         }
     )
+
+
+
+@router.get("/chat/stream/{session_id}/resume")
+async def resume_stream(
+    session_id: str,
+    current_user: User = Depends(current_active_user)
+):
+    """
+    Attach to an active stream: replay cached events and then tail new events until the run finishes.
+    If there is no active run, return 404 so the frontend can load history.
+    """
+    # Verify session exists
+    session_context = await session_manager.get_session(session_id)
+    if not session_context:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    stop_manager = StopManager.get_instance()
+
+    # Ensure there's an active run to resume
+    is_active = await StopManager.is_stream_active(session_id)
+    if not is_active or session_id not in stop_manager.active_sessions:
+        raise HTTPException(status_code=404, detail="No active stream to resume")
+
+    async def generate_resume_stream():
+        # Anti-buffer padding
+        yield f": {' ' * 2048}\n\n"
+        # Connected event (resume)
+        current_message_id = f"{session_id}_{int(time.time() * 1000000)}"
+        yield (
+            "event: connected\n"
+            f"data: {json.dumps({'message_id': current_message_id, 'session_id': session_id, 'mode': 'stream'})}\n\n"
+        )
+
+        parser = session_manager.get_session_parser(session_id)
+        artifact_loading_sent = False
+
+        # Replay cached events
+        cached = list(stop_manager.active_sessions.get(session_id, []))
+        for cached_event in cached:
+            try:
+                parsed_messages = parser.parse_streaming_event(cached_event)
+                for msg in parsed_messages:
+                    # Optional: send artifact loading hint once
+                    if (
+                        msg.type == "agent"
+                        and "create_artifact" in msg.content
+                        and not artifact_loading_sent
+                    ):
+                        artifact_loading_sent = True
+                        yield (
+                            "event: artifact_loading\n"
+                            f"data: {json.dumps({'type': 'artifact_loading', 'message_id': current_message_id, 'timestamp': time.time()}, ensure_ascii=False)}\n\n"
+                        )
+
+                    yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
+            except Exception as e:
+                logger.error(f"RESUME: Error replaying cached event: {e}")
+                continue
+
+        # Tail new events by polling the active_sessions buffer
+        cursor = len(cached)
+        idle_heartbeats = 0
+        while True:
+            # If the session was cleaned up, complete the stream
+            if session_id not in stop_manager.active_sessions:
+                break
+
+            events = stop_manager.active_sessions.get(session_id, [])
+            if cursor < len(events):
+                for ev in events[cursor:]:
+                    try:
+                        parsed_messages = parser.parse_streaming_event(ev)
+                        for msg in parsed_messages:
+                            yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
+                    except Exception as e:
+                        logger.error(f"RESUME: Error parsing live-tailed event: {e}")
+                        continue
+                cursor = len(events)
+                idle_heartbeats = 0
+            else:
+                # Send heartbeat every ~10 iterations (~2s) to defeat buffering
+                idle_heartbeats += 1
+                if idle_heartbeats % 10 == 0:
+                    yield ": keep-alive\n\n"
+                await asyncio.sleep(0.2)
+
+        # Completed
+        completion_data = {
+            "type": "agent_complete",
+            "message_id": current_message_id,
+            "timestamp": time.time(),
+        }
+        yield f"event: complete\ndata: {json.dumps(completion_data, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate_resume_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control",
+            "Access-Control-Expose-Headers": "Content-Type",
+            "X-Proxy-Buffer": "no",
+            "Vary": "Accept",
+        },
+    )
+
 
 
 @router.post("/files/upload/{session_id}", response_model=FileUploadResponse)
@@ -449,34 +597,34 @@ async def upload_file(
     """Upload a file to the session's workspace"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
-    
+
     # Security checks
     max_file_size = 10 * 1024 * 1024  # 10MB
     allowed_extensions = {'.txt', '.py', '.js', '.json', '.csv', '.md', '.html', '.css', '.xml', '.yaml', '.yml', '.xlsx'}
-    
+
     file_extension = Path(file.filename).suffix.lower()
     if file_extension not in allowed_extensions:
         raise HTTPException(status_code=400, detail=f"File type {file_extension} not allowed")
-    
+
     # Get session (must exist) and get workspace
     session_context = await session_manager.get_session(session_id)
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found. Create session first.")
-    
+
     workspace_dir = session_context.workspace_path
-    
+
     file_path = Path(workspace_dir) / file.filename
-    
+
     try:
         # Read and validate file size
         content = await file.read()
         if len(content) > max_file_size:
             raise HTTPException(status_code=400, detail="File too large")
-        
+
         # Write file to workspace
         with open(file_path, "wb") as f:
             f.write(content)
-        
+
         return {
             "message": f"File '{file.filename}' uploaded successfully",
             "filename": file.filename,
@@ -484,7 +632,7 @@ async def upload_file(
             "session_id": session_id,
             "path": str(file_path.relative_to(Path(workspace_dir)))
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
 
@@ -501,23 +649,23 @@ async def delete_file(
     session_context = await session_manager.get_session(session_id)
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     workspace_dir = Path(session_context.workspace_path)
     file_path = workspace_dir / filename
-    
+
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     if not file_path.is_relative_to(workspace_dir):
         raise HTTPException(status_code=400, detail="Invalid file path")
-    
+
     try:
         file_path.unlink()
         return {
             "message": f"File '{filename}' deleted successfully",
             "session_id": session_id
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 
@@ -530,23 +678,23 @@ async def download_file(
 ):
     """Download a file from the session's workspace"""
     from urllib.parse import unquote
-    
+
     # URL-decode the filename to handle Chinese characters
     decoded_filename = unquote(filename)
-    
+
     session_context = await session_manager.get_session(session_id)
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     workspace_dir = Path(session_context.workspace_path)
     file_path = workspace_dir / decoded_filename
-    
+
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     if not file_path.is_relative_to(workspace_dir):
         raise HTTPException(status_code=400, detail="Invalid file path")
-    
+
     try:
         # Determine media type based on file extension
         media_type = "application/octet-stream"
@@ -558,11 +706,11 @@ async def download_file(
             media_type = "application/json"
         elif file_path.suffix.lower() == '.txt':
             media_type = "text/plain"
-        
+
         # Encode filename for Content-Disposition header (RFC 5987)
         from urllib.parse import quote
         encoded_filename = quote(decoded_filename.encode('utf-8'))
-        
+
         return FileResponse(
             path=str(file_path),
             filename=decoded_filename,
@@ -572,7 +720,7 @@ async def download_file(
                 "Cache-Control": "no-cache"
             }
         )
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
 
@@ -584,25 +732,25 @@ async def list_feedbases(current_user: User = Depends(current_active_user)):
     """List all feedbases for the current user"""
     try:
         from core.agent import _connection_manager
-        
+
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
         namespace = ("feedbases", user_id)
-        
+
         # Get all feedbases for this user
         feedbase_entries = await store.asearch(namespace)
         feedbase_names = []
-        
+
         for entry in feedbase_entries:
             # Extract feedbase name from namespace tuple
             if len(entry.namespace) >= 3:
                 feedbase_name = entry.namespace[2]  # ("feedbases", user_id, feedbase_name)
                 if feedbase_name not in feedbase_names:
                     feedbase_names.append(feedbase_name)
-        
+
         return FeedbaseListResponse(feedbases=sorted(feedbase_names))
-        
+
     except Exception as e:
         logger.error(f"Error listing feedbases for user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to list feedbases: {str(e)}")
@@ -613,22 +761,22 @@ async def get_feedbase(feedbase_name: str, current_user: User = Depends(current_
     """Get feedbase details by name"""
     try:
         from core.agent import _connection_manager
-        
+
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
         namespace = ("feedbases", user_id, feedbase_name)
-        
+
         # Get feedbase data
         result = await store.aget(namespace, "data")
-        
+
         if not result:
             raise HTTPException(status_code=404, detail=f"Feedbase '{feedbase_name}' not found")
-        
+
         # Validate and return feedbase data
         feedbase_data = FeedbaseData(**result.value)
         return FeedbaseResponse(name=feedbase_name, data=feedbase_data)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -638,26 +786,26 @@ async def get_feedbase(feedbase_name: str, current_user: User = Depends(current_
 
 @router.put("/feedbases/{feedbase_name}", response_model=FeedbaseResponse)
 async def update_feedbase(
-    feedbase_name: str, 
+    feedbase_name: str,
     request: FeedbaseUpdateRequest,
     current_user: User = Depends(current_active_user)
 ):
     """Update or create a feedbase"""
     try:
         from core.agent import _connection_manager
-        
+
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
         namespace = ("feedbases", user_id, feedbase_name)
-        
+
         # Store the feedbase data
         feedbase_dict = request.data.model_dump()
         await store.aput(namespace, "data", feedbase_dict)
-        
+
         logger.info(f"Updated feedbase {feedbase_name} for user {current_user.id}")
         return FeedbaseResponse(name=feedbase_name, data=request.data)
-        
+
     except Exception as e:
         logger.error(f"Error updating feedbase {feedbase_name} for user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update feedbase: {str(e)}")
@@ -668,26 +816,26 @@ async def delete_feedbase(feedbase_name: str, current_user: User = Depends(curre
     """Delete a feedbase"""
     try:
         from core.agent import _connection_manager
-        
+
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
         namespace = ("feedbases", user_id, feedbase_name)
-        
+
         # Check if feedbase exists
         result = await store.aget(namespace, "data")
         if not result:
             raise HTTPException(status_code=404, detail=f"Feedbase '{feedbase_name}' not found")
-        
+
         # Delete the feedbase
         await store.adelete(namespace, "data")
-        
+
         logger.info(f"Deleted feedbase {feedbase_name} for user {current_user.id}")
         return FeedbaseDeleteResponse(
             message=f"Feedbase '{feedbase_name}' deleted successfully",
             feedbase_name=feedbase_name
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -700,17 +848,17 @@ async def export_feedbase(feedbase_name: str, current_user: User = Depends(curre
     """Export feedbase as Excel file"""
     try:
         from core.agent import _connection_manager
-        
+
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
         namespace = ("feedbases", user_id, feedbase_name)
-        
+
         # Get feedbase data
         result = await store.aget(namespace, "data")
         if not result:
             raise HTTPException(status_code=404, detail=f"Feedbase '{feedbase_name}' not found")
-        
+
         # Parse the feedbase data
         if hasattr(result, 'value'):
             # If result has a value attribute, it might be a string that needs parsing
@@ -718,13 +866,13 @@ async def export_feedbase(feedbase_name: str, current_user: User = Depends(curre
         else:
             # If result doesn't have a value attribute, use the result directly
             feedbase_data = result
-            
+
         # Handle case where feedbase_data might still be a string
         if isinstance(feedbase_data, str):
             feedbase_data = json.loads(feedbase_data)
-            
+
         feeds = feedbase_data.get('feeds', {})
-        
+
         # Prepare data for Excel export
         rows = []
         for feed_name, feed_data in feeds.items():
@@ -733,26 +881,26 @@ async def export_feedbase(feedbase_name: str, current_user: User = Depends(curre
                 '干物质含量(%)': feed_data.get('dm_percent', 0),
                 '成本(¥/kg)': feed_data.get('cost_per_kg', 0)
             }
-            
+
             # Add nutrients as separate columns
             nutrients = feed_data.get('nutrients', {})
             for nutrient_name, nutrient_value in nutrients.items():
                 row[nutrient_name] = nutrient_value
-                
+
             rows.append(row)
-        
+
         # Create DataFrame and Excel file
         if not rows:
             # Create empty DataFrame with basic structure
             df = pd.DataFrame(columns=['饲料名称', '干物质含量(%)', '成本(¥/kg)'])
         else:
             df = pd.DataFrame(rows)
-        
+
         # Create Excel file in memory
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name='Feedbase', index=False)
-            
+
             # Auto-adjust column widths
             worksheet = writer.sheets['Feedbase']
             for column in worksheet.columns:
@@ -766,22 +914,22 @@ async def export_feedbase(feedbase_name: str, current_user: User = Depends(curre
                         pass
                 adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
                 worksheet.column_dimensions[column_letter].width = adjusted_width
-        
+
         excel_buffer.seek(0)
-        
+
         # Create filename with proper encoding for international characters
         import urllib.parse
-        
+
         # Create a safe ASCII filename as fallback
         safe_feedbase_name = "".join(c for c in feedbase_name if c.isascii() and (c.isalnum() or c in (' ', '-', '_'))).strip()
         if not safe_feedbase_name:
             safe_feedbase_name = "feedbase"
         ascii_filename = f"{safe_feedbase_name}.xlsx"
-        
+
         # Create properly encoded filename for UTF-8 support
         utf8_filename = f"{feedbase_name}.xlsx"
         encoded_filename = urllib.parse.quote(utf8_filename.encode('utf-8'))
-        
+
         # Return file response with proper Content-Disposition header
         return StreamingResponse(
             io.BytesIO(excel_buffer.read()),
@@ -790,7 +938,7 @@ async def export_feedbase(feedbase_name: str, current_user: User = Depends(curre
                 "Content-Disposition": f"attachment; filename={ascii_filename}; filename*=UTF-8''{encoded_filename}"
             }
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:

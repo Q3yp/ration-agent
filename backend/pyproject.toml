@@ -2,7 +2,7 @@
 name = "ration-agent-backend"
 version = "0.1.0"
 description = "LangGraph ReAct Agent Backend"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.35",

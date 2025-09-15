@@ -9,11 +9,10 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Message, AttachedFile, ArtifactData } from '@/types/chat'
-import { 
-  MessageProcessor, 
-  MessageProcessorState, 
-  ProcessedEvent,
-  MessageSource 
+import {
+  MessageProcessor,
+  MessageProcessorState,
+  ProcessedEvent
 } from '@/utils/messageProcessor'
 import { ErrorHandler } from '@/utils/errorHandler'
 import { getAuthHeadersWithDefaults } from '@/utils/authHeaders'
@@ -94,6 +93,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
   const [formulationState, setFormulationState] = useState<FormulationState | undefined>(undefined)
   const abortControllerRef = useRef<AbortController | null>(null)
   const historyLoadedRef = useRef(false)
+  const resumeStartedRef = useRef(false)
 
   // Derived state
   const isStreaming = useMemo(() => state.streamingMessageId !== null, [state.streamingMessageId])
@@ -272,7 +272,10 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
             updateState({
               connectionState: connData.state
             })
-            // Keep typing true when connected - we're still waiting for first message
+            // On reconnect to a live stream, show typing immediately until first event clears it
+            if (connData.state === 'connected' && connData.mode === 'stream') {
+              setIsTyping(true)
+            }
           }
 
           if (onConnectionChange && connData.state) {
@@ -355,6 +358,80 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       setIsLoading(false)
     }
   }, [sessionId, endpoint, updateState])
+
+  /**
+   * Start history stream: stream persisted history, then if live, tail new events until complete
+   */
+  const startHistoryStream = useCallback(async () => {
+    if (!sessionId) return
+    try {
+      // Abort any previous stream
+      if (abortControllerRef.current) {
+        try { abortControllerRef.current.abort() } catch {}
+        abortControllerRef.current = null
+      }
+      abortControllerRef.current = new AbortController()
+
+      updateState({ error: null, connectionState: 'connecting' })
+
+      const response = await fetch(`${endpoint}/sessions/${sessionId}/history`, {
+        method: 'GET',
+        headers: getAuthHeadersWithDefaults({ 'Accept': 'text/event-stream' }),
+        signal: abortControllerRef.current.signal,
+      })
+
+      if (!response.ok) {
+        throw new Error(`History stream failed: HTTP ${response.status}`)
+      }
+      if (!response.body) {
+        throw new Error('No response body for history stream')
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value, { stream: true })
+          const lines = chunk.split('\n')
+
+          let eventType = 'message'
+          let eventData = ''
+
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              eventType = line.slice(6).trim()
+            } else if (line.startsWith('data:')) {
+              eventData = line.slice(5).trim()
+            } else if (line === '' && eventData) {
+              const events = MessageProcessor.processSSEEvent(eventType, eventData)
+              processEvents(events)
+              eventType = 'message'
+              eventData = ''
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
+    } catch (error: any) {
+      if (error?.name === 'AbortError') return
+      ErrorHandler.logError(error, 'startHistoryStream')
+      const classified = ErrorHandler.classify(error)
+      updateState({ error: classified.userMessage, connectionState: 'error' })
+      if (onError) onError(classified.userMessage)
+      // Fallback: try to show JSON history
+      try {
+        if (autoLoadHistory) {
+          historyLoadedRef.current = false
+          await loadHistory()
+        }
+      } catch {}
+    }
+  }, [sessionId, endpoint, updateState, processEvents, onError, autoLoadHistory, loadHistory])
 
   /**
    * Send message with SSE streaming
@@ -582,11 +659,13 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
    * Auto-load history when session changes
    */
   useEffect(() => {
-    if (sessionId && autoLoadHistory) {
-      historyLoadedRef.current = false
-      loadHistory()
+    if (!sessionId || !autoLoadHistory) return
+    if (!resumeStartedRef.current) {
+      resumeStartedRef.current = true
+      // Single, unified history stream: replays history and, if active, tails live events
+      startHistoryStream()
     }
-  }, [sessionId, autoLoadHistory, loadHistory])
+  }, [sessionId, autoLoadHistory])
 
   /**
    * Cleanup on unmount
@@ -614,10 +693,11 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       connectionState: 'disconnected',
       error: null
     })
-    setIsTyping(false)  // Reset typing state
-    setAnalysisState(undefined)  // Reset analysis state
-    setFormulationState(undefined)  // Reset formulation state
+    setIsTyping(false)
+    setAnalysisState(undefined)
+    setFormulationState(undefined)
     historyLoadedRef.current = false
+    resumeStartedRef.current = false
   }, [sessionId, updateState])
 
   return {

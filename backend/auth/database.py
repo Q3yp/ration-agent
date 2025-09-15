@@ -12,7 +12,7 @@ if not DATABASE_URL.startswith("postgresql+asyncpg://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 
 # Create async engine
-async_engine = create_async_engine(DATABASE_URL, echo=True)
+async_engine = create_async_engine(DATABASE_URL, echo=False)
 async_session_maker = async_sessionmaker(async_engine, expire_on_commit=False)
 
 async def create_db_and_tables():

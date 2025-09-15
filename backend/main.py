@@ -15,6 +15,12 @@ import logging
 
 load_dotenv()
 
+# Suppress SQLAlchemy logs early
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.orm").setLevel(logging.WARNING)
+
 class HealthCheckFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         return '/health' not in record.getMessage()

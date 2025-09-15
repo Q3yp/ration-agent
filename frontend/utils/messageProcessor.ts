@@ -118,10 +118,11 @@ export class MessageProcessor {
         case 'connected':
           results.push({
             type: 'connection_change',
-            data: { 
-              state: 'connected', 
+            data: {
+              state: 'connected',
               sessionId: data.session_id,
-              messageId: data.message_id 
+              messageId: data.message_id,
+              mode: data.mode
             }
           })
           break
