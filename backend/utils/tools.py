@@ -538,14 +538,14 @@ def get_search_tools():
 
 
 
-async def get_nutritionist_tools(session_id: str):
+async def get_nutritionist_tools(session_id: str, animal_type: str = "dairy_cow"):
     """Get nutritionist-specific tools"""
     # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
-    formulation_tools = create_formulation_tools(session_id)
-    
+    formulation_tools = create_formulation_tools(session_id, animal_type)
+
     return formulation_tools
 
-async def get_coder_tools(session_id: str):
+async def get_coder_tools(session_id: str, animal_type: str = "dairy_cow"):
     """Get all available tools for a session (code worker tools)."""
     # Create session-bound bash tool
     session_bash_tool = create_bash_command_tool(session_id)
@@ -560,7 +560,7 @@ async def get_coder_tools(session_id: str):
     excel_tools = await get_excel_tools(session_id)
 
     # Get specific formulation tools for coder (add_feed, check_feeds, list_feed_bases only)
-    all_formulation_tools = create_formulation_tools(session_id)
+    all_formulation_tools = create_formulation_tools(session_id, animal_type)
     feed_tools = [tool for tool in all_formulation_tools if tool.name in ['add_feed', 'check_feeds', 'list_feed_bases']]
 
     return [session_bash_tool, artifact_tool] + file_tools + excel_tools + feed_tools

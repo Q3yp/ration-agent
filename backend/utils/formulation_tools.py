@@ -46,11 +46,12 @@ def sanitize_feed_name(name: str) -> str:
     return sanitized
 
 
-def create_formulation_tools(session_id: str = None):
+def create_formulation_tools(session_id: str = None, animal_type: str = "dairy_cow"):
     """Create formulation tools that operate on LangGraph state.
-    
+
     Args:
         session_id: Session ID for workspace path resolution (required for export_formulation)
+        animal_type: Animal type for feedbase filtering (dairy_cow, beef_cow, cat, dog)
     """
     
     @tool
@@ -166,8 +167,11 @@ def create_formulation_tools(session_id: str = None):
             if existing_feedbase:
                 feedbase_data = existing_feedbase.value
             else:
-                # Create new feedbase
-                feedbase_data = {"feeds": {}}
+                # Create new feedbase with animal_type metadata
+                feedbase_data = {
+                    "animal_type": animal_type,
+                    "feeds": {}
+                }
             
             # Format feed data
             feed_data = {
@@ -209,10 +213,10 @@ def create_formulation_tools(session_id: str = None):
         config: RunnableConfig
     ) -> Command:
         """
-        List all available feedbases for the user.
-        
+        List all available feedbases for the user filtered by animal type.
+
         Returns:
-            List of available feedbase names
+            List of available feedbase names matching the current animal type
         """
         try:
             # Get user_id from config and access store
@@ -225,13 +229,13 @@ def create_formulation_tools(session_id: str = None):
                         ]
                     }
                 )
-            
+
             store = get_store()
             namespace = ("feedbases", user_id)
-            
+
             # Search for all feedbases for this user
             feedbase_entries = await store.asearch(namespace)
-            
+
             if not feedbase_entries:
                 return Command(
                     update={
@@ -240,18 +244,36 @@ def create_formulation_tools(session_id: str = None):
                         ]
                     }
                 )
-            
+
+            # Filter feedbases by animal_type
+            filtered_feedbases = []
+            for entry in feedbase_entries:
+                feedbase_data = entry.value
+                feedbase_animal_type = feedbase_data.get("animal_type", "dairy_cow")  # Default to dairy_cow for legacy data
+
+                if feedbase_animal_type == animal_type:
+                    filtered_feedbases.append(entry)
+
+            if not filtered_feedbases:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage(f"No feedbases found for animal type '{animal_type}'.", tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
+
             # Extract feedbase names from namespace
             feedbase_info = []
-            feedbase_info.append(f"Available Feedbases ({len(feedbase_entries)}):\n")
-            
-            for entry in feedbase_entries:
+            feedbase_info.append(f"Available Feedbases for {animal_type} ({len(filtered_feedbases)}):\n")
+
+            for entry in filtered_feedbases:
                 # Namespace structure: ("feedbases", user_id, feedbase_name)
                 feedbase_name = entry.namespace[2]  # Get feedbase name from namespace
                 feedbase_data = entry.value
                 feed_count = len(feedbase_data.get("feeds", {}))
                 feedbase_info.append(f"- **{feedbase_name}** ({feed_count} feeds)")
-            
+
             return Command(
                 update={
                     "messages": [
@@ -552,7 +574,8 @@ def create_formulation_tools(session_id: str = None):
             
             feedbase_data = feedbase_entry.value
             feed_database = feedbase_data.get("feeds", {})
-            
+            feedbase_animal_type = feedbase_data.get("animal_type", "dairy_cow")
+
             if not feed_database:
                 return Command(
                     update={
@@ -561,10 +584,10 @@ def create_formulation_tools(session_id: str = None):
                         ]
                     }
                 )
-            
+
             # Format feed information for all feeds
             feed_info = []
-            feed_info.append(f"Feedbase '{feed_base_name}' ({len(feed_database)} feeds):\n")
+            feed_info.append(f"Feedbase '{feed_base_name}' (Animal Type: {feedbase_animal_type}, {len(feed_database)} feeds):\n")
             
             for feed_name, feed_data in feed_database.items():
                 feed_info.append(f"**{feed_name}**")
@@ -606,25 +629,35 @@ def create_formulation_tools(session_id: str = None):
         filename: Optional[str] = None
     ) -> Command:
         """
-        Export current formulation to Excel with results-first structure.
-        
+        Export current formulation to Excel with optimized layout for readability.
+
         Creates Excel with 2 sheets:
-        1. 配方结果 (Formulation Results) - Main results with dedicated description section
-           - Left side: Formulation composition, nutrient analysis
-           - Right side: Constraint validation, detailed description area
-        2. 饲料数据库 (Feed Database) - Reference feed data with nutrients and costs
-        
-        The tool automatically handles constraint validation with proper units:
-        - 浓度约束: % 干物质基础
-        - 日摄入约束: 绝对摄入量 (需要日采食量)
-        - 比例约束: 无量纲比值
-        
+        1. 配方结果 (Formulation Results) - Professionally formatted results
+           Layout structure:
+           - TOP: Export metadata (date, status, cost)
+           - LEFT (Columns A-D): Constraint validation table with color-coded pass/fail
+           - RIGHT (Columns E-H): Large merged cell for detailed description with text wrapping
+           - BOTTOM: Formulation composition and nutrient analysis tables
+
+        2. 饲料数据库 (Feed Database) - Complete feed ingredient reference
+
+        The description parameter should contain comprehensive information:
+        - Animal information and production targets
+        - Formulation objectives and rationale
+        - Key nutritional highlights
+        - Economic analysis
+        - Feeding recommendations
+        - Special considerations
+
+        The large description cell (minimum 15 rows) supports multi-paragraph text with
+        automatic line wrapping for excellent readability.
+
         Args:
-            description: 配方描述，将显示在结果表右侧专用区域
-            filename: 可选文件名 (自动生成时间戳文件名)
-            
+            description: Detailed formulation description and recommendations (supports multi-line text)
+            filename: Optional custom filename (default: formulation_export_TIMESTAMP.xlsx)
+
         Returns:
-            包含结果优先的Excel文件，描述完整显示
+            Excel file with professional formatting and comprehensive formulation details
         """
         try:
             # Get all required data from state
@@ -808,69 +841,84 @@ def create_formulation_tools(session_id: str = None):
             
             # Create Excel with 2 sheets
             with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
-                
-                # Sheet 1: 配方结果 (Formulation Results) - Main results with description section
-                # Create formulation data matrix with description section on the right
+
+                # Sheet 1: 配方结果 (Formulation Results) - Redesigned layout
+                # Left side (A-C): Constraint validation
+                # Right side (E-H): Large merged description area
                 main_data = []
-                
+
+                # Get constraint results first to determine description area size
+                constraint_results = validate_constraints()
+
                 # Header row
-                main_data.append(['配方结果', '', '', '', '配方描述', '', '', ''])
+                main_data.append(['约束验证', '', '', '', '配方描述与说明', '', '', ''])
                 main_data.append(['', '', '', '', '', '', '', ''])
-                
+
                 # Basic information row
                 main_data.append([
-                    '导出日期:', datetime.now().strftime("%Y-%m-%d %H:%M:%S"), '', '',
-                    '详细描述:', '', '', ''
+                    '导出日期:', datetime.now().strftime("%Y-%m-%d %H:%M:%S"), '', '', '', '', '', ''
                 ])
                 main_data.append([
-                    '优化状态:', current_formulation.get('status', 'Unknown'), '', '',
-                    description, '', '', ''
+                    '优化状态:', current_formulation.get('status', 'Unknown'), '', '', '', '', '', ''
                 ])
                 main_data.append([
-                    '总成本:', f"{current_formulation.get('cost_per_kg_dm', 'N/A')} 元/公斤干物质", '', '',
-                    '', '', '', ''
+                    '总成本:', f"{current_formulation.get('cost_per_kg_dm', 'N/A')} 元/公斤干物质", '', '', '', '', '', ''
                 ])
                 main_data.append(['', '', '', '', '', '', '', ''])
-                
-                # Formulation Results Section
-                main_data.append(['配方组成', '', '', '', '约束验证', '', '', ''])
-                main_data.append(['饲料名称', '干物质比例 (%)', '日饲喂量 (kg)', '', '约束类型', '营养成分', '约束条件', '满足情况'])
-                
-                # Get constraint results for parallel display
-                constraint_results = validate_constraints()
-                
-                # Formulation feeds
-                formulation_feeds = list(current_formulation["formulation"].items())
-                max_rows = max(len(formulation_feeds), len(constraint_results))
-                
-                for i in range(max_rows):
+
+                # Constraint validation table header
+                main_data.append(['约束类型', '营养成分', '约束条件', '满足情况', '', '', '', ''])
+
+                # Description will span from row 7 (index 6) to row (7 + max(constraint rows, 10))
+                # Store description row indices for later merging
+                description_start_row = 7  # Row number (1-indexed)
+
+                # Add constraint rows (minimum 10 rows to give description space)
+                min_description_rows = 15  # Give description plenty of vertical space
+                constraint_row_count = max(len(constraint_results), min_description_rows)
+
+                for i in range(constraint_row_count):
                     row = ['', '', '', '', '', '', '', '']
-                    
-                    # Left side: Formulation data
-                    if i < len(formulation_feeds):
-                        feed_name, feed_data = formulation_feeds[i]
-                        sanitized_name = sanitize_feed_name(feed_name)
-                        row[0] = sanitized_name
-                        row[1] = feed_data["percentage_dm"]
-                        row[2] = feed_data["kg_per_day"]
-                    
-                    # Right side: Constraint validation
+
+                    # Left side: Constraint validation
                     if i < len(constraint_results):
                         result = constraint_results[i]
-                        row[4] = result["约束类型"]
-                        row[5] = result["营养成分"]
-                        row[6] = result["约束条件"]
-                        row[7] = result["满足情况"]
-                    
+                        row[0] = result["约束类型"]
+                        row[1] = result["营养成分"]
+                        row[2] = result["约束条件"]
+                        row[3] = result["满足情况"]
+
+                    # Description goes in column E (index 4) - will be merged later
+                    if i == 0:
+                        row[4] = description  # Put description in first row only
+
                     main_data.append(row)
-                
+
+                description_end_row = description_start_row + constraint_row_count - 1
+
                 main_data.append(['', '', '', '', '', '', '', ''])
-                
-                # Nutrient Analysis Section (below formulation)
+
+                # Formulation composition section
+                main_data.append(['配方组成', '', '', '', '', '', '', ''])
+                main_data.append(['饲料名称', '干物质比例 (%)', '日饲喂量 (kg)', '', '', '', '', ''])
+
+                formulation_feeds = list(current_formulation["formulation"].items())
+                for feed_name, feed_data in formulation_feeds:
+                    sanitized_name = sanitize_feed_name(feed_name)
+                    main_data.append([
+                        sanitized_name,
+                        feed_data["percentage_dm"],
+                        feed_data["kg_per_day"],
+                        '', '', '', '', ''
+                    ])
+
+                main_data.append(['', '', '', '', '', '', '', ''])
+
+                # Nutrient Analysis Section
                 if "nutrient_analysis" in current_formulation:
                     main_data.append(['营养分析', '', '', '', '', '', '', ''])
                     main_data.append(['营养成分', '含量 (% DM)', '', '', '', '', '', ''])
-                    
+
                     for nutrient, value in current_formulation["nutrient_analysis"].items():
                         main_data.append([nutrient, value, '', '', '', '', '', ''])
                 
@@ -902,100 +950,106 @@ def create_formulation_tools(session_id: str = None):
                 workbook = writer.book
                 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
                 
-                # Format 配方结果 sheet (main results with description)
+                # Format 配方结果 sheet (redesigned layout with description on right)
                 if '配方结果' in workbook.sheetnames:
                     ws_main = workbook['配方结果']
-                    
+
                     # Set column widths for better readability
-                    ws_main.column_dimensions['A'].width = 20  # 饲料名称/labels
-                    ws_main.column_dimensions['B'].width = 15  # 干物质比例/values
-                    ws_main.column_dimensions['C'].width = 15  # 日饲喂量
-                    ws_main.column_dimensions['D'].width = 4   # separator
-                    ws_main.column_dimensions['E'].width = 18  # 描述标题/约束类型
-                    ws_main.column_dimensions['F'].width = 15  # 营养成分
-                    ws_main.column_dimensions['G'].width = 20  # 约束条件
-                    ws_main.column_dimensions['H'].width = 12  # 满足情况
-                    
-                    # Set row heights for better readability
+                    ws_main.column_dimensions['A'].width = 18  # 约束类型
+                    ws_main.column_dimensions['B'].width = 15  # 营养成分
+                    ws_main.column_dimensions['C'].width = 22  # 约束条件
+                    ws_main.column_dimensions['D'].width = 12  # 满足情况 / separator
+                    ws_main.column_dimensions['E'].width = 80  # Large description area (merged E-H)
+                    ws_main.column_dimensions['F'].width = 2   # Hidden (merged into E)
+                    ws_main.column_dimensions['G'].width = 2   # Hidden (merged into E)
+                    ws_main.column_dimensions['H'].width = 2   # Hidden (merged into E)
+
+                    # Set row heights - make description rows taller
                     for row_num in range(1, ws_main.max_row + 1):
-                        ws_main.row_dimensions[row_num].height = 20
-                    
+                        # Taller rows for description area
+                        if description_start_row <= row_num <= description_end_row:
+                            ws_main.row_dimensions[row_num].height = 18
+                        else:
+                            ws_main.row_dimensions[row_num].height = 20
+
                     # Define styles
                     title_font = Font(bold=True, size=16, color="FFFFFF")
                     title_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-                    
-                    section_font = Font(bold=True, size=12, color="FFFFFF") 
+
+                    section_font = Font(bold=True, size=12, color="FFFFFF")
                     section_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-                    
+
                     header_font = Font(bold=True, color="000000")
                     header_fill = PatternFill(start_color="D9E2F3", end_color="D9E2F3", fill_type="solid")
-                    
+
                     label_font = Font(bold=True)
                     desc_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
-                    
+                    desc_font = Font(size=11)
+
+                    # Merge large description cell (E to H, spanning multiple rows)
+                    ws_main.merge_cells(f'E{description_start_row}:H{description_end_row}')
+
+                    # Format the merged description cell
+                    desc_cell = ws_main[f'E{description_start_row}']
+                    desc_cell.fill = desc_fill
+                    desc_cell.font = desc_font
+                    desc_cell.alignment = Alignment(
+                        wrap_text=True,
+                        vertical="top",
+                        horizontal="left"
+                    )
+
                     # Apply formatting by scanning actual cell content
                     for row_num in range(1, ws_main.max_row + 1):
                         row_cells = [ws_main.cell(row=row_num, column=col) for col in range(1, 9)]
                         first_cell_value = str(row_cells[0].value or "")
                         fifth_cell_value = str(row_cells[4].value or "")
-                        
+
                         # Title row headers
                         if row_num == 1:
-                            if first_cell_value == "配方结果":
+                            if first_cell_value == "约束验证":
                                 row_cells[0].font = title_font
                                 row_cells[0].fill = title_fill
                                 ws_main.merge_cells(f'A{row_num}:D{row_num}')
-                            if fifth_cell_value == "配方描述":
-                                row_cells[4].font = title_font  
+                            if fifth_cell_value == "配方描述与说明":
+                                row_cells[4].font = title_font
                                 row_cells[4].fill = title_fill
                                 ws_main.merge_cells(f'E{row_num}:H{row_num}')
-                        
+
                         # Section headers
                         elif first_cell_value in ["配方组成", "营养分析"]:
                             row_cells[0].font = section_font
                             row_cells[0].fill = section_fill
-                            ws_main.merge_cells(f'A{row_num}:D{row_num}')
-                            
-                        elif fifth_cell_value == "约束验证":
-                            row_cells[4].font = section_font
-                            row_cells[4].fill = section_fill
-                            ws_main.merge_cells(f'E{row_num}:H{row_num}')
-                        
+                            ws_main.merge_cells(f'A{row_num}:C{row_num}')
+
                         # Table headers
+                        elif first_cell_value == "约束类型":
+                            # Constraint validation table header
+                            for col in range(4):
+                                if row_cells[col].value:
+                                    row_cells[col].font = header_font
+                                    row_cells[col].fill = header_fill
+                                    row_cells[col].alignment = Alignment(horizontal="center")
+
                         elif first_cell_value == "饲料名称":
-                            for col in range(3):  # Formulation table
+                            # Formulation table header
+                            for col in range(3):
                                 if row_cells[col].value:
                                     row_cells[col].font = header_font
                                     row_cells[col].fill = header_fill
                                     row_cells[col].alignment = Alignment(horizontal="center")
-                            
-                            # Constraint validation headers
-                            for col in range(4, 8):
-                                if row_cells[col].value:
-                                    row_cells[col].font = header_font
-                                    row_cells[col].fill = header_fill
-                                    row_cells[col].alignment = Alignment(horizontal="center")
-                        
+
                         elif first_cell_value == "营养成分" and str(row_cells[1].value or "") == "含量 (% DM)":
-                            for col in range(2):  # Nutrient table
+                            # Nutrient analysis table header
+                            for col in range(2):
                                 if row_cells[col].value:
                                     row_cells[col].font = header_font
                                     row_cells[col].fill = header_fill
                                     row_cells[col].alignment = Alignment(horizontal="center")
-                        
-                        # Label cells and description section
+
+                        # Label cells
                         elif first_cell_value.endswith(":"):
                             row_cells[0].font = label_font
-                            
-                        # Description area formatting
-                        elif fifth_cell_value == "详细描述:":
-                            row_cells[4].font = label_font
-                            # Format description content cell with light background
-                            if row_num + 1 <= ws_main.max_row:
-                                desc_cell = ws_main.cell(row=row_num + 1, column=5)
-                                if desc_cell.value:  # If description exists
-                                    desc_cell.fill = desc_fill
-                                    desc_cell.alignment = Alignment(wrap_text=True, vertical="top")
                 
                 # Format 饲料数据库 sheet (standard table formatting)
                 if '饲料数据库' in workbook.sheetnames:

@@ -69,6 +69,7 @@ class SessionContext:
     session_id: str
     workspace_path: str
     user_id: str = "default_user"
+    animal_type: str = "dairy_cow"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_accessed: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     agent_ready: bool = False
@@ -213,6 +214,7 @@ class SessionManager:
                         session_id=row['session_id'],
                         user_id=row['user_id'],
                         workspace_path=row['workspace_path'],
+                        animal_type=metadata.get('animal_type', 'dairy_cow'),
                         created_at=row['created_at'],
                         last_accessed=row['last_accessed'],
                         active=row['active'],
@@ -235,10 +237,16 @@ class SessionManager:
 
         try:
             from psycopg.types.json import Jsonb
-            # Create metadata with title and title_generated flag as JSONB
+            # Create metadata with title, title_generated, animal_type, and initialized token_stats
             metadata = Jsonb({
                 'title': session_context.title,
-                'title_generated': session_context.title_generated
+                'title_generated': session_context.title_generated,
+                'animal_type': session_context.animal_type,
+                'token_stats': {
+                    'prompt_tokens': 0,
+                    'completion_tokens': 0,
+                    'total_tokens': 0
+                }
             })
 
             async with self._db_pool.connection() as conn:
@@ -351,23 +359,24 @@ class SessionManager:
             logger.error(f"Failed to get active sessions from database: {e}")
             return []
 
-    async def create_session(self, session_id: str, user_id: str = "default_user") -> SessionContext:
+    async def create_session(self, session_id: str, user_id: str = "default_user", animal_type: str = "dairy_cow") -> SessionContext:
         """Create a new session with workspace and prepare agent context"""
         # Check if session already exists in database
         existing_session = await self.get_session_from_db(session_id)
         if existing_session:
             logger.debug(f"Session {session_id} already exists, returning existing session")
             return existing_session
-        
+
         # Create workspace for session
         workspace_path = create_session_file_workspace(session_id)
         logger.info(f"Created workspace for session {session_id}: {workspace_path}")
-        
+
         # Create session context
         session_context = SessionContext(
             session_id=session_id,
             user_id=user_id,
-            workspace_path=workspace_path
+            workspace_path=workspace_path,
+            animal_type=animal_type
         )
         
         # Persist to database only
@@ -408,6 +417,7 @@ class SessionManager:
                         session_id=row['session_id'],
                         user_id=row['user_id'],
                         workspace_path=row['workspace_path'],
+                        animal_type=metadata.get('animal_type', 'dairy_cow'),
                         created_at=row['created_at'],
                         last_accessed=row['last_accessed'],
                         active=row['active'],
@@ -478,16 +488,16 @@ class SessionManager:
         """Mark title as generated and persist to database immediately"""
         if not self._db_pool:
             return
-        
+
         try:
             async with self._db_pool.connection() as conn:
                 async with conn.cursor() as cur:
                     # Update metadata to mark title as generated
                     await cur.execute("""
-                        UPDATE user_sessions 
+                        UPDATE user_sessions
                         SET metadata = jsonb_set(
-                            COALESCE(metadata, '{}'::jsonb), 
-                            '{title_generated}', 
+                            COALESCE(metadata, '{}'::jsonb),
+                            '{title_generated}',
                             'true'::jsonb
                         )
                         WHERE session_id = %s AND deleted = FALSE
@@ -495,14 +505,74 @@ class SessionManager:
                     logger.info(f"Marked title as generated for session {session_id}")
         except Exception as e:
             logger.error(f"Failed to mark title as generated for session {session_id}: {e}")
+
+    async def update_token_usage(self, session_id: str, prompt_tokens: int, completion_tokens: int, total_tokens: int):
+        """
+        Atomically increment cumulative token usage for a session in database metadata.
+        Uses PostgreSQL JSONB operators for atomic increment - no SELECT needed, no race conditions.
+        """
+        if not self._db_pool:
+            return
+
+        try:
+            async with self._db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    # Atomic increment using PostgreSQL JSONB operators
+                    # This is safe for concurrent updates - no caching or locking needed
+                    await cur.execute("""
+                        UPDATE user_sessions
+                        SET metadata = jsonb_set(
+                            jsonb_set(
+                                jsonb_set(
+                                    COALESCE(metadata, '{}'::jsonb),
+                                    '{token_stats,prompt_tokens}',
+                                    to_jsonb(COALESCE((metadata->'token_stats'->>'prompt_tokens')::int, 0) + %s)
+                                ),
+                                '{token_stats,completion_tokens}',
+                                to_jsonb(COALESCE((metadata->'token_stats'->>'completion_tokens')::int, 0) + %s)
+                            ),
+                            '{token_stats,total_tokens}',
+                            to_jsonb(COALESCE((metadata->'token_stats'->>'total_tokens')::int, 0) + %s)
+                        )
+                        WHERE session_id = %s AND deleted = FALSE
+                    """, (prompt_tokens, completion_tokens, total_tokens, session_id))
+
+                    logger.debug(f"Atomically incremented token usage for session {session_id}: +{prompt_tokens} prompt, +{completion_tokens} completion, +{total_tokens} total")
+        except Exception as e:
+            logger.error(f"Failed to update token usage for session {session_id}: {e}")
     
 
     async def get_session_stats(self, session_id: str) -> Dict:
         """Get session statistics and metadata"""
-        session = await self.get_session(session_id)
+        session = await self.get_session_from_db(session_id)
         if not session:
             return {"exists": False}
-        
+
+        # Get token stats from metadata
+        token_stats = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        }
+
+        if not self._db_pool:
+            return {"exists": False}
+
+        try:
+            async with self._db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT metadata->'token_stats' as token_stats
+                        FROM user_sessions
+                        WHERE session_id = %s AND deleted = FALSE
+                    """, (session_id,))
+                    result = await cur.fetchone()
+
+                    if result and result[0]:
+                        token_stats = result[0]
+        except Exception as e:
+            logger.error(f"Failed to get token stats for session {session_id}: {e}")
+
         return {
             "exists": True,
             "session_id": session.session_id,
@@ -512,7 +582,8 @@ class SessionManager:
             "last_accessed": session.last_accessed.isoformat(),
             "active_connections": session.active_connections,
             "agent_ready": True,  # Agents are created on-demand
-            "title": session.title
+            "title": session.title,
+            "token_usage": token_stats
         }
 
     async def get_session_workspace_path(self, session_id: str) -> Path:
@@ -662,15 +733,24 @@ class SessionManager:
                     for row_data in rows:
                         row = dict(zip(columns, row_data))
                         metadata = row.get('metadata', {})
-                        
+
+                        # Extract token stats from metadata
+                        token_stats = metadata.get('token_stats', {
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "total_tokens": 0
+                        })
+
                         sessions.append({
                             "session_id": row['session_id'],
                             "user_id": row['user_id'],
                             "title": metadata.get('title', '新对话'),
+                            "animal_type": metadata.get('animal_type', 'dairy_cow'),
                             "created_at": row['created_at'].isoformat(),
                             "last_accessed": row['last_accessed'].isoformat(),
                             "active": row['active'],
-                            "workspace_path": row['workspace_path']
+                            "workspace_path": row['workspace_path'],
+                            "token_usage": token_stats
                         })
 
                     return sessions

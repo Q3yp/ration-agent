@@ -1,15 +1,28 @@
 import uuid
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
 from fastapi_users.exceptions import UserAlreadyExists
+from pydantic import BaseModel
 from .database import get_async_session
 from .models import User
 from .schemas import AdminUserCreate, AdminUserUpdate, UserRead, UserListResponse, UserResponse
 from .config import current_superuser, get_user_manager, UserManager
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+# Pydantic models for animal type permissions
+class AnimalTypePermissionsUpdate(BaseModel):
+    allowed_animal_types: Optional[List[str]] = None
+
+
+class AnimalTypePermissionsResponse(BaseModel):
+    user_id: str
+    username: str
+    allowed_animal_types: Optional[List[str]]
+    message: str
 
 @admin_router.get("/users", response_model=UserListResponse)
 async def list_users(
@@ -41,10 +54,11 @@ async def list_users(
             is_verified=user.is_verified,
             full_name=user.full_name,
             role=user.role,
+            allowed_animal_types=user.allowed_animal_types,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat()
         ))
-    
+
     return UserListResponse(users=user_reads, total=total)
 
 @admin_router.post("/users", response_model=UserResponse)
@@ -215,4 +229,56 @@ async def delete_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete user: {str(e)}"
+        )
+
+
+@admin_router.put("/users/{user_id}/animal-types", response_model=AnimalTypePermissionsResponse)
+async def update_user_animal_types(
+    user_id: uuid.UUID,
+    permissions: AnimalTypePermissionsUpdate,
+    session: AsyncSession = Depends(get_async_session),
+    admin_user: User = Depends(current_superuser)
+):
+    """Update user's allowed animal types (admin only)"""
+    # Get existing user
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    try:
+        # Validate animal types if provided
+        if permissions.allowed_animal_types is not None:
+            from models import AnimalType
+            valid_types = [t.value for t in AnimalType]
+            for animal_type in permissions.allowed_animal_types:
+                if animal_type not in valid_types:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid animal type: {animal_type}. Valid types: {', '.join(valid_types)}"
+                    )
+
+        # Update allowed_animal_types
+        user.allowed_animal_types = permissions.allowed_animal_types
+        await session.commit()
+        await session.refresh(user)
+
+        return AnimalTypePermissionsResponse(
+            user_id=str(user.id),
+            username=user.username,
+            allowed_animal_types=user.allowed_animal_types,
+            message=f"Animal type permissions updated for user {user.username}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update animal type permissions: {str(e)}"
         )

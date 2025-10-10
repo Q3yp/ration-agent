@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 from fastapi_users import schemas
@@ -9,6 +9,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     username: str
     full_name: Optional[str] = None
     role: str
+    allowed_animal_types: Optional[List[str]] = None
     created_at: str
     updated_at: str
 

@@ -14,14 +14,15 @@ env = Environment(
 )
 
 
-def apply_prompt_template(prompt_name: str, state: FormulationState) -> list:
+def apply_prompt_template(prompt_name: str, state: FormulationState, animal_type: str = "dairy_cow") -> list:
     """
     Apply template variables to a prompt template and return formatted messages with role isolation.
-    
+
     Args:
         prompt_name: Name of the prompt template to use (nutritionist, researcher, coder)
         state: Current agent state containing variables to substitute
-        
+        animal_type: Animal type for nutritionist prompt selection (default: dairy_cow)
+
     Returns:
         List of messages with the system prompt as the first message and agent-specific message history
     """
@@ -38,7 +39,13 @@ def apply_prompt_template(prompt_name: str, state: FormulationState) -> list:
     }
     
     try:
-        template = env.get_template(f"{prompt_name}.md")
+        # For nutritionist, select file based on animal_type
+        if prompt_name == "nutritionist":
+            template_file = f"nutritionist_{animal_type}.md"
+        else:
+            template_file = f"{prompt_name}.md"
+
+        template = env.get_template(template_file)
         system_prompt = template.render(**state_vars)
         
         # Role-based message isolation

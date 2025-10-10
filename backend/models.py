@@ -1,5 +1,25 @@
 from pydantic import BaseModel, Field, AliasChoices
+from enum import Enum
 import uuid
+
+
+class AnimalType(str, Enum):
+    """Pre-defined animal types - users can only choose from these"""
+    DAIRY_COW = "dairy_cow"
+    BEEF_COW = "beef_cow"
+    CAT = "cat"
+    DOG = "dog"
+
+    @classmethod
+    def get_display_name(cls, value: str) -> str:
+        """Get display name for animal type"""
+        names = {
+            cls.DAIRY_COW: "奶牛 Dairy Cow",
+            cls.BEEF_COW: "肉牛 Beef Cow",
+            cls.CAT: "猫 Cat",
+            cls.DOG: "狗 Dog",
+        }
+        return names.get(value, value)
 
 
 class ChatRequest(BaseModel):
@@ -34,10 +54,12 @@ class FileDeleteResponse(BaseModel):
 
 class SessionCreateRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=100, description="The session identifier")
+    animal_type: AnimalType = AnimalType.DAIRY_COW
 
 
 class SessionCreateResponse(BaseModel):
     session_id: str
+    animal_type: str
     workspace_path: str
     created_at: str
     message: str
@@ -281,6 +303,7 @@ class FeedData(BaseModel):
 
 class FeedbaseData(BaseModel):
     """Complete feedbase structure"""
+    animal_type: AnimalType = AnimalType.DAIRY_COW
     feeds: Dict[str, FeedData] = Field(default_factory=dict, description="Collection of feeds")
 
 

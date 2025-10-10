@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
-from typing import Optional
-from sqlalchemy import Boolean, DateTime, Integer, String
+from typing import Optional, List
+from sqlalchemy import Boolean, DateTime, Integer, String, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, mapped_column
 from fastapi_users.db import SQLAlchemyBaseUserTable, SQLAlchemyUserDatabase
@@ -27,6 +27,7 @@ class User(SQLAlchemyBaseUserTable[uuid.UUID], Base):
     # Additional fields for admin management
     full_name: Mapped[Optional[str]] = mapped_column(String(length=200), nullable=True)
     role: Mapped[str] = mapped_column(String(length=50), default="user")  # user, admin
+    allowed_animal_types: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True, default=None)  # List of allowed animal types
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     """User manager for FastAPI-Users"""

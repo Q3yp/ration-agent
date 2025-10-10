@@ -45,7 +45,7 @@ class UnifiedMessageParser:
         self.pending_delegations = {}  # tool_id -> (tool_name, tool_args, timestamp)
         self.agent_message_counter = 0
         self.current_agent_message_id = None
-        
+
         # Tool analysis tracking
         self.excel_tools = {"excel_metadata", "excel_query", "read_excel"}
         self.file_tools = {"write_file", "list_directory", "read_file"}
@@ -54,6 +54,9 @@ class UnifiedMessageParser:
         self.active_analysis = None  # {"message_id": str, "operations": [], "start_time": float}
         self.active_formulation = None  # {"message_id": str, "operations": [], "start_time": float, "results": {}}
         self.analysis_operation_counter = 0
+
+        # Token usage tracking
+        self.accumulated_token_usage = None  # Will store the latest usage_metadata from chunks
     
     def reset_state(self):
         """Reset parser state - call this before parsing history to avoid state carryover"""
@@ -63,6 +66,22 @@ class UnifiedMessageParser:
         self.active_analysis = None
         self.active_formulation = None
         self.analysis_operation_counter = 0
+        self.accumulated_token_usage = None
+
+    def get_and_reset_token_usage(self):
+        """Get accumulated token usage and reset it. Returns dict with input_tokens, output_tokens."""
+        if not self.accumulated_token_usage:
+            return None
+
+        usage = self.accumulated_token_usage
+        self.accumulated_token_usage = None  # Reset for next message
+
+        # Extract token counts from usage_metadata
+        return {
+            "input_tokens": getattr(usage, 'input_tokens', 0),
+            "output_tokens": getattr(usage, 'output_tokens', 0),
+            "total_tokens": getattr(usage, 'total_tokens', 0)
+        }
     
     def _extract_artifact_data(self, content: str) -> Optional[Dict[str, str]]:
         """Extract artifact data from tool result content (legacy fallback)"""
@@ -763,14 +782,24 @@ class UnifiedMessageParser:
         
         elif event_type == "on_chat_model_stream":
             # Agent content chunk - use current message ID
-            chunk_content = event["data"]["chunk"].content
+            chunk = event["data"]["chunk"]
+            chunk_content = chunk.content
+            results = []
+
+            # Extract token usage from chunk if available (last chunk usually has it)
+            if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+                self.accumulated_token_usage = chunk.usage_metadata
+                logger.info(f"Parser captured token usage: input={self.accumulated_token_usage.input_tokens}, output={self.accumulated_token_usage.output_tokens}")
+
             if chunk_content and self.current_agent_message_id:
-                return [create_agent_message(
+                results.append(create_agent_message(
                     content=chunk_content,
                     message_id=self.current_agent_message_id,
                     timestamp=timestamp,
                     is_streaming=True
-                )]
+                ))
+
+            return results
         
         # elif event_type == "on_chat_model_end":
         #     # AI response finished - reset current message ID

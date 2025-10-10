@@ -53,6 +53,31 @@ class StopManager:
         try:
             queue = self.message_queues[session_id]
 
+            # Initialize per-run token aggregation and fetch current session totals
+            base_prompt_tokens = 0
+            base_completion_tokens = 0
+            base_total_tokens = 0
+            try:
+                stats = await session_manager.get_session_stats(session_id)
+                if stats and stats.get("token_usage"):
+                    base_prompt_tokens = int(stats["token_usage"].get("prompt_tokens", 0) or 0)
+                    base_completion_tokens = int(stats["token_usage"].get("completion_tokens", 0) or 0)
+                    base_total_tokens = int(stats["token_usage"].get("total_tokens", 0) or 0)
+            except Exception as e:
+                logger.warning(f"STOP_MANAGER: Failed to fetch base token totals for {session_id}: {e}")
+
+            run_prompt_tokens = 0
+            run_completion_tokens = 0
+            run_total_tokens = 0
+
+            # Track last-sent cumulative session total to avoid duplicate token_usage emissions
+            last_sent_total_tokens = base_total_tokens
+
+            # Track the last-seen absolute usage for the current model call to compute deltas safely
+            current_call_last_prompt = 0
+            current_call_last_completion = 0
+            current_call_last_total = 0
+
             # Handle cached events first if any
             if session_id in self.active_sessions:
                 cached_events = self.active_sessions[session_id]
@@ -85,6 +110,120 @@ class StopManager:
                     # Cache the event
                     self.active_sessions[session_id].append(event_with_timestamp)
 
+                    # Unified token usage handling (chunk-level and end-of-call)
+                    event_type = raw_event.get("event", "unknown")
+
+                    if event_type == "on_chat_model_start":
+                        # Reset per-call baseline
+                        current_call_last_prompt = 0
+                        current_call_last_completion = 0
+                        current_call_last_total = 0
+
+                    elif event_type == "on_chat_model_stream":
+                        data = raw_event.get("data", {})
+                        chunk = data.get("chunk", {})
+                        usage = None
+                        if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                            usage = chunk.usage_metadata
+                        elif isinstance(chunk, dict) and chunk.get("usage_metadata"):
+                            usage = chunk.get("usage_metadata")
+
+                        if usage is not None:
+                            # Some providers expose input/output/total on usage_metadata
+                            abs_prompt = getattr(usage, "input_tokens", None)
+                            abs_completion = getattr(usage, "output_tokens", None)
+                            abs_total = getattr(usage, "total_tokens", None)
+                            # Fallbacks if usage is a dict-like object
+                            if abs_prompt is None and isinstance(usage, dict):
+                                abs_prompt = usage.get("input_tokens")
+                            if abs_completion is None and isinstance(usage, dict):
+                                abs_completion = usage.get("output_tokens")
+                            if abs_total is None and isinstance(usage, dict):
+                                abs_total = usage.get("total_tokens")
+
+                            abs_prompt = int(abs_prompt or 0)
+                            abs_completion = int(abs_completion or 0)
+                            abs_total = int(abs_total or (abs_prompt + abs_completion))
+
+                            # Compute deltas safely (never negative)
+                            d_prompt = max(0, abs_prompt - current_call_last_prompt)
+                            d_completion = max(0, abs_completion - current_call_last_completion)
+                            d_total = max(0, abs_total - current_call_last_total)
+
+                            if d_prompt or d_completion or d_total:
+                                run_prompt_tokens += d_prompt
+                                run_completion_tokens += d_completion
+                                run_total_tokens += d_total
+
+                                current_call_last_prompt = abs_prompt
+                                current_call_last_completion = abs_completion
+                                current_call_last_total = abs_total
+
+                                # Emit live cumulative session totals to frontend only if changed
+                                new_total = base_total_tokens + run_total_tokens
+                                if new_total > last_sent_total_tokens:
+                                    token_usage_event = {
+                                        "_event_type": "token_usage",
+                                        "session_id": session_id,
+                                        "token_usage": {
+                                            "prompt_tokens": base_prompt_tokens + run_prompt_tokens,
+                                            "completion_tokens": base_completion_tokens + run_completion_tokens,
+                                            "total_tokens": new_total,
+                                        },
+                                        "timestamp": time.time(),
+                                    }
+                                    await queue.put(token_usage_event)
+                                    last_sent_total_tokens = new_total
+
+                    elif event_type == "on_chat_model_end":
+                        data = raw_event.get("data", {})
+                        output = data.get("output", {})
+                        if hasattr(output, "response_metadata"):
+                            response_metadata = output.response_metadata
+                        elif isinstance(output, dict):
+                            response_metadata = output.get("response_metadata", {})
+                        else:
+                            response_metadata = {}
+
+                        token_usage = {}
+                        if isinstance(response_metadata, dict):
+                            token_usage = response_metadata.get("token_usage", {}) or {}
+
+                        if token_usage:
+                            abs_prompt = int(token_usage.get("prompt_tokens", 0) or 0)
+                            abs_completion = int(token_usage.get("completion_tokens", 0) or 0)
+                            abs_total = int(token_usage.get("total_tokens", abs_prompt + abs_completion) or 0)
+
+                            # Compute deltas vs last seen for this call
+                            d_prompt = max(0, abs_prompt - current_call_last_prompt)
+                            d_completion = max(0, abs_completion - current_call_last_completion)
+                            d_total = max(0, abs_total - current_call_last_total)
+
+                            if d_prompt or d_completion or d_total:
+                                run_prompt_tokens += d_prompt
+                                run_completion_tokens += d_completion
+                                run_total_tokens += d_total
+
+                                current_call_last_prompt = abs_prompt
+                                current_call_last_completion = abs_completion
+                                current_call_last_total = abs_total
+
+                                # Emit live cumulative session totals to frontend only if changed
+                                new_total = base_total_tokens + run_total_tokens
+                                if new_total > last_sent_total_tokens:
+                                    token_usage_event = {
+                                        "_event_type": "token_usage",
+                                        "session_id": session_id,
+                                        "token_usage": {
+                                            "prompt_tokens": base_prompt_tokens + run_prompt_tokens,
+                                            "completion_tokens": base_completion_tokens + run_completion_tokens,
+                                            "total_tokens": new_total,
+                                        },
+                                        "timestamp": time.time(),
+                                    }
+                                    await queue.put(token_usage_event)
+                                    last_sent_total_tokens = new_total
+
                     # Parse and put in queue immediately
                     parser = session_manager.get_session_parser(session_id)
                     parsed_messages = parser.parse_streaming_event(event_with_timestamp)
@@ -94,6 +233,37 @@ class StopManager:
                 except Exception as e:
                     logger.error(f"STOP_MANAGER: Error processing live event: {e}")
                     continue
+
+            # Persist final per-run totals (single atomic DB update) and emit final event only if changed
+            if run_total_tokens > 0:
+                try:
+                    await session_manager.update_token_usage(
+                        session_id,
+                        run_prompt_tokens,
+                        run_completion_tokens,
+                        run_total_tokens,
+                    )
+                    logger.info(
+                        f"Session {session_id} token usage (run): prompt={run_prompt_tokens}, completion={run_completion_tokens}, total={run_total_tokens}"
+                    )
+                except Exception as e:
+                    logger.error(f"STOP_MANAGER: Failed to persist token usage for {session_id}: {e}")
+
+                # Only emit a final cumulative event if not already sent
+                final_total = base_total_tokens + run_total_tokens
+                if final_total > last_sent_total_tokens:
+                    final_token_usage_event = {
+                        "_event_type": "token_usage",
+                        "session_id": session_id,
+                        "token_usage": {
+                            "prompt_tokens": base_prompt_tokens + run_prompt_tokens,
+                            "completion_tokens": base_completion_tokens + run_completion_tokens,
+                            "total_tokens": final_total,
+                        },
+                        "timestamp": time.time(),
+                    }
+                    await queue.put(final_token_usage_event)
+                    last_sent_total_tokens = final_total
 
             # Signal completion
             await queue.put(None)
@@ -173,6 +343,17 @@ class StopManager:
                 # Check for completion signal
                 if parsed_msg is None:
                     break
+
+                # Handle special token usage event
+                if isinstance(parsed_msg, dict) and parsed_msg.get("_event_type") == "token_usage":
+                    token_data = {
+                        "type": "token_usage_update",
+                        "session_id": parsed_msg["session_id"],
+                        "token_usage": parsed_msg["token_usage"],
+                        "timestamp": parsed_msg["timestamp"]
+                    }
+                    yield f"event: token_usage\ndata: {json.dumps(token_data, ensure_ascii=False)}\n\n"
+                    continue
 
                 # Handle artifact loading detection
                 if parsed_msg.type == "agent" and "create_artifact" in parsed_msg.content and not artifact_loading_sent:

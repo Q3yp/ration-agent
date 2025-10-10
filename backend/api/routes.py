@@ -12,7 +12,8 @@ from models import (
     ChatRequest, FileUploadResponse, FileDeleteResponse,
     SessionCreateRequest, SessionCreateResponse, SessionStatsResponse,
     ParsedMessage, FeedbaseListResponse, FeedbaseResponse,
-    FeedbaseUpdateRequest, FeedbaseDeleteResponse, FeedbaseData
+    FeedbaseUpdateRequest, FeedbaseDeleteResponse, FeedbaseData,
+    AnimalType
 )
 from services.session_manager import session_manager
 from services.chat_history_service import chat_history_service
@@ -101,16 +102,31 @@ async def create_session(
 ):
     """Create a new session with workspace and agent context"""
     try:
-        session_context = await session_manager.create_session(request.session_id, str(current_user.id))
+        # Validate user has permission for this animal_type
+        if current_user.allowed_animal_types:
+            if request.animal_type not in current_user.allowed_animal_types:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"User does not have permission for animal type '{request.animal_type}'"
+                )
+
+        session_context = await session_manager.create_session(
+            request.session_id,
+            str(current_user.id),
+            request.animal_type
+        )
 
         return {
             "session_id": session_context.session_id,
             "workspace_path": session_context.workspace_path,
             "created_at": session_context.created_at.isoformat(),
             "message": f"Session '{request.session_id}' created successfully",
-            "title": session_context.title
+            "title": session_context.title,
+            "animal_type": session_context.animal_type
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
 
@@ -132,6 +148,30 @@ async def list_sessions(current_user: User = Depends(current_active_user)):
     return {
         "active_sessions": active_sessions,
         "total_count": len(active_sessions)
+    }
+
+
+@router.get("/animal-types")
+async def get_animal_types(current_user: User = Depends(current_active_user)):
+    """Get list of animal types available to the current user"""
+    # If user has specific allowed types, return those
+    if current_user.allowed_animal_types:
+        allowed_types = current_user.allowed_animal_types
+    else:
+        # If no restrictions, return all available types
+        allowed_types = [t.value for t in AnimalType]
+
+    # Build response with display names
+    animal_type_options = [
+        {
+            "value": animal_type,
+            "label": AnimalType.get_display_name(animal_type)
+        }
+        for animal_type in allowed_types
+    ]
+
+    return {
+        "animal_types": animal_type_options
     }
 
 
@@ -243,9 +283,11 @@ async def get_session_history(
         parser = session_parser
 
         cached = list(stop_manager.active_sessions.get(session_id, []))
-        # Replay only events newer than last_ts to minimize duplicates
+        # Replay only events newer than last history timestamp to minimize duplicates
         for ev in cached:
             try:
+                if ev.get("timestamp", 0) <= last_ts:
+                    continue
                 for msg in parser.parse_streaming_event(ev):
                     yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
             except Exception as e:

@@ -6,6 +6,7 @@ from utils.prompt_loader import apply_prompt_template
 from utils.tools import get_search_tools, get_nutritionist_tools, get_coder_tools
 from utils.model_config import get_model_config
 from core.agent import FormulationState, FormulationSwarmState
+from services.session_manager import session_manager
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -39,10 +40,10 @@ async def create_researcher_agent(session_id: str):
     return researcher
 
 
-async def create_coder_agent(session_id: str):
+async def create_coder_agent(session_id: str, animal_type: str = "dairy_cow"):
     """Create specialized coder agent for swarm"""
     model = get_model_config("coder")
-    coder_tools = await get_coder_tools(session_id)
+    coder_tools = await get_coder_tools(session_id, animal_type)
     
     # Create handoff tools to other agents in the swarm
     handoff_to_nutritionist = create_handoff_tool(
@@ -68,11 +69,11 @@ async def create_coder_agent(session_id: str):
     return coder
 
 
-async def create_nutritionist_agent(session_id: str):
+async def create_nutritionist_agent(session_id: str, animal_type: str = "dairy_cow"):
     """Create nutritionist agent as peer in swarm"""
     model = get_model_config("nutritionist")
-    nutritionist_tools = await get_nutritionist_tools(session_id)
-    
+    nutritionist_tools = await get_nutritionist_tools(session_id, animal_type)
+
     # Create handoff tools to other agents in the swarm
     handoff_to_researcher = create_handoff_tool(
         agent_name="researcher",
@@ -82,29 +83,48 @@ async def create_nutritionist_agent(session_id: str):
         agent_name="coder",
         description="Transfer to coder for calculations, data processing, or file operations"
     )
-    
+
     all_tools = nutritionist_tools + [handoff_to_researcher, handoff_to_coder]
-    
+
     nutritionist = create_react_agent(
         model=model,
         tools=all_tools,
         state_schema=FormulationState,
-        prompt=lambda state: apply_prompt_template("nutritionist", state),
+        prompt=lambda state: apply_prompt_template("nutritionist", state, animal_type),
         name="nutritionist",
         checkpointer=True,
     )
-    
+
     return nutritionist
 
 
 async def create_agent_swarm(session_id: str):
-    """Create the multi-agent swarm for dairy nutrition formulation"""
-    
-    # Create all agents as peers in the swarm
-    nutritionist_agent = await create_nutritionist_agent(session_id)
+    """Create the multi-agent swarm for animal nutrition formulation
+
+    Args:
+        session_id: Session identifier
+
+    Returns:
+        Compiled swarm workflow
+
+    Raises:
+        RuntimeError: If session is not found
+    """
+    # Fetch session to get animal_type
+    session = await session_manager.get_session(session_id)
+
+    if not session:
+        error_msg = f"Cannot create agent swarm: Session '{session_id}' not found"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    animal_type = session.animal_type
+
+    # Create all agents as peers in the swarm with injected animal_type
+    nutritionist_agent = await create_nutritionist_agent(session_id, animal_type)
     researcher_agent = await create_researcher_agent(session_id)
-    coder_agent = await create_coder_agent(session_id)
-    
+    coder_agent = await create_coder_agent(session_id, animal_type)
+
     # Create the swarm with nutritionist as the default active agent
     swarm = create_swarm(
         agents=[nutritionist_agent, researcher_agent, coder_agent],
@@ -112,9 +132,9 @@ async def create_agent_swarm(session_id: str):
         handoff_tool_prefix="transfer_to",
         state_schema=FormulationSwarmState
     )
-    
-    logger.info(f"Created agent swarm for session {session_id} with agents: nutritionist (default), researcher, coder")
-    
+
+    logger.info(f"Created agent swarm for session {session_id} (animal_type: {animal_type}) with agents: nutritionist (default), researcher, coder")
+
     return swarm
 
 
