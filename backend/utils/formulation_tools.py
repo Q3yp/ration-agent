@@ -983,15 +983,13 @@ def create_formulation_tools(session_id: str = None, animal_type: str = "dairy_c
                     header_fill = PatternFill(start_color="D9E2F3", end_color="D9E2F3", fill_type="solid")
 
                     label_font = Font(bold=True)
-                    desc_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
                     desc_font = Font(size=11)
 
-                    # Merge large description cell (E to H, spanning multiple rows)
+                    # Merge large description cell (E to H, spanning multiple rows - top to bottom)
                     ws_main.merge_cells(f'E{description_start_row}:H{description_end_row}')
 
-                    # Format the merged description cell
+                    # Format the merged description cell (no background fill)
                     desc_cell = ws_main[f'E{description_start_row}']
-                    desc_cell.fill = desc_fill
                     desc_cell.font = desc_font
                     desc_cell.alignment = Alignment(
                         wrap_text=True,

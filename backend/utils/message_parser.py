@@ -297,17 +297,19 @@ class UnifiedMessageParser:
         """Get description and structured data for formulation operation"""
         if tool_name == "add_feed":
             name = tool_args.get("name", "饲料")
+            feed_base_name = tool_args.get("feed_base_name", "")
             dm_percent = tool_args.get("dm_percent", tool_args.get("dry_matter_percent", 0))
             cost = tool_args.get("cost_per_kg", 0)
             nutrients = tool_args.get("nutrients", {})
-            
+
             operation_data = {
                 "feed_name": name,
+                "feed_base_name": feed_base_name,
                 "dry_matter": f"{dm_percent}%",
                 "cost_per_kg": f"¥{cost:.2f}",
                 "nutrients": nutrients
             }
-            return f"添加饲料 {name} (干物质{dm_percent}%, ¥{cost:.2f}/kg)", operation_data
+            return f"添加饲料 {name} 到饲料库 [{feed_base_name}] (干物质{dm_percent}%, ¥{cost:.2f}/kg)", operation_data
             
         elif tool_name == "formulate_ration":
             target_animals = tool_args.get("target_animals", "奶牛")
@@ -785,11 +787,6 @@ class UnifiedMessageParser:
             chunk = event["data"]["chunk"]
             chunk_content = chunk.content
             results = []
-
-            # Extract token usage from chunk if available (last chunk usually has it)
-            if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
-                self.accumulated_token_usage = chunk.usage_metadata
-                logger.info(f"Parser captured token usage: input={self.accumulated_token_usage.input_tokens}, output={self.accumulated_token_usage.output_tokens}")
 
             if chunk_content and self.current_agent_message_id:
                 results.append(create_agent_message(

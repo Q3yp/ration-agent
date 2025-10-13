@@ -278,41 +278,54 @@ async def get_session_history(
             yield f"event: complete\ndata: {json.dumps(completion_data, ensure_ascii=False)}\n\n"
             return
 
-        # Active run - replay cached live events since last history timestamp, then tail
+        # Active run - delegate to unified replay+tail logic
         stop_manager = StopManager.get_instance()
-        parser = session_parser
+        logger.info(f"HISTORY_SSE: Active stream detected for session {session_id}, tailing cache")
 
-        cached = list(stop_manager.active_sessions.get(session_id, []))
-        # Replay only events newer than last history timestamp to minimize duplicates
-        for ev in cached:
-            try:
-                if ev.get("timestamp", 0) <= last_ts:
-                    continue
-                for msg in parser.parse_streaming_event(ev):
-                    yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
-            except Exception as e:
-                logger.error(f"HISTORY_SSE: Error replaying cached event: {e}")
-                continue
-
-        cursor = len(cached)
-        idle = 0
+        # Use StopManager's unified replay logic (skip anti-buffer padding and connected event - already sent)
+        cursor = 0
+        idle_heartbeats = 0
         while True:
             if session_id not in stop_manager.active_sessions:
                 break
+
             events = stop_manager.active_sessions.get(session_id, [])
             if cursor < len(events):
                 for ev in events[cursor:]:
                     try:
-                        for msg in parser.parse_streaming_event(ev):
+                        # Handle token events
+                        if isinstance(ev, dict) and ev.get("_event_type") == "token_usage":
+                            token_data = {
+                                "type": "token_usage_update",
+                                "session_id": ev["session_id"],
+                                "token_usage": ev["token_usage"],
+                                "timestamp": ev["timestamp"]
+                            }
+                            yield f"event: token_usage\ndata: {json.dumps(token_data, ensure_ascii=False)}\n\n"
+                            continue
+
+                        # Handle error events
+                        if isinstance(ev, dict) and ev.get("_event_type") == "error":
+                            error_data = {
+                                "type": "error",
+                                "session_id": ev["session_id"],
+                                "error": ev["error"],
+                                "timestamp": ev["timestamp"]
+                            }
+                            yield f"event: error\ndata: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+                            continue
+
+                        # Regular LangGraph events
+                        for msg in session_parser.parse_streaming_event(ev):
                             yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
                     except Exception as e:
-                        logger.error(f"HISTORY_SSE: Error parsing tailed event: {e}")
+                        logger.error(f"HISTORY_SSE: Error processing cached event: {e}")
                         continue
                 cursor = len(events)
-                idle = 0
+                idle_heartbeats = 0
             else:
-                idle += 1
-                if idle % 10 == 0:
+                idle_heartbeats += 1
+                if idle_heartbeats % 10 == 0:
                     yield ": keep-alive\n\n"
                 await asyncio.sleep(0.2)
 
@@ -515,117 +528,6 @@ async def stream_chat(
             # Help caches/proxies vary on Accept header (SSE vs JSON)
             "Vary": "Accept"
         }
-    )
-
-
-
-@router.get("/chat/stream/{session_id}/resume")
-async def resume_stream(
-    session_id: str,
-    current_user: User = Depends(current_active_user)
-):
-    """
-    Attach to an active stream: replay cached events and then tail new events until the run finishes.
-    If there is no active run, return 404 so the frontend can load history.
-    """
-    # Verify session exists
-    session_context = await session_manager.get_session(session_id)
-    if not session_context:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    stop_manager = StopManager.get_instance()
-
-    # Ensure there's an active run to resume
-    is_active = await StopManager.is_stream_active(session_id)
-    if not is_active or session_id not in stop_manager.active_sessions:
-        raise HTTPException(status_code=404, detail="No active stream to resume")
-
-    async def generate_resume_stream():
-        # Anti-buffer padding
-        yield f": {' ' * 2048}\n\n"
-        # Connected event (resume)
-        current_message_id = f"{session_id}_{int(time.time() * 1000000)}"
-        yield (
-            "event: connected\n"
-            f"data: {json.dumps({'message_id': current_message_id, 'session_id': session_id, 'mode': 'stream'})}\n\n"
-        )
-
-        parser = session_manager.get_session_parser(session_id)
-        artifact_loading_sent = False
-
-        # Replay cached events
-        cached = list(stop_manager.active_sessions.get(session_id, []))
-        for cached_event in cached:
-            try:
-                parsed_messages = parser.parse_streaming_event(cached_event)
-                for msg in parsed_messages:
-                    # Optional: send artifact loading hint once
-                    if (
-                        msg.type == "agent"
-                        and "create_artifact" in msg.content
-                        and not artifact_loading_sent
-                    ):
-                        artifact_loading_sent = True
-                        yield (
-                            "event: artifact_loading\n"
-                            f"data: {json.dumps({'type': 'artifact_loading', 'message_id': current_message_id, 'timestamp': time.time()}, ensure_ascii=False)}\n\n"
-                        )
-
-                    yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
-            except Exception as e:
-                logger.error(f"RESUME: Error replaying cached event: {e}")
-                continue
-
-        # Tail new events by polling the active_sessions buffer
-        cursor = len(cached)
-        idle_heartbeats = 0
-        while True:
-            # If the session was cleaned up, complete the stream
-            if session_id not in stop_manager.active_sessions:
-                break
-
-            events = stop_manager.active_sessions.get(session_id, [])
-            if cursor < len(events):
-                for ev in events[cursor:]:
-                    try:
-                        parsed_messages = parser.parse_streaming_event(ev)
-                        for msg in parsed_messages:
-                            yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
-                    except Exception as e:
-                        logger.error(f"RESUME: Error parsing live-tailed event: {e}")
-                        continue
-                cursor = len(events)
-                idle_heartbeats = 0
-            else:
-                # Send heartbeat every ~10 iterations (~2s) to defeat buffering
-                idle_heartbeats += 1
-                if idle_heartbeats % 10 == 0:
-                    yield ": keep-alive\n\n"
-                await asyncio.sleep(0.2)
-
-        # Completed
-        completion_data = {
-            "type": "agent_complete",
-            "message_id": current_message_id,
-            "timestamp": time.time(),
-        }
-        yield f"event: complete\ndata: {json.dumps(completion_data, ensure_ascii=False)}\n\n"
-
-    return StreamingResponse(
-        generate_resume_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "Content-Type": "text/event-stream; charset=utf-8",
-            "X-Accel-Buffering": "no",
-            "X-Content-Type-Options": "nosniff",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Cache-Control",
-            "Access-Control-Expose-Headers": "Content-Type",
-            "X-Proxy-Buffer": "no",
-            "Vary": "Accept",
-        },
     )
 
 
