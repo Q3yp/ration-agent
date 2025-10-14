@@ -186,14 +186,17 @@ class HttpClient {
   }
 }
 
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || '/api'
+const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || apiBaseUrl
+
 // Create default instance for API routes (handled by Next.js)
 const httpClient = new HttpClient({
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || '/api'
+  baseUrl: apiBaseUrl
 })
 
-// Create instance for external backend
+// Create instance for external backend – falls back to API proxy when explicit URL not provided
 const backendClient = new HttpClient({
-  baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL || 'http://47.104.108.233:8000'
+  baseUrl: backendBaseUrl
 })
 
 export { HttpClient, httpClient, backendClient }

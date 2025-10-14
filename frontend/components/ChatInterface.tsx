@@ -17,9 +17,10 @@ interface ChatInterfaceProps {
   sessionId: string
   endpoint?: string
   onTitleUpdate?: (sessionId: string, title: string) => void
+  onTokenUsageUpdate?: (sessionId: string, tokenUsage: import('@/types/chat').TokenUsage) => void
 }
 
-export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: ChatInterfaceProps) {
+export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTokenUsageUpdate }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState('')
   const [showFileUpload, setShowFileUpload] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<AttachedFile[]>([])
@@ -46,7 +47,8 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
     endpoint,
     autoLoadHistory: true,
     onTitleUpdate,
-    onArtifactUpdate: setCurrentArtifact
+    onArtifactUpdate: setCurrentArtifact,
+    onTokenUsageUpdate
   })
 
   // Clear artifact when switching sessions
@@ -55,7 +57,11 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate }: Ch
   }, [sessionId])
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    messagesEndRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'nearest'
+    })
   }
 
   useEffect(() => {

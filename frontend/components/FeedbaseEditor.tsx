@@ -18,6 +18,7 @@ type LegacyFeedData = { dry_matter_percent: number; nutrients: Record<string, nu
 
 export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseEditorProps) {
   const [name, setName] = useState(feedbase.name)
+  const [animalType, setAnimalType] = useState(feedbase.data.animal_type || 'dairy_cow')
   
   // Normalize feed data once using useMemo
   const initialFeeds = useMemo(() => {
@@ -48,7 +49,10 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
     try {
       setSaving(true)
       setError(null)
-      await onSave(feedbase.name, name.trim(), { feeds })
+      await onSave(feedbase.name, name.trim(), {
+        animal_type: animalType,
+        feeds
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败')
     } finally {
@@ -108,27 +112,51 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
 
   const feedNames = Object.keys(feeds).sort()
 
+  const animalTypeOptions = [
+    { value: 'dairy_cow', label: '奶牛 Dairy Cow' },
+    { value: 'beef_cow', label: '肉牛 Beef Cow' },
+    { value: 'cat', label: '猫 Cat' },
+    { value: 'dog', label: '狗 Dog' }
+  ]
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex-1">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="饲料库名称"
-            className="text-lg font-semibold border border-dashed border-muted-foreground/30 bg-transparent px-3 py-2 hover:border-muted-foreground/50 focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
-          />
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onCancel}>
-            <X className="h-4 w-4 mr-1" />
-            取消
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            <Save className="h-4 w-4 mr-1" />
-            {saving ? '保存中...' : '保存'}
-          </Button>
+      <div className="space-y-4 mb-6">
+        <div className="flex justify-between items-center">
+          <div className="flex-1 flex gap-4 items-center">
+            <div className="flex-1">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="饲料库名称"
+                className="text-lg font-semibold border border-dashed border-muted-foreground/30 bg-transparent px-3 py-2 hover:border-muted-foreground/50 focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
+              />
+            </div>
+            <div className="w-48">
+              <select
+                value={animalType}
+                onChange={(e) => setAnimalType(e.target.value)}
+                className="w-full px-3 py-2 border border-muted rounded-md text-sm focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors bg-background"
+              >
+                {animalTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2 ml-4">
+            <Button variant="outline" onClick={onCancel}>
+              <X className="h-4 w-4 mr-1" />
+              取消
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              <Save className="h-4 w-4 mr-1" />
+              {saving ? '保存中...' : '保存'}
+            </Button>
+          </div>
         </div>
       </div>
 

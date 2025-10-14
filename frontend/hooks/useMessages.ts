@@ -25,6 +25,7 @@ interface UseMessagesConfig {
   onArtifactUpdate?: (artifactData: ArtifactData | null) => void
   onConnectionChange?: (connected: boolean) => void
   onError?: (error: string) => void
+  onTokenUsageUpdate?: (sessionId: string, tokenUsage: import('@/types/chat').TokenUsage) => void
 }
 
 interface AnalysisState {
@@ -76,7 +77,8 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     onTitleUpdate,
     onArtifactUpdate,
     onConnectionChange,
-    onError
+    onError,
+    onTokenUsageUpdate
   } = config
 
   // Core state using MessageProcessor state structure
@@ -283,6 +285,12 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           }
           break
 
+        case 'token_usage_update':
+          if (onTokenUsageUpdate) {
+            onTokenUsageUpdate(event.data.sessionId, event.data.tokenUsage)
+          }
+          break
+
         case 'error':
           const rawError = event.data
           const classified = ErrorHandler.classify({
@@ -312,7 +320,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           break
       }
     }
-  }, [updateState, onTitleUpdate, onArtifactUpdate, onConnectionChange, onError, state, analysisState])
+  }, [updateState, onTitleUpdate, onArtifactUpdate, onConnectionChange, onError, onTokenUsageUpdate, state, analysisState])
 
   /**
    * Load session history
@@ -567,9 +575,9 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
         streamingMessageId: null,
         connectionState: 'connected'
       })
-      
+
       setIsTyping(false)  // Stop typing when stopped
-      
+
     } catch (error: any) {
       ErrorHandler.logError(error, 'stopMessage')
       const classified = ErrorHandler.classify(error)

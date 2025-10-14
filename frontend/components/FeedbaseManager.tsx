@@ -15,6 +15,7 @@ export interface FeedData {
 }
 
 export interface FeedbaseData {
+  animal_type?: string
   feeds: Record<string, FeedData>
 }
 
@@ -26,10 +27,12 @@ export interface Feedbase {
 export default function FeedbaseManager() {
   const { token } = useAuthContext()
   const [feedbases, setFeedbases] = useState<string[]>([])
+  const [feedbasesData, setFeedbasesData] = useState<Record<string, FeedbaseData>>({})
   const [selectedFeedbase, setSelectedFeedbase] = useState<Feedbase | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [animalTypeFilter, setAnimalTypeFilter] = useState<string>('all')
 
   // Helper function to get auth headers
   const getAuthHeaders = () => ({
@@ -44,13 +47,31 @@ export default function FeedbaseManager() {
       const response = await fetch('/api/feedbases/list', {
         headers: getAuthHeaders()
       })
-      
+
       if (!response.ok) {
         throw new Error('Failed to load feedbases')
       }
-      
+
       const data = await response.json()
-      setFeedbases(data.feedbases || [])
+      const feedbaseNames = data.feedbases || []
+      setFeedbases(feedbaseNames)
+
+      // Load data for each feedbase to get animal_type
+      const feedbasesDataMap: Record<string, FeedbaseData> = {}
+      for (const name of feedbaseNames) {
+        try {
+          const fbResponse = await fetch(`/api/feedbases/${encodeURIComponent(name)}`, {
+            headers: getAuthHeaders()
+          })
+          if (fbResponse.ok) {
+            const fbData = await fbResponse.json()
+            feedbasesDataMap[name] = fbData.data
+          }
+        } catch {
+          // Skip if individual feedbase fails to load
+        }
+      }
+      setFeedbasesData(feedbasesDataMap)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -199,7 +220,10 @@ export default function FeedbaseManager() {
   const createNew = () => {
     const newFeedbase: Feedbase = {
       name: '新饲料库',
-      data: { feeds: {} }
+      data: {
+        animal_type: 'dairy_cow', // Default to dairy_cow
+        feeds: {}
+      }
     }
     setSelectedFeedbase(newFeedbase)
     setIsEditing(true)
@@ -235,26 +259,64 @@ export default function FeedbaseManager() {
     )
   }
 
+  // Filter feedbases by animal type
+  const animalTypeLabels: Record<string, string> = {
+    'all': '全部',
+    'dairy_cow': '奶牛',
+    'beef_cow': '肉牛',
+    'cat': '猫',
+    'dog': '狗'
+  }
+
+  const filteredFeedbases = animalTypeFilter === 'all'
+    ? feedbases
+    : feedbases.filter(name => feedbasesData[name]?.animal_type === animalTypeFilter)
+
+  // Transform feedbase names to objects with animal_type
+  const feedbaseItems = filteredFeedbases.map(name => ({
+    name,
+    animal_type: feedbasesData[name]?.animal_type
+  }))
+
   return (
     <div className="h-full flex flex-col lg:flex-row gap-6">
       {/* Sidebar - Feedbase List */}
       <div className="w-full lg:w-80 lg:flex-shrink-0">
         <div className="h-full flex flex-col">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 pb-3 border-b">
-            <h2 className="text-lg font-semibold text-foreground">饲料库列表</h2>
-            <Button 
-              size="sm" 
-              onClick={createNew}
-              className="flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">新建</span>
-            </Button>
+          <div className="flex flex-col gap-3 mb-4 pb-3 border-b">
+            <div className="flex sm:justify-between sm:items-center gap-3">
+              <h2 className="text-lg font-semibold text-foreground">饲料库列表</h2>
+              <Button
+                size="sm"
+                onClick={createNew}
+                className="flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">新建</span>
+              </Button>
+            </div>
+
+            {/* Animal type filter */}
+            <div className="flex gap-2 flex-wrap">
+              {Object.entries(animalTypeLabels).map(([type, label]) => (
+                <button
+                  key={type}
+                  onClick={() => setAnimalTypeFilter(type)}
+                  className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                    animalTypeFilter === type
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-          
+
           <div className="flex-1 min-h-0">
             <FeedbaseList
-              feedbases={feedbases}
+              feedbases={feedbaseItems}
               selectedFeedbase={selectedFeedbase?.name || null}
               onSelect={loadFeedbase}
               onDelete={deleteFeedbase}

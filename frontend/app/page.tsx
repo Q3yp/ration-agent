@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageCircle, User, LogOut, Database } from 'lucide-react'
+import { MessageCircle, User, LogOut, Database, BookOpen } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
 import ConversationSidebar from '@/components/ConversationSidebar'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
@@ -15,6 +15,7 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [chatKey, setChatKey] = useState(0) // Force ChatInterface re-render when session changes
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>({})
+  const [sessionTokenUsage, setSessionTokenUsage] = useState<Record<string, import('@/types/chat').TokenUsage>>({})
 
   const handleSessionSelect = (newSessionId: string) => {
     setSessionId(newSessionId)
@@ -33,6 +34,13 @@ export default function Home() {
     }))
   }
 
+  const handleTokenUsageUpdate = (sessionId: string, tokenUsage: import('@/types/chat').TokenUsage) => {
+    setSessionTokenUsage(prev => ({
+      ...prev,
+      [sessionId]: tokenUsage
+    }))
+  }
+
   return (
     <ProtectedRoute>
       <main className="h-screen bg-gradient-to-br from-background to-muted">
@@ -43,6 +51,7 @@ export default function Home() {
             onSessionSelect={handleSessionSelect}
             onNewSession={handleNewSession}
             sessionTitles={sessionTitles}
+            sessionTokenUsage={sessionTokenUsage}
           />
           
           {/* Main content */}
@@ -56,6 +65,12 @@ export default function Home() {
                   <span className="text-sm text-muted-foreground">
                     欢迎，{user?.username}
                   </span>
+                  <Link href="/guide">
+                    <Button variant="outline" size="sm">
+                      <BookOpen className="h-4 w-4 mr-1" />
+                      使用指南
+                    </Button>
+                  </Link>
                   <Link href="/feedbases">
                     <Button variant="outline" size="sm">
                       <Database className="h-4 w-4 mr-1" />
@@ -85,6 +100,7 @@ export default function Home() {
                   key={chatKey}
                   sessionId={sessionId}
                   onTitleUpdate={handleTitleUpdate}
+                  onTokenUsageUpdate={handleTokenUsageUpdate}
                 />
               </div>
             ) : (

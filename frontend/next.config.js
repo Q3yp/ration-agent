@@ -23,11 +23,8 @@ const nextConfig = {
   },
   
   async rewrites() {
-    // Use different backend URL for Docker vs development
-    const backendUrl = process.env.NODE_ENV === 'production' 
-      ? 'http://localhost:8000'  // Docker container name
-      : 'http://localhost:8000';  // Development
-      
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    
     return [
       {
         source: '/auth/:path*',

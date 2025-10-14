@@ -195,8 +195,26 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
           break
 
         case 'error':
-          console.error('SSE Error:', data)
-          setConnectionError(data.content || 'An error occurred')
+          if (data.type === 'error' && data.error) {
+            console.error('SSE Error:', data.error)
+            // Use the user-friendly message from backend
+            const errorMessage = data.error.user_message || data.error.message || 'An error occurred'
+            setConnectionError(errorMessage)
+
+            // Add error message to chat for visibility
+            const errorMsg: Message = {
+              id: `error_${Date.now()}_${Math.random()}`,
+              type: 'agent' as MessageType,
+              content: `⚠️ ${errorMessage}`,
+              timestamp: data.timestamp || Date.now(),
+              metadata: { is_error: true }
+            }
+            setMessages(prev => [...prev, errorMsg])
+          } else {
+            // Fallback for old format
+            console.error('SSE Error:', data)
+            setConnectionError(data.content || 'An error occurred')
+          }
           setIsTyping(false)
           currentStreamingMessageRef.current = null
           break

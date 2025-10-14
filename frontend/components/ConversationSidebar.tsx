@@ -2,17 +2,21 @@
 
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, MessageCircle, Loader2, TrashIcon } from 'lucide-react'
-import { Session } from '@/types/chat'
+import { Session, AnimalType } from '@/types/chat'
 import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { httpClient } from '@/utils/httpClient'
+import { AnimalTypeSelector } from './AnimalTypeSelector'
+import { TokenUsage } from './TokenUsage'
+
 interface ConversationSidebarProps {
   currentSessionId: string | null
   onSessionSelect: (sessionId: string) => void
   onNewSession: (sessionId: string) => void
   sessionTitles: Record<string, string>
+  sessionTokenUsage: Record<string, import('@/types/chat').TokenUsage>
 }
 
 export default function ConversationSidebar({
@@ -20,9 +24,11 @@ export default function ConversationSidebar({
   onSessionSelect,
   onNewSession,
   sessionTitles,
+  sessionTokenUsage,
 }: ConversationSidebarProps) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [showAnimalTypeSelector, setShowAnimalTypeSelector] = useState(false)
 
   // Update session titles when sessionTitles prop changes
   useEffect(() => {
@@ -32,6 +38,14 @@ export default function ConversationSidebar({
     })))
   }, [sessionTitles])
 
+  // Update session token usage when sessionTokenUsage prop changes
+  useEffect(() => {
+    setSessions(prev => prev.map(session => ({
+      ...session,
+      token_usage: sessionTokenUsage[session.session_id] || session.token_usage
+    })))
+  }, [sessionTokenUsage])
+
 
   const fetchSessions = async () => {
     try {
@@ -40,9 +54,9 @@ export default function ConversationSidebar({
       const sessions = data.active_sessions || []
       setSessions(sessions)
       
-      // If no sessions exist and no current session, create a new one
+      // If no sessions exist and no current session, show selector
       if (sessions.length === 0 && !currentSessionId) {
-        await createNewSession()
+        setShowAnimalTypeSelector(true)
       }
     } catch (error) {
       console.error('Error fetching sessions:', error)
@@ -52,19 +66,28 @@ export default function ConversationSidebar({
     }
   }
 
-  const createNewSession = async () => {
+  const handleNewSessionClick = () => {
+    setShowAnimalTypeSelector(true)
+  }
+
+  const createNewSession = async (animalType: AnimalType) => {
     const newSessionId = uuidv4()
     try {
-      await httpClient.postJson(`/sessions/create`, { session_id: newSessionId })
-      
+      const response = await httpClient.postJson(`/sessions/create`, {
+        session_id: newSessionId,
+        animal_type: animalType
+      })
+
       // Add new session to local state instead of refetching all sessions
       const newSession: Session = {
         session_id: newSessionId,
         title: '新对话',
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        animal_type: response.animal_type
       }
       setSessions(prev => [newSession, ...prev])
-      
+
+      setShowAnimalTypeSelector(false)
       onSessionSelect(newSessionId)
       onNewSession(newSessionId)
     } catch (error) {
@@ -86,9 +109,9 @@ export default function ConversationSidebar({
       // Remove session from local state instead of refetching all sessions
       setSessions(prev => prev.filter(session => session.session_id !== sessionId))
       
-      // If we deleted the current session, create a new one
+      // If we deleted the current session, show the selector
       if (sessionId === currentSessionId) {
-        await createNewSession()
+        setShowAnimalTypeSelector(true)
       }
     } catch (error) {
       console.error('Error deleting session:', error)
@@ -106,9 +129,9 @@ export default function ConversationSidebar({
       
       // Clear all sessions from local state
       setSessions([])
-      
-      // Create a new session automatically
-      await createNewSession()
+
+      // Show animal type selector for new session
+      setShowAnimalTypeSelector(true)
     } catch (error) {
       console.error('Error deleting all sessions:', error)
       alert('删除所有对话失败，请重试')
@@ -121,7 +144,7 @@ export default function ConversationSidebar({
     const diffMs = now.getTime() - date.getTime()
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
     const diffDays = Math.floor(diffHours / 24)
-    
+
     if (diffHours < 1) {
       return '刚刚'
     } else if (diffHours < 24) {
@@ -133,6 +156,26 @@ export default function ConversationSidebar({
     } else {
       return date.toLocaleDateString()
     }
+  }
+
+  const getAnimalTypeLabel = (animalType?: string) => {
+    const labels: Record<string, string> = {
+      'dairy_cow': '奶牛',
+      'beef_cow': '肉牛',
+      'cat': '猫',
+      'dog': '狗'
+    }
+    return labels[animalType || 'dairy_cow'] || '奶牛'
+  }
+
+  const getAnimalTypeEmoji = (animalType?: string) => {
+    const emojis: Record<string, string> = {
+      'dairy_cow': '🐄',
+      'beef_cow': '🐂',
+      'cat': '🐱',
+      'dog': '🐶'
+    }
+    return emojis[animalType || 'dairy_cow'] || '🐄'
   }
 
   useEffect(() => {
@@ -153,9 +196,17 @@ export default function ConversationSidebar({
   }
 
   return (
-    <div className="w-80 bg-muted/30 border-r flex flex-col">
-      {/* Header */}
-      <CardHeader className="pb-3">
+    <>
+      {showAnimalTypeSelector && (
+        <AnimalTypeSelector
+          onSelect={createNewSession}
+          onCancel={() => setShowAnimalTypeSelector(false)}
+        />
+      )}
+
+      <div className="w-80 bg-muted/30 border-r flex flex-col">
+        {/* Header */}
+        <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">对话列表</h2>
           <div className="flex items-center gap-1">
@@ -173,7 +224,7 @@ export default function ConversationSidebar({
             <Button
               variant="ghost"
               size="icon"
-              onClick={createNewSession}
+              onClick={handleNewSessionClick}
               title="新建对话"
               className="h-8 w-8"
             >
@@ -193,7 +244,7 @@ export default function ConversationSidebar({
             <Button
               variant="outline"
               size="sm"
-              onClick={createNewSession}
+              onClick={handleNewSessionClick}
             >
               开始对话
             </Button>
@@ -212,34 +263,48 @@ export default function ConversationSidebar({
                 )}
               >
                 <CardContent className="p-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-3 flex-1 min-w-0">
-                      <MessageCircle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">
-                          {session.title || 'New Conversation'}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {formatTimestamp(session)}
-                        </p>
+                  <div className="flex flex-col">
+                    <div className="flex items-start justify-between mb-1">
+                      <div className="flex items-start space-x-3 flex-1 min-w-0">
+                        <MessageCircle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">
+                            {session.title || 'New Conversation'}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {formatTimestamp(session)}
+                          </p>
+                        </div>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => deleteSession(session.session_id, e)}
+                        className="opacity-0 group-hover:opacity-100 h-6 w-6 text-destructive hover:text-destructive flex-shrink-0"
+                        title="删除对话"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => deleteSession(session.session_id, e)}
-                      className="opacity-0 group-hover:opacity-100 h-6 w-6 text-destructive hover:text-destructive flex-shrink-0"
-                      title="删除对话"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    <div className="flex items-center justify-between pl-7">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">
+                          {getAnimalTypeEmoji(session.animal_type)}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 bg-muted rounded text-muted-foreground">
+                          {getAnimalTypeLabel(session.animal_type)}
+                        </span>
+                      </div>
+                      <TokenUsage tokenUsage={session.token_usage} />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </>
   )
 }

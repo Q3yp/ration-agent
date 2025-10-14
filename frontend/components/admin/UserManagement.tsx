@@ -17,6 +17,7 @@ interface User {
   is_active: boolean
   is_superuser: boolean
   is_verified: boolean
+  allowed_animal_types?: string[] | null
   created_at: string
   updated_at: string
 }
@@ -29,6 +30,14 @@ export default function UserManagement() {
   const [showForm, setShowForm] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [editingPermissions, setEditingPermissions] = useState<string | null>(null)
+
+  const animalTypeOptions = [
+    { value: 'dairy_cow', label: '奶牛 Dairy Cow' },
+    { value: 'beef_cow', label: '肉牛 Beef Cow' },
+    { value: 'cat', label: '猫 Cat' },
+    { value: 'dog', label: '狗 Dog' }
+  ]
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -104,6 +113,44 @@ export default function UserManagement() {
     setEditingUser(null)
   }
 
+  const handleUpdateAnimalTypes = async (userId: string, selectedTypes: string[]) => {
+    try {
+      const response = await fetch(`/admin/users/${userId}/animal-types`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          allowed_animal_types: selectedTypes.length > 0 ? selectedTypes : null
+        })
+      })
+
+      if (response.ok) {
+        await fetchUsers() // Refresh the list
+        setEditingPermissions(null)
+      } else {
+        const error = await response.json()
+        setError(error.detail || '更新权限失败')
+      }
+    } catch {
+      setError('更新权限时网络错误')
+    }
+  }
+
+  const toggleAnimalType = (user: User, animalType: string) => {
+    const currentTypes = user.allowed_animal_types || []
+    const newTypes = currentTypes.includes(animalType)
+      ? currentTypes.filter(t => t !== animalType)
+      : [...currentTypes, animalType]
+
+    handleUpdateAnimalTypes(user.id, newTypes)
+  }
+
+  const getAnimalTypeLabel = (value: string) => {
+    return animalTypeOptions.find(opt => opt.value === value)?.label || value
+  }
+
   if (showForm) {
     return (
       <UserForm
@@ -168,9 +215,65 @@ export default function UserManagement() {
                     {user.full_name && (
                       <p className="text-sm text-gray-600 mb-1">{user.full_name}</p>
                     )}
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500 mb-2">
                       创建时间: {new Date(user.created_at).toLocaleDateString('zh-CN')}
                     </p>
+
+                    {/* Animal Type Permissions */}
+                    <div className="mt-2">
+                      <p className="text-xs text-gray-500 mb-1">动物类型权限:</p>
+                      {editingPermissions === user.id ? (
+                        <div className="flex flex-wrap gap-2">
+                          {animalTypeOptions.map((option) => {
+                            const isSelected = user.allowed_animal_types?.includes(option.value) || false
+                            return (
+                              <label
+                                key={option.value}
+                                className="flex items-center gap-1 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleAnimalType(user, option.value)}
+                                  className="rounded"
+                                />
+                                <span className="text-xs">{option.label}</span>
+                              </label>
+                            )
+                          })}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingPermissions(null)}
+                            className="h-6 text-xs"
+                          >
+                            完成
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {!user.allowed_animal_types || user.allowed_animal_types.length === 0 ? (
+                            <Badge variant="secondary" className="text-xs">
+                              全部权限
+                            </Badge>
+                          ) : (
+                            user.allowed_animal_types.map((type) => (
+                              <Badge key={type} variant="outline" className="text-xs">
+                                {getAnimalTypeLabel(type)}
+                              </Badge>
+                            ))
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingPermissions(user.id)}
+                            className="h-6 text-xs"
+                          >
+                            编辑
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <Button

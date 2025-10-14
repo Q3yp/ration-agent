@@ -9,14 +9,15 @@ import { Message, MessageType, ArtifactData } from '@/types/chat'
 
 export type MessageSource = 'history' | 'sse_stream' | 'user_input'
 
-export type SSEEventType = 
-  | 'connected' 
-  | 'message' 
-  | 'title_update' 
-  | 'artifact_loading' 
-  | 'complete' 
-  | 'stopped' 
+export type SSEEventType =
+  | 'connected'
+  | 'message'
+  | 'title_update'
+  | 'artifact_loading'
+  | 'complete'
+  | 'stopped'
   | 'error'
+  | 'token_usage'
 
 export interface SSEEvent {
   type: SSEEventType
@@ -24,7 +25,7 @@ export interface SSEEvent {
 }
 
 export interface ProcessedEvent {
-  type: 'message' | 'title_update' | 'artifact_update' | 'connection_change' | 'error'
+  type: 'message' | 'title_update' | 'artifact_update' | 'connection_change' | 'error' | 'token_usage_update'
   data: any
 }
 
@@ -179,10 +180,22 @@ export class MessageProcessor {
           if (data.type === 'agent_stopped') {
             results.push({
               type: 'connection_change',
-              data: { 
+              data: {
                 state: 'connected',
                 streamingStopped: true,
                 message: data.message
+              }
+            })
+          }
+          break
+
+        case 'token_usage':
+          if (data.type === 'token_usage_update') {
+            results.push({
+              type: 'token_usage_update',
+              data: {
+                sessionId: data.session_id,
+                tokenUsage: data.token_usage
               }
             })
           }

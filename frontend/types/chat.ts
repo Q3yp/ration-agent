@@ -97,6 +97,19 @@ export function getFormulationMetadata(message: Message) {
   } | undefined
 }
 
+export type AnimalType = 'dairy_cow' | 'beef_cow' | 'cat' | 'dog'
+
+export interface AnimalTypeOption {
+  value: AnimalType
+  label: string
+}
+
+export interface TokenUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
 export interface Session {
   session_id: string
   workspace_path?: string
@@ -106,5 +119,7 @@ export interface Session {
   agent_ready?: boolean
   exists?: boolean
   title?: string
+  animal_type?: AnimalType
+  token_usage?: TokenUsage
 }
 
