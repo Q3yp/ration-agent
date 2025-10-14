@@ -97,6 +97,8 @@ class StopManager:
     """Singleton stream lifecycle manager with caching and resumability"""
 
     _instance = None
+    _HANDOFF_TOOL_PREFIXES = ("transfer_to_",)
+    _HANDOFF_TOOL_NAMES = {"transfer_back_to_nutritionist"}
 
     def __new__(cls):
         if cls._instance is None:
@@ -124,6 +126,31 @@ class StopManager:
     def get_instance(cls) -> 'StopManager':
         """Get the singleton instance"""
         return cls()
+
+    def _is_handoff_tool(self, tool_name: Any) -> bool:
+        if not isinstance(tool_name, str):
+            return False
+        if any(tool_name.startswith(prefix) for prefix in self._HANDOFF_TOOL_PREFIXES):
+            return True
+        return tool_name in self._HANDOFF_TOOL_NAMES
+
+    def _is_handoff_event(self, event: Dict[str, Any]) -> bool:
+        if not isinstance(event, dict):
+            return False
+        if event.get("event") != "on_tool_end":
+            return False
+        return self._is_handoff_tool(event.get("name"))
+
+    def _prune_cache_through_index(self, session_id: str, index: int):
+        events = self.active_sessions.get(session_id)
+        if not events:
+            return
+        prune_count = index + 1
+        if prune_count >= len(events):
+            self.active_sessions[session_id] = []
+        else:
+            self.active_sessions[session_id] = events[prune_count:]
+        logger.debug(f"STOP_MANAGER: Pruned cache through index {index} for session {session_id}")
 
     async def _producer(
         self,
@@ -390,7 +417,8 @@ class StopManager:
 
                 # Process new events since last cursor
                 if cursor < len(events):
-                    for ev in events[cursor:]:
+                    pruned = False
+                    for idx, ev in enumerate(events[cursor:], start=cursor):
                         try:
                             # Handle token events (synthesized by producer)
                             if isinstance(ev, dict) and ev.get("_event_type") == "token_usage":
@@ -438,6 +466,16 @@ class StopManager:
                         except Exception as e:
                             logger.error(f"STOP_MANAGER: Error processing cached event: {e}")
                             continue
+
+                        if self._is_handoff_event(ev):
+                            self._prune_cache_through_index(session_id, idx)
+                            cursor = 0
+                            pruned = True
+                            break
+
+                    if pruned:
+                        idle_heartbeats = 0
+                        continue
 
                     cursor = len(events)
                     idle_heartbeats = 0

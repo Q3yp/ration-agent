@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -463,7 +464,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             optimizer = create_optimizer()
             optimizer.set_feeds(feed_database)
             
-            optimization_result = optimizer.optimize(
+            optimization_result = await asyncio.to_thread(
+                optimizer.optimize,
                 nutritional_constraints=nutritional_constraints,
                 selected_feeds=selected_feeds,
                 feed_constraints=feed_constraints or {},
@@ -723,6 +725,9 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             
             filepath = workspace_path / filename
             
+            # Capture daily intake information if available
+            daily_intake_kg = current_formulation.get("daily_dm_intake_kg")
+
             # Helper function to validate constraints and calculate achieved values
             def validate_constraints():
                 constraint_results = []
@@ -839,6 +844,76 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 
                 return constraint_results
             
+            def build_description_text(raw_description: Any, constraints: List[Dict[str, Any]]) -> str:
+                """Create description text using provided description or fallback summary."""
+                description_text = ""
+                if isinstance(raw_description, str):
+                    description_text = raw_description.strip()
+                elif raw_description is not None:
+                    description_text = str(raw_description).strip()
+
+                if description_text:
+                    return description_text
+
+                lines: List[str] = []
+
+                status = current_formulation.get("status")
+                if status:
+                    lines.append(f"- 优化状态：{status}")
+
+                objective = current_formulation.get("optimization_objective")
+                if objective:
+                    lines.append(f"- 优化目标：{objective}")
+
+                cost_value = current_formulation.get("cost_per_kg_dm")
+                if cost_value is not None:
+                    lines.append(f"- 配方成本：{cost_value} 元/公斤干物质")
+
+                if daily_intake_kg is not None:
+                    lines.append(f"- 日干物质采食量：{round(float(daily_intake_kg), 2)} 公斤/天")
+
+                if feedbase_name:
+                    lines.append(f"- 饲料库：{feedbase_name}")
+
+                formulation_feeds = current_formulation.get("formulation", {})
+                if formulation_feeds:
+                    sorted_feeds = sorted(
+                        formulation_feeds.items(),
+                        key=lambda item: item[1].get("percentage_dm", 0),
+                        reverse=True
+                    )
+                    feed_lines: List[str] = []
+                    for feed_name, feed_info in sorted_feeds[:5]:
+                        sanitized_name = sanitize_feed_name(feed_name)
+                        percentage_dm = feed_info.get("percentage_dm")
+                        feed_line_parts = [f"{sanitized_name}"]
+                        if percentage_dm is not None:
+                            feed_line_parts.append(f"{float(percentage_dm):.2f}%")
+                        kg_per_day = feed_info.get("kg_per_day")
+                        if kg_per_day:
+                            feed_line_parts.append(f"{float(kg_per_day):.2f} 公斤/天")
+                        feed_lines.append(" ".join(feed_line_parts))
+                    if feed_lines:
+                        lines.append("- 主要饲料组成：")
+                        lines.extend([f"  - {line}" for line in feed_lines])
+
+                if constraints:
+                    satisfied_count = sum(1 for item in constraints if item.get("满足情况") == "✓ 满足")
+                    lines.append(f"- 约束满足情况：{satisfied_count}/{len(constraints)} 项满足")
+
+                nutrient_analysis = current_formulation.get("nutrient_analysis", {})
+                if nutrient_analysis:
+                    highlighted = []
+                    for nutrient, value in list(nutrient_analysis.items())[:5]:
+                        highlighted.append(f"{nutrient} {value}")
+                    if highlighted:
+                        lines.append("- 关键营养指标：" + "，".join(highlighted))
+
+                if not lines:
+                    lines.append("请补充配方描述，以便记录关键结论。")
+
+                return "\n".join(lines)
+            
             # Create Excel with 2 sheets
             with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
 
@@ -849,10 +924,14 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
                 # Get constraint results first to determine description area size
                 constraint_results = validate_constraints()
+                description_text = build_description_text(description, constraint_results)
 
                 # Header row
                 main_data.append(['约束验证', '', '', '', '配方描述与说明', '', '', ''])
-                main_data.append(['', '', '', '', '', '', '', ''])
+
+                # Description area starts immediately under header (E2)
+                description_start_row = len(main_data) + 1  # Row 2
+                main_data.append(['', '', '', '', description_text, '', '', ''])
 
                 # Basic information row
                 main_data.append([
@@ -867,14 +946,11 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 main_data.append(['', '', '', '', '', '', '', ''])
 
                 # Constraint validation table header
+                constraint_header_row = len(main_data) + 1  # Excel rows are 1-indexed
                 main_data.append(['约束类型', '营养成分', '约束条件', '满足情况', '', '', '', ''])
 
-                # Description will span from row 7 (index 6) to row (7 + max(constraint rows, 10))
-                # Store description row indices for later merging
-                description_start_row = 7  # Row number (1-indexed)
-
                 # Add constraint rows (minimum 10 rows to give description space)
-                min_description_rows = 15  # Give description plenty of vertical space
+                min_description_rows = 39  # Ensure merged description spans at least to row 40
                 constraint_row_count = max(len(constraint_results), min_description_rows)
 
                 for i in range(constraint_row_count):
@@ -887,10 +963,6 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         row[1] = result["营养成分"]
                         row[2] = result["约束条件"]
                         row[3] = result["满足情况"]
-
-                    # Description goes in column E (index 4) - will be merged later
-                    if i == 0:
-                        row[4] = description  # Put description in first row only
 
                     main_data.append(row)
 
@@ -963,6 +1035,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                     ws_main.column_dimensions['F'].width = 2   # Hidden (merged into E)
                     ws_main.column_dimensions['G'].width = 2   # Hidden (merged into E)
                     ws_main.column_dimensions['H'].width = 2   # Hidden (merged into E)
+                    ws_main.freeze_panes = f'A{description_start_row}'
 
                     # Set row heights - make description rows taller
                     for row_num in range(1, ws_main.max_row + 1):
@@ -984,6 +1057,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
                     label_font = Font(bold=True)
                     desc_font = Font(size=11)
+                    thin_side = Side(style="thin", color="B4C6E7")
+                    table_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
 
                     # Merge large description cell (E to H, spanning multiple rows - top to bottom)
                     ws_main.merge_cells(f'E{description_start_row}:H{description_end_row}')
@@ -991,6 +1066,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                     # Format the merged description cell (no background fill)
                     desc_cell = ws_main[f'E{description_start_row}']
                     desc_cell.font = desc_font
+                    desc_cell.value = description_text
                     desc_cell.alignment = Alignment(
                         wrap_text=True,
                         vertical="top",
@@ -1048,6 +1124,14 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         # Label cells
                         elif first_cell_value.endswith(":"):
                             row_cells[0].font = label_font
+
+                        # Add borders to constraint table area for readability
+                        if constraint_header_row <= row_num <= description_end_row:
+                            for col_index in range(1, 5):
+                                ws_main.cell(row=row_num, column=col_index).border = table_border
+
+                    # Apply border to merged description cell
+                    desc_cell.border = table_border
                 
                 # Format 饲料数据库 sheet (standard table formatting)
                 if '饲料数据库' in workbook.sheetnames:
@@ -1101,4 +1185,3 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             )
 
     return [add_feed, formulate_ration, check_feeds, list_feed_bases, export_formulation]
-

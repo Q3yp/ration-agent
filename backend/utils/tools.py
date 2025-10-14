@@ -2,6 +2,7 @@ import os
 import subprocess
 import uuid
 import json
+import shlex
 from pathlib import Path
 from typing import Optional, List, Annotated
 from datetime import datetime
@@ -31,6 +32,36 @@ except ImportError:
 import logging
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_SHELL_COMMANDS = {"ls", "cat", "head", "tail", "pwd", "echo", "uv"}
+DISALLOWED_SHELL_TOKENS = [";", "&&", "||", "|", ">", "<", "`", "$("]
+
+
+def validate_shell_command(command: str) -> Optional[str]:
+    """
+    Ensure shell command is limited to a safe allow-list and does not contain chaining operators.
+    Returns an error message when invalid, otherwise None.
+    """
+    stripped = command.strip()
+    if not stripped:
+        return "Command cannot be empty"
+
+    if any(token in stripped for token in DISALLOWED_SHELL_TOKENS):
+        return "Command contains disallowed shell operators"
+
+    try:
+        tokens = shlex.split(stripped)
+    except ValueError:
+        return "Unable to parse command"
+
+    if not tokens:
+        return "Command cannot be empty"
+
+    executable = tokens[0]
+    if executable not in ALLOWED_SHELL_COMMANDS:
+        return f"Command '{executable}' is not permitted"
+
+    return None
 
 
 def sanitize_html_content(html_content: str) -> str:
@@ -144,7 +175,7 @@ async def bash_command(
     command: str,
     config: Annotated[RunnableConfig, InjectedToolArg]
 ) -> str:
-    """Execute a bash command in the session workspace."""
+    """Execute a bash command in the session workspace. Only allowlisted utilities are permitted: ls, cat, head, tail, pwd, echo, uv."""
     try:
         # Import here to avoid circular imports
         from services.session_manager import session_manager
@@ -160,6 +191,10 @@ async def bash_command(
         # Ensure workspace exists and get path
         session.ensure_workspace_exists()
         session_workspace = session.workspace_path
+
+        validation_error = validate_shell_command(command)
+        if validation_error:
+            return f"Error: {validation_error}"
 
         result = subprocess.run(
             command,

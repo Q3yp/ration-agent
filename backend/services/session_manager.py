@@ -235,17 +235,24 @@ class SessionManager:
 
         try:
             from psycopg.types.json import Jsonb
-            # Create metadata with title, title_generated, animal_type, and initialized token_stats
-            metadata = Jsonb({
+
+            existing_metadata = await self._get_session_metadata(session_context.session_id) or {}
+            metadata_dict = dict(existing_metadata) if isinstance(existing_metadata, dict) else {}
+
+            metadata_dict.update({
                 'title': session_context.title,
                 'title_generated': session_context.title_generated,
                 'animal_type': session_context.animal_type,
-                'token_stats': {
+            })
+
+            if 'token_stats' not in metadata_dict or not isinstance(metadata_dict['token_stats'], dict):
+                metadata_dict['token_stats'] = {
                     'prompt_tokens': 0,
                     'completion_tokens': 0,
                     'total_tokens': 0
                 }
-            })
+
+            metadata = Jsonb(metadata_dict)
 
             async with self._db_pool.connection() as conn:
                 async with conn.cursor() as cur:
@@ -264,10 +271,33 @@ class SessionManager:
                             session_context.deleted,
                             metadata
                         )
-                    )
+                )
 
         except Exception as e:
             logger.error(f"Failed to persist session {session_context.session_id}: {e}")
+    
+    async def _get_session_metadata(self, session_id: str) -> Optional[dict]:
+        """Fetch existing session metadata without mutating state."""
+        if not self._db_pool:
+            return None
+
+        try:
+            async with self._db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT metadata FROM user_sessions WHERE session_id = %s",
+                        (session_id,)
+                    )
+                    row = await cur.fetchone()
+                    if not row:
+                        return None
+                    metadata = row[0]
+                    if isinstance(metadata, dict):
+                        return metadata
+                    return None
+        except Exception as e:
+            logger.error(f"Failed to fetch metadata for session {session_id}: {e}")
+            return None
     
     async def update_session_last_accessed(self, session_id: str):
         """Update session last accessed time in database"""
@@ -500,8 +530,7 @@ class SessionManager:
         try:
             async with self._db_pool.connection() as conn:
                 async with conn.cursor() as cur:
-                    # Atomic increment using PostgreSQL JSONB operators
-                    # This is safe for concurrent updates - no caching or locking needed
+                    # Persist absolute token counts provided by the latest run.
                     await cur.execute("""
                         UPDATE user_sessions
                         SET metadata = jsonb_set(
@@ -509,7 +538,7 @@ class SessionManager:
                                 jsonb_set(
                                     COALESCE(metadata, '{}'::jsonb),
                                     '{token_stats,prompt_tokens}',
-                                    to_jsonb(COALESCE((metadata->'token_stats'->>'prompt_tokens')::int, 0) + %s)
+                                    to_jsonb(%s)
                                 ),
                                 '{token_stats,completion_tokens}',
                                 to_jsonb(COALESCE((metadata->'token_stats'->>'completion_tokens')::int, 0) + %s)
@@ -520,7 +549,13 @@ class SessionManager:
                         WHERE session_id = %s AND deleted = FALSE
                     """, (prompt_tokens, completion_tokens, total_tokens, session_id))
 
-                    logger.debug(f"Atomically incremented token usage for session {session_id}: +{prompt_tokens} prompt, +{completion_tokens} completion, +{total_tokens} total")
+                    logger.debug(
+                        "Persisted token usage for session %s: prompt=%s (absolute), +%s completion, +%s total",
+                        session_id,
+                        prompt_tokens,
+                        completion_tokens,
+                        total_tokens,
+                    )
         except Exception as e:
             logger.error(f"Failed to update token usage for session {session_id}: {e}")
     

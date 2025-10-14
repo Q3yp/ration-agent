@@ -90,6 +90,11 @@ class SharedConnectionManager:
         if self._shared_pool is None:
             db_uri = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
             
+            min_size = int(os.getenv("DB_POOL_MIN_SIZE", "5"))
+            max_size = int(os.getenv("DB_POOL_MAX_SIZE", "100"))
+            if max_size < min_size:
+                max_size = min_size
+
             connection_kwargs = {
                 "autocommit": True,
                 "prepare_threshold": None,
@@ -99,8 +104,8 @@ class SharedConnectionManager:
             self._shared_pool = AsyncConnectionPool(
                 db_uri,
                 kwargs=connection_kwargs,
-                min_size=5,
-                max_size=20,  # Increased for shared usage
+                min_size=min_size,
+                max_size=max_size,
                 timeout=10.0,
                 open=False  # Prevent automatic opening in constructor
             )

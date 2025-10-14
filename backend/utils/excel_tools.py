@@ -32,27 +32,65 @@ async def _get_session_file_path(filepath: str, session_id: str) -> str:
         raise
 
 
-def _read_excel_sheet(filepath: str, sheet_name: str, header_row: int = 0) -> pd.DataFrame:
-    """Shared function to read Excel sheets consistently for both metadata and query tools."""
+def _is_csv_file(filepath: str) -> bool:
+    """Determine if the provided file path points to a CSV file."""
+    return Path(filepath).suffix.lower() == ".csv"
+
+
+def _column_letters_to_index(column_letters: str) -> int:
+    """Convert Excel-style column letters (e.g., 'A', 'AA') to a zero-based index."""
+    index = 0
+    for char in column_letters.upper():
+        if not 'A' <= char <= 'Z':
+            raise ValueError(f"Invalid column letter '{char}' in reference '{column_letters}'")
+        index = index * 26 + (ord(char) - ord('A') + 1)
+    return index - 1
+
+
+def _parse_cell_reference(cell_ref: str) -> Optional[tuple]:
+    """Parse Excel-style cell reference (e.g., 'A1') into zero-based row and column indices."""
+    match = re.match(r'^([A-Za-z]+)(\d+)$', cell_ref.strip())
+    if not match:
+        return None
+    column_letters, row_number = match.groups()
+    row_index = int(row_number) - 1
+    column_index = _column_letters_to_index(column_letters)
+    if row_index < 0 or column_index < 0:
+        return None
+    return row_index, column_index
+
+
+def _read_excel_sheet(filepath: str, sheet_name: Optional[str], header_row: int = 0) -> pd.DataFrame:
+    """Shared function to read spreadsheet data consistently for both metadata and query tools."""
     try:
-        # Use consistent pandas parameters for both metadata and query operations
-        df = pd.read_excel(
-            filepath, 
-            sheet_name=sheet_name,
-            # Ensure consistent behavior
-            header=header_row,  # Use specified row as header
-            index_col=None,  # Don't use any column as index
-            na_values=['', 'NaN', 'nan', 'NULL', 'null'],  # Consistent NaN handling
-            keep_default_na=True
-        )
+        if _is_csv_file(filepath):
+            df = pd.read_csv(
+                filepath,
+                header=header_row if header_row is not None else None,
+                index_col=None,
+                na_values=['', 'NaN', 'nan', 'NULL', 'null'],
+                keep_default_na=True
+            )
+        else:
+            # Use consistent pandas parameters for both metadata and query operations
+            df = pd.read_excel(
+                filepath, 
+                sheet_name=sheet_name,
+                # Ensure consistent behavior
+                header=header_row,  # Use specified row as header
+                index_col=None,  # Don't use any column as index
+                na_values=['', 'NaN', 'nan', 'NULL', 'null'],  # Consistent NaN handling
+                keep_default_na=True
+            )
         return df
     except Exception as e:
-        logger.error(f"Error reading Excel sheet '{sheet_name}' from '{filepath}': {e}")
+        location = f"sheet '{sheet_name}'" if sheet_name else "file"
+        logger.error(f"Error reading tabular data ({location}) from '{filepath}': {e}")
         raise
 
 
-def _analyze_sheet_structure(filepath: str, sheet_name: str) -> Dict[str, Any]:
-    """Analyze Excel sheet structure - simplified to show only essential column information."""
+def _analyze_sheet_structure(filepath: str, sheet_name: Optional[str]) -> Dict[str, Any]:
+    """Analyze spreadsheet structure - simplified to show only essential column information."""
     try:
         # Read the sheet using shared function to ensure consistency with query tool
         df = _read_excel_sheet(filepath, sheet_name)
@@ -108,19 +146,24 @@ async def _excel_metadata_impl(filepaths: List[str], session_id: str) -> str:
                 file_stat = os.stat(full_path)
                 file_size_mb = round(file_stat.st_size / (1024 * 1024), 2)
                 
+                is_csv = _is_csv_file(full_path)
+
                 # Get sheet names
                 try:
-                    excel_file = pd.ExcelFile(full_path)
-                    sheet_names = excel_file.sheet_names
+                    if is_csv:
+                        sheet_names = ["CSV"]
+                    else:
+                        excel_file = pd.ExcelFile(full_path)
+                        sheet_names = excel_file.sheet_names
                 except Exception as e:
-                    results[filepath] = {"error": f"Error reading Excel file: {str(e)}"}
+                    results[filepath] = {"error": f"Error reading file: {str(e)}"}
                     continue
                 
                 # Analyze each sheet
                 sheets_info = {}
                 for sheet_name in sheet_names:
                     try:
-                        analysis = _analyze_sheet_structure(full_path, sheet_name)
+                        analysis = _analyze_sheet_structure(full_path, None if is_csv else sheet_name)
                         sheets_info[sheet_name] = {
                             "dimensions": analysis["dimensions"],
                             "columns": analysis["columns"]
@@ -132,20 +175,21 @@ async def _excel_metadata_impl(filepaths: List[str], session_id: str) -> str:
                 results[filepath] = {
                     "file_info": {
                         "sheets": sheet_names,
-                        "file_size": f"{file_size_mb}MB"
+                        "file_size": f"{file_size_mb}MB",
+                        "file_type": "csv" if is_csv else "excel"
                     },
                     "sheets": sheets_info
                 }
                 
             except Exception as e:
-                logger.error(f"Excel metadata analysis failed for {filepath}: {e}")
-                results[filepath] = {"error": f"Error analyzing Excel file: {str(e)}"}
+                logger.error(f"Spreadsheet metadata analysis failed for {filepath}: {e}")
+                results[filepath] = {"error": f"Error analyzing file: {str(e)}"}
         
         return json.dumps(results, ensure_ascii=False, indent=2)
         
     except Exception as e:
-        logger.error(f"Excel metadata analysis failed: {e}")
-        return f"Error analyzing Excel file(s): {str(e)}"
+        logger.error(f"Spreadsheet metadata analysis failed: {e}")
+        return f"Error analyzing spreadsheet file(s): {str(e)}"
 
 
 async def _excel_query_impl(filepath: str, sheet: str, query_string: str, session_id: str, header_row: int = 0) -> str:
@@ -156,11 +200,14 @@ async def _excel_query_impl(filepath: str, sheet: str, query_string: str, sessio
         if not os.path.exists(full_path):
             return f"Error: File '{filepath}' not found in session workspace"
         
-        # Read Excel file
+        is_csv = _is_csv_file(full_path)
+
+        # Read Excel/CSV file
         try:
-            df = _read_excel_sheet(full_path, sheet, header_row)
+            df = _read_excel_sheet(full_path, None if is_csv else sheet, header_row)
         except Exception as e:
-            return f"Error reading Excel sheet '{sheet}': {str(e)}"
+            target = "CSV file" if is_csv else f"Excel sheet '{sheet}'"
+            return f"Error reading {target}: {str(e)}"
         
         # Execute query
         try:
@@ -203,8 +250,8 @@ async def _excel_query_impl(filepath: str, sheet: str, query_string: str, sessio
             return f"Error executing code: {str(e)}\nUse 'df' to reference the dataframe and 'context' dict to store results. Example: context['result'] = str(df.head())"
     
     except Exception as e:
-        logger.error(f"Excel query failed: {e}")
-        return f"Error processing Excel query: {str(e)}"
+        logger.error(f"Spreadsheet query failed: {e}")
+        return f"Error processing spreadsheet query: {str(e)}"
 
 
 
@@ -216,8 +263,49 @@ async def _read_excel_impl(filepath: str, sheet: str, coordinates: str, session_
         if not os.path.exists(full_path):
             return f"Error: File '{filepath}' not found in session workspace"
         
+        is_csv = _is_csv_file(full_path)
+
         # Parse coordinates
         try:
+            if is_csv:
+                df = pd.read_csv(full_path, header=None)
+                coordinate_str = coordinates.strip()
+
+                if ':' in coordinate_str and re.match(r'^[A-Za-z]+\d+:[A-Za-z]+\d+$', coordinate_str):
+                    start_cell, end_cell = coordinate_str.split(':')
+                    start_indices = _parse_cell_reference(start_cell)
+                    end_indices = _parse_cell_reference(end_cell)
+                    if not start_indices or not end_indices:
+                        return f"Error: Invalid coordinate format '{coordinates}'. Use formats like 'A1:C5', '1:3', or '1'"
+
+                    start_row, start_col = start_indices
+                    end_row, end_col = end_indices
+                    subset = df.iloc[start_row:end_row+1, start_col:end_col+1].fillna("")
+                    result_rows = ["\t".join(map(str, row.tolist())) for _, row in subset.iterrows()]
+                    result_output = f"CSV range {coordinates}:\n\n" + "\n".join(result_rows)
+
+                elif coordinate_str.isdigit() or (':' in coordinate_str and all(part.isdigit() for part in coordinate_str.split(':'))):
+                    if ':' in coordinate_str:
+                        start_row, end_row = map(int, coordinate_str.split(':'))
+                        subset = df.iloc[start_row-1:end_row].fillna("")
+                        label = f"CSV rows {coordinates}"
+                    else:
+                        row_num = int(coordinate_str)
+                        subset = df.iloc[[row_num-1]].fillna("")
+                        label = f"CSV row {coordinates}"
+                    result_output = f"{label}:\n\n" + subset.to_string(index=False, header=False)
+
+                else:
+                    return f"Error: Invalid coordinate format '{coordinates}'. Use formats like 'A1:C5', '1:3', or '1'"
+
+                # Check token count using universal token checker
+                from services.session_manager import check_token_limit
+                is_within_limit, token_count, error_message = check_token_limit(result_output, max_tokens=7000)
+                if not is_within_limit:
+                    return error_message
+
+                return result_output
+
             if ':' in coordinates:
                 # Range format like A1:C5
                 start_cell, end_cell = coordinates.split(':')
@@ -275,11 +363,11 @@ async def _read_excel_impl(filepath: str, sheet: str, coordinates: str, session_
                 return f"Error: Invalid coordinate format '{coordinates}'. Use formats like 'A1:C5', '1:3', or '1'"
         
         except Exception as e:
-            return f"Error reading Excel coordinates '{coordinates}': {str(e)}"
+            return f"Error reading tabular coordinates '{coordinates}': {str(e)}"
     
     except Exception as e:
-        logger.error(f"Read Excel failed: {e}")
-        return f"Error reading Excel file: {str(e)}"
+        logger.error(f"Read spreadsheet failed: {e}")
+        return f"Error reading spreadsheet file: {str(e)}"
 
 
 @tool
@@ -288,11 +376,12 @@ async def excel_metadata(
     config: Annotated[RunnableConfig, InjectedToolArg]
 ) -> str:
     """
-    Get Excel file metadata showing available sheets and column names.
+    Get spreadsheet metadata showing available sheets and column names.
+    Supports Excel workbooks (.xls, .xlsx) and CSV files (exposed as a single sheet named "CSV").
     Supports batch operations for multiple files.
 
     Args:
-        filepaths: List of paths to Excel files (relative to session workspace)
+        filepaths: List of paths to Excel or CSV files (relative to session workspace)
 
     Returns:
         JSON with sheet names and column names for each file
@@ -310,15 +399,15 @@ async def excel_query(
     config: Annotated[RunnableConfig, InjectedToolArg] = None
 ) -> str:
     """
-    Execute arbitrary pandas code on Excel data. Use excel_metadata first to see available columns.
+    Execute arbitrary pandas code on spreadsheet data (Excel or CSV). Use excel_metadata first to see available columns.
 
     The dataframe is available as 'df', pandas as 'pd', and numpy as 'np'.
     You must write results to the 'context' dictionary using context['key'] = 'value'.
     All context values must be strings.
 
     Args:
-        filepath: Path to the Excel file (relative to session workspace)
-        sheet: Name of the sheet to query
+        filepath: Path to the Excel or CSV file (relative to session workspace)
+        sheet: Name of the sheet to query (use "CSV" for CSV files)
         query_string: Python code to execute. Must write results to context dict.
             Examples:
             - context['summary'] = str(df.describe())
@@ -343,12 +432,14 @@ async def read_excel(
     """
     Manual fallback for specific cell ranges when auto-parsing fails.
 
-    Provides raw cell value inspection and handles merged cells appropriately.
+    Supports Excel workbooks and CSV files. Provides raw cell value inspection,
+    handles merged cells appropriately for Excel, and lets you reference CSV data
+    using Excel-style coordinates (e.g., "A1:C5") or row ranges.
     Critical fallback when excel_metadata auto-detection fails.
 
     Args:
-        filepath: Path to the Excel file (relative to session workspace)
-        sheet: Name of the sheet to read
+        filepath: Path to the Excel or CSV file (relative to session workspace)
+        sheet: Name of the sheet to read (ignored for CSV files)
         coordinates: Cell coordinates (e.g., "A1:C5", "1:3", or "1")
 
     Returns:
