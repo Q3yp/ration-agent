@@ -11,23 +11,23 @@ from services.session_manager import session_manager
 # Configure logging
 logger = logging.getLogger(__name__)
 
-async def create_researcher_agent(session_id: str):
+async def create_researcher_agent():
     """Create specialized researcher agent for swarm"""
     model = get_model_config("researcher")
     search_tools = get_search_tools()
-    
+
     # Create handoff tools to other agents in the swarm
     handoff_to_nutritionist = create_handoff_tool(
         agent_name="nutritionist",
         description="Transfer to nutritionist for expert analysis and decision making"
     )
     handoff_to_coder = create_handoff_tool(
-        agent_name="coder", 
+        agent_name="coder",
         description="Transfer to coder for calculations, data processing, or file operations"
     )
-    
+
     all_tools = search_tools + [handoff_to_nutritionist, handoff_to_coder]
-    
+
     researcher = create_react_agent(
         model=model,
         tools=all_tools,
@@ -36,15 +36,15 @@ async def create_researcher_agent(session_id: str):
         name="researcher",
         checkpointer=True,
     )
-    
+
     return researcher
 
 
-async def create_coder_agent(session_id: str, animal_type: str = "dairy_cow"):
+async def create_coder_agent(animal_type: str = "dairy_cow"):
     """Create specialized coder agent for swarm"""
     model = get_model_config("coder")
-    coder_tools = await get_coder_tools(session_id, animal_type)
-    
+    coder_tools = await get_coder_tools(animal_type)
+
     # Create handoff tools to other agents in the swarm
     handoff_to_nutritionist = create_handoff_tool(
         agent_name="nutritionist",
@@ -54,9 +54,9 @@ async def create_coder_agent(session_id: str, animal_type: str = "dairy_cow"):
         agent_name="researcher",
         description="Transfer to researcher for web research and knowledge base searches"
     )
-    
+
     all_tools = coder_tools + [handoff_to_nutritionist, handoff_to_researcher]
-    
+
     coder = create_react_agent(
         model=model,
         tools=all_tools,
@@ -65,14 +65,14 @@ async def create_coder_agent(session_id: str, animal_type: str = "dairy_cow"):
         name="coder",
         checkpointer=True,
     )
-    
+
     return coder
 
 
-async def create_nutritionist_agent(session_id: str, animal_type: str = "dairy_cow"):
+async def create_nutritionist_agent(animal_type: str = "dairy_cow"):
     """Create nutritionist agent as peer in swarm"""
     model = get_model_config("nutritionist")
-    nutritionist_tools = await get_nutritionist_tools(session_id, animal_type)
+    nutritionist_tools = await get_nutritionist_tools(animal_type)
 
     # Create handoff tools to other agents in the swarm
     handoff_to_researcher = create_handoff_tool(
@@ -98,32 +98,19 @@ async def create_nutritionist_agent(session_id: str, animal_type: str = "dairy_c
     return nutritionist
 
 
-async def create_agent_swarm(session_id: str):
-    """Create the multi-agent swarm for animal nutrition formulation
+async def create_agent_swarm_for_type(animal_type: str):
+    """Create the multi-agent swarm for a specific animal type
 
     Args:
-        session_id: Session identifier
+        animal_type: Animal type (dairy_cow, beef_cow, cat, dog)
 
     Returns:
         Compiled swarm workflow
-
-    Raises:
-        RuntimeError: If session is not found
     """
-    # Fetch session to get animal_type
-    session = await session_manager.get_session(session_id)
-
-    if not session:
-        error_msg = f"Cannot create agent swarm: Session '{session_id}' not found"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    animal_type = session.animal_type
-
-    # Create all agents as peers in the swarm with injected animal_type
-    nutritionist_agent = await create_nutritionist_agent(session_id, animal_type)
-    researcher_agent = await create_researcher_agent(session_id)
-    coder_agent = await create_coder_agent(session_id, animal_type)
+    # Create all agents as peers in the swarm with specified animal_type
+    nutritionist_agent = await create_nutritionist_agent(animal_type)
+    researcher_agent = await create_researcher_agent()
+    coder_agent = await create_coder_agent(animal_type)
 
     # Create the swarm with nutritionist as the default active agent
     swarm = create_swarm(
@@ -133,7 +120,7 @@ async def create_agent_swarm(session_id: str):
         state_schema=FormulationSwarmState
     )
 
-    logger.info(f"Created agent swarm for session {session_id} (animal_type: {animal_type}) with agents: nutritionist (default), researcher, coder")
+    logger.info(f"Created agent swarm for animal_type: {animal_type} with agents: nutritionist (default), researcher, coder")
 
     return swarm
 

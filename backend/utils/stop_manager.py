@@ -97,7 +97,6 @@ class StopManager:
     """Singleton stream lifecycle manager with caching and resumability"""
 
     _instance = None
-    CACHE_EXPIRY_SECONDS = 3600  # 1 hour - keep cache and agent alive after explicit stop
 
     def __new__(cls):
         if cls._instance is None:
@@ -119,17 +118,7 @@ class StopManager:
         # Producer tasks
         self.producer_tasks: Dict[str, asyncio.Task] = {}
 
-        # Cache expiry tracking: session_id -> expiry timestamp
-        # Used to keep cache alive after explicit stop for consistent history/state
-        self.cache_expiry: Dict[str, float] = {}
-
-        # Background cleanup task
-        self._cleanup_task: Optional[asyncio.Task] = None
-
         self._initialized = True
-
-        # Start background cleanup task
-        self._start_cleanup_task()
 
     @classmethod
     def get_instance(cls) -> 'StopManager':
@@ -144,6 +133,7 @@ class StopManager:
         config: Dict[str, Any]
     ):
         """Producer: Background task that caches LangGraph events (no queue communication)"""
+        completed_naturally = False
         try:
             # Token tracking state for this run
             token_state = TokenTrackingState()
@@ -192,6 +182,14 @@ class StopManager:
                 except Exception as e:
                     logger.error(f"STOP_MANAGER: Failed to persist token usage for {session_id}: {e}")
 
+            # Mark as naturally completed (not cancelled)
+            completed_naturally = True
+
+        except asyncio.CancelledError:
+            # Producer was cancelled (manual stop) - preserve cache
+            logger.info(f"STOP_MANAGER: Producer cancelled for session {session_id}, preserving cache")
+            raise
+
         except Exception as e:
             logger.error(f"STOP_MANAGER: Producer error for session {session_id}: {e}")
 
@@ -218,9 +216,16 @@ class StopManager:
             raise
 
         finally:
-            # Producer completes - trigger cleanup after delay to allow final reads
-            await asyncio.sleep(0.5)
-            await self._cleanup_session(session_id)
+            # Only cleanup cache if task completed naturally (not cancelled)
+            if completed_naturally:
+                await asyncio.sleep(0.5)
+                await self._cleanup_session(session_id)
+                logger.info(f"STOP_MANAGER: Natural completion, cache cleared for session {session_id}")
+            else:
+                # Just remove producer task tracking, keep cache
+                if session_id in self.producer_tasks:
+                    self.producer_tasks.pop(session_id)
+                logger.info(f"STOP_MANAGER: Cache preserved for session {session_id}")
 
     async def stream_to_frontend(
         self,

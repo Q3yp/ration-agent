@@ -3,8 +3,9 @@ import json
 import pandas as pd
 import openpyxl
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
-from langchain_core.tools import tool
+from typing import Optional, List, Dict, Any, Union, Annotated
+from langchain_core.tools import tool, InjectedToolArg
+from langchain_core.runnables import RunnableConfig
 from datetime import datetime
 import re
 import logging
@@ -90,7 +91,7 @@ def _analyze_sheet_structure(filepath: str, sheet_name: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-async def excel_metadata_impl(filepaths: List[str], session_id: str) -> str:
+async def _excel_metadata_impl(filepaths: List[str], session_id: str) -> str:
     """Implementation for excel_metadata tool - supports batch operations."""
     try:
         results = {}
@@ -147,7 +148,7 @@ async def excel_metadata_impl(filepaths: List[str], session_id: str) -> str:
         return f"Error analyzing Excel file(s): {str(e)}"
 
 
-async def excel_query_impl(filepath: str, sheet: str, query_string: str, session_id: str, header_row: int = 0) -> str:
+async def _excel_query_impl(filepath: str, sheet: str, query_string: str, session_id: str, header_row: int = 0) -> str:
     """Implementation for excel_query tool."""
     try:
         full_path = await _get_session_file_path(filepath, session_id)
@@ -207,7 +208,7 @@ async def excel_query_impl(filepath: str, sheet: str, query_string: str, session
 
 
 
-async def read_excel_impl(filepath: str, sheet: str, coordinates: str, session_id: str) -> str:
+async def _read_excel_impl(filepath: str, sheet: str, coordinates: str, session_id: str) -> str:
     """Implementation for read_excel tool."""
     try:
         full_path = await _get_session_file_path(filepath, session_id)
@@ -281,83 +282,86 @@ async def read_excel_impl(filepath: str, sheet: str, coordinates: str, session_i
         return f"Error reading Excel file: {str(e)}"
 
 
-def create_excel_metadata_tool(session_id: str):
-    """Create excel_metadata tool bound to a specific session."""
-    @tool
-    async def excel_metadata(filepaths: List[str]) -> str:
-        """
-        Get Excel file metadata showing available sheets and column names.
-        Supports batch operations for multiple files.
+@tool
+async def excel_metadata(
+    filepaths: List[str],
+    config: Annotated[RunnableConfig, InjectedToolArg]
+) -> str:
+    """
+    Get Excel file metadata showing available sheets and column names.
+    Supports batch operations for multiple files.
 
-        Args:
-            filepaths: List of paths to Excel files (relative to session workspace)
+    Args:
+        filepaths: List of paths to Excel files (relative to session workspace)
 
-        Returns:
-            JSON with sheet names and column names for each file
-        """
-        return await excel_metadata_impl(filepaths, session_id)
-    
-    return excel_metadata
-
-
-def create_excel_query_tool(session_id: str):
-    """Create excel_query tool bound to a specific session."""
-    @tool
-    async def excel_query(filepath: str, sheet: str, query_string: str, header_row: int = 0) -> str:
-        """
-        Execute arbitrary pandas code on Excel data. Use excel_metadata first to see available columns.
-        
-        The dataframe is available as 'df', pandas as 'pd', and numpy as 'np'.
-        You must write results to the 'context' dictionary using context['key'] = 'value'.
-        All context values must be strings.
-        
-        Args:
-            filepath: Path to the Excel file (relative to session workspace)
-            sheet: Name of the sheet to query
-            query_string: Python code to execute. Must write results to context dict.
-                Examples:
-                - context['summary'] = str(df.describe())
-                - context['row_count'] = str(len(df))
-                - filtered = df[df['column'] > 5]; context['filtered'] = filtered.to_string()
-            header_row: Row number to use as column headers (default: 0)
-            
-        Returns:
-            Formatted results from context dictionary, or token limit message if exceeded. The limit is 7000 token.
-        """
-        return await excel_query_impl(filepath, sheet, query_string, session_id, header_row)
-    
-    return excel_query
+    Returns:
+        JSON with sheet names and column names for each file
+    """
+    session_id = config["configurable"]["thread_id"]
+    return await _excel_metadata_impl(filepaths, session_id)
 
 
+@tool
+async def excel_query(
+    filepath: str,
+    sheet: str,
+    query_string: str,
+    header_row: int = 0,
+    config: Annotated[RunnableConfig, InjectedToolArg] = None
+) -> str:
+    """
+    Execute arbitrary pandas code on Excel data. Use excel_metadata first to see available columns.
+
+    The dataframe is available as 'df', pandas as 'pd', and numpy as 'np'.
+    You must write results to the 'context' dictionary using context['key'] = 'value'.
+    All context values must be strings.
+
+    Args:
+        filepath: Path to the Excel file (relative to session workspace)
+        sheet: Name of the sheet to query
+        query_string: Python code to execute. Must write results to context dict.
+            Examples:
+            - context['summary'] = str(df.describe())
+            - context['row_count'] = str(len(df))
+            - filtered = df[df['column'] > 5]; context['filtered'] = filtered.to_string()
+        header_row: Row number to use as column headers (default: 0)
+
+    Returns:
+        Formatted results from context dictionary, or token limit message if exceeded. The limit is 7000 token.
+    """
+    session_id = config["configurable"]["thread_id"]
+    return await _excel_query_impl(filepath, sheet, query_string, session_id, header_row)
 
 
-def create_read_excel_tool(session_id: str):
-    """Create read_excel tool bound to a specific session."""
-    @tool
-    async def read_excel(filepath: str, sheet: str, coordinates: str) -> str:
-        """
-        Manual fallback for specific cell ranges when auto-parsing fails.
-        
-        Provides raw cell value inspection and handles merged cells appropriately.
-        Critical fallback when excel_metadata auto-detection fails.
-        
-        Args:
-            filepath: Path to the Excel file (relative to session workspace)
-            sheet: Name of the sheet to read
-            coordinates: Cell coordinates (e.g., "A1:C5", "1:3", or "1")
-        
-        Returns:
-            Raw cell values from the specified coordinates
-        """
-        return await read_excel_impl(filepath, sheet, coordinates, session_id)
-    
-    return read_excel
+@tool
+async def read_excel(
+    filepath: str,
+    sheet: str,
+    coordinates: str,
+    config: Annotated[RunnableConfig, InjectedToolArg]
+) -> str:
+    """
+    Manual fallback for specific cell ranges when auto-parsing fails.
+
+    Provides raw cell value inspection and handles merged cells appropriately.
+    Critical fallback when excel_metadata auto-detection fails.
+
+    Args:
+        filepath: Path to the Excel file (relative to session workspace)
+        sheet: Name of the sheet to read
+        coordinates: Cell coordinates (e.g., "A1:C5", "1:3", or "1")
+
+    Returns:
+        Raw cell values from the specified coordinates
+    """
+    session_id = config["configurable"]["thread_id"]
+    return await _read_excel_impl(filepath, sheet, coordinates, session_id)
 
 
-async def get_excel_tools(session_id: str):
-    """Get all Excel tools for a specific session."""
+def get_excel_tools():
+    """Get all Excel tools."""
     return [
-        create_excel_metadata_tool(session_id),
-        create_excel_query_tool(session_id),
-        create_read_excel_tool(session_id)
+        excel_metadata,
+        excel_query,
+        read_excel
     ]

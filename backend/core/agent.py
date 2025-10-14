@@ -1,6 +1,6 @@
 import os
 import asyncio
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Dict, Any
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from langgraph_swarm import SwarmState
@@ -140,32 +140,58 @@ class SharedConnectionManager:
 _connection_manager = SharedConnectionManager()
 
 
-async def create_agent_for_session(session_id: str):
-    """Create a new agent for a session using LangGraph Swarm pattern"""
-    
-    # Get shared pool and store, create individual checkpointer for this session
-    pool = await _connection_manager.get_shared_pool()
-    store = await _connection_manager.get_shared_store()
-    checkpointer = AsyncPostgresSaver(pool)
-    
-    # Import swarm creation function from nodes module
-    from agents.nodes import create_agent_swarm
-    
-    # Create the swarm workflow
-    swarm_workflow = await create_agent_swarm(session_id)
-    
-    # Compile with both checkpointer and store
-    # Note: recursion_limit is set during invoke/stream, not compile
-    agent = swarm_workflow.compile(checkpointer=checkpointer, store=store)
-    
-    return agent
+class AgentRegistry:
+    """Registry of reusable agents per animal type"""
+
+    def __init__(self):
+        self._agents: Dict[str, Any] = {}  # {animal_type: compiled_graph}
+        self._lock = asyncio.Lock()
+
+    async def initialize_all_agents(self):
+        """Initialize all 4 animal type agents at startup"""
+        logger.info("Initializing all agent types...")
+        for animal_type in ["dairy_cow", "beef_cow", "cat", "dog"]:
+            await self.get_or_create_agent(animal_type)
+        logger.info(f"✓ Initialized {len(self._agents)} agent types")
+
+    async def get_or_create_agent(self, animal_type: str):
+        """Get cached agent or create new one for the animal type"""
+        if animal_type not in self._agents:
+            async with self._lock:
+                # Double-check after acquiring lock
+                if animal_type not in self._agents:
+                    logger.info(f"Creating new agent for animal_type: {animal_type}")
+
+                    # Get shared pool and store
+                    pool = await _connection_manager.get_shared_pool()
+                    store = await _connection_manager.get_shared_store()
+                    checkpointer = AsyncPostgresSaver(pool)
+
+                    # Import swarm creation function from nodes module
+                    from agents.nodes import create_agent_swarm_for_type
+
+                    # Create the swarm workflow for this animal type
+                    swarm_workflow = await create_agent_swarm_for_type(animal_type)
+
+                    # Compile with checkpointer and store
+                    self._agents[animal_type] = swarm_workflow.compile(
+                        checkpointer=checkpointer,
+                        store=store
+                    )
+                    logger.info(f"✓ Agent created for {animal_type}")
+
+        return self._agents[animal_type]
+
+
+# Global agent registry
+agent_registry = AgentRegistry()
 
 
 async def cleanup_agent_session(session_id: str):
-    """Clean up agent resources for a session (no per-session cleanup needed with shared pool)"""
-    # With shared connection pool, no per-session cleanup needed
+    """Clean up agent resources for a session (no-op with agent registry pattern)"""
+    # With agent registry, agents are reused across sessions
     # Session state is managed by LangGraph using session_id as thread_id
-    logger.debug(f"Agent cleanup for session {session_id} - using shared pool, no action needed")
+    logger.debug(f"Agent cleanup for session {session_id} - using agent registry, no action needed")
     pass
 
 

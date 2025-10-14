@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 from typing import Optional, List, Annotated
 from datetime import datetime
-from langchain_core.tools import tool, InjectedToolCallId
+from langchain_core.tools import tool, InjectedToolCallId, InjectedToolArg
 from langchain_core.messages import ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 from langchain_community.agent_toolkits import FileManagementToolkit
@@ -138,21 +139,28 @@ def sanitize_html_content(html_content: str) -> str:
         return html.escape(html_content)
 
 
-async def bash_command(command: str, session_id: str) -> str:
+@tool
+async def bash_command(
+    command: str,
+    config: Annotated[RunnableConfig, InjectedToolArg]
+) -> str:
     """Execute a bash command in the session workspace."""
     try:
         # Import here to avoid circular imports
         from services.session_manager import session_manager
-        
+
+        # Extract session_id from config
+        session_id = config["configurable"]["thread_id"]
+
         # Get session context
         session = await session_manager.get_session(session_id)
         if not session:
             return f"Error: Session '{session_id}' not found"
-        
+
         # Ensure workspace exists and get path
         session.ensure_workspace_exists()
         session_workspace = session.workspace_path
-        
+
         result = subprocess.run(
             command,
             shell=True,
@@ -162,7 +170,7 @@ async def bash_command(command: str, session_id: str) -> str:
             text=True,
             timeout=30  # 30 second timeout
         )
-        
+
         output = ""
         if result.stdout:
             output += f"STDOUT:\n{result.stdout}"
@@ -170,57 +178,52 @@ async def bash_command(command: str, session_id: str) -> str:
             output += f"\nSTDERR:\n{result.stderr}"
         if not output:
             output = "Command executed successfully with no output."
-        
+
         output += f"\nReturn code: {result.returncode}"
         return output
-        
+
     except subprocess.TimeoutExpired:
         return "Error: Command timed out after 30 seconds"
     except Exception as e:
         return f"Error executing command: {str(e)}"
 
 
-def create_bash_command_tool(session_id: str):
-    """Create a bash command tool bound to a specific session"""
-    @tool
-    async def bash_command_for_session(command: str) -> str:
-        """Execute a bash command in the session workspace."""
-        return await bash_command(command, session_id)
-    
-    return bash_command_for_session
-
-
-# Artifact tools
-async def create_html_artifact(
-    html_content: str, 
-    title: str, 
+@tool
+async def create_artifact(
+    html_content: str,
+    title: str,
     description: Optional[str] = None,
-    session_id: str = None
+    config: Annotated[RunnableConfig, InjectedToolArg] = None
 ) -> str:
     """
     Create an HTML artifact that can be displayed in the frontend.
-    
+
+    Use this tool when you want to create interactive HTML content, charts,
+    visualizations, or any other HTML-based content that the user can interact with.
+
     Args:
-        html_content: The HTML content to save as an artifact
-        title: A title for the artifact
+        html_content: The HTML content to save as an artifact (can include CSS and JavaScript)
+        title: A descriptive title for the artifact
         description: Optional description of what the artifact contains
-        session_id: Session ID for file storage (injected by tool creation)
-    
+
     Returns:
-        String with artifact info for the agent to reference
+        Confirmation message with artifact details
     """
     try:
         # Import here to avoid circular imports
         from services.session_manager import session_manager
-        
+
+        # Extract session_id from config
+        session_id = config["configurable"]["thread_id"]
+
         # Get session context
         session = await session_manager.get_session(session_id)
         if not session:
             return f"Error: Session '{session_id}' not found"
-        
+
         # Ensure workspace exists
         session.ensure_workspace_exists()
-        
+
         # Use HTML content directly without sanitization
         # Wrap content in a complete HTML document if it's not already
         if not html_content.strip().lower().startswith('<!doctype') and not html_content.strip().lower().startswith('<html'):
@@ -251,9 +254,9 @@ async def create_html_artifact(
         else:
             # If it's already a complete HTML document, use as-is
             full_html = html_content
-        
+
         logger.info(f"Created HTML artifact for session {session_id}: {title}")
-        
+
         # Return structured data that includes the HTML content for frontend display
         # No file saving needed - content is embedded in tool result and persisted via LangGraph checkpointing
         artifact_data = {
@@ -261,67 +264,26 @@ async def create_html_artifact(
             'description': description or '',
             'html_content': full_html
         }
-        
+
         # Use compact JSON serialization without newlines to avoid parsing issues
         artifact_json = json.dumps(artifact_data, ensure_ascii=False, separators=(',', ':'))
-        
+
         return f"✅ HTML artifact created successfully!\n- Title: {title}\n- Description: {description or 'No description'}\n\n[ARTIFACT_DATA]\n{artifact_json}\n[/ARTIFACT_DATA]\n\nThe artifact is now available for display in the frontend."
-        
+
     except Exception as e:
         logger.error(f"Failed to create HTML artifact: {e}")
         return f"❌ Error creating HTML artifact: {str(e)}"
 
 
-def create_artifact_tool(session_id: str):
-    """Create an artifact tool bound to a specific session"""
-    
-    @tool
-    async def create_artifact(
-        html_content: str, 
-        title: str, 
-        description: Optional[str] = None
-    ) -> str:
-        """
-        Create an HTML artifact that can be displayed in the frontend.
-        
-        Use this tool when you want to create interactive HTML content, charts, 
-        visualizations, or any other HTML-based content that the user can interact with.
-        
-        Args:
-            html_content: The HTML content to save as an artifact (can include CSS and JavaScript)
-            title: A descriptive title for the artifact
-            description: Optional description of what the artifact contains
-        
-        Returns:
-            Confirmation message with artifact details
-        """
-        return await create_html_artifact(html_content, title, description, session_id)
-    
-    return create_artifact
 
 
-
-
-async def get_file_management_tools(session_id: str):
-    """Get file management tools for a specific session."""
-    # Import here to avoid circular imports
-    from services.session_manager import session_manager
-    
-    # Get session context
-    session = await session_manager.get_session(session_id)
-    if not session:
-        raise RuntimeError(f"Session '{session_id}' not found")
-    
-    # Ensure workspace exists
-    session.ensure_workspace_exists()
-    
-    # Create FileManagementToolkit with session-specific root directory
-    file_toolkit = FileManagementToolkit(
-        root_dir=session.workspace_path,
-        selected_tools=["write_file", "list_directory"]
-    )
-    
-    return file_toolkit.get_tools()
+def get_file_management_tools():
+    """Get file management tools (session context extracted from config at runtime)."""
+    # Note: FileManagementToolkit tools don't support InjectedToolArg yet
+    # They will operate in the agent's working directory, which is set by bash_command
+    # For now, we'll return empty list and rely on bash for file operations
+    # TODO: Implement custom write_file and list_directory tools with InjectedToolArg
+    return []
 
 
 # Search tools
@@ -538,46 +500,23 @@ def get_search_tools():
 
 
 
-async def get_nutritionist_tools(session_id: str, animal_type: str = "dairy_cow"):
+async def get_nutritionist_tools(animal_type: str = "dairy_cow"):
     """Get nutritionist-specific tools"""
     # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
-    formulation_tools = create_formulation_tools(session_id, animal_type)
+    formulation_tools = create_formulation_tools(animal_type)
 
     return formulation_tools
 
-async def get_coder_tools(session_id: str, animal_type: str = "dairy_cow"):
+async def get_coder_tools(animal_type: str = "dairy_cow"):
     """Get all available tools for a session (code worker tools)."""
-    # Create session-bound bash tool
-    session_bash_tool = create_bash_command_tool(session_id)
+    # Get file management tools
+    file_tools = get_file_management_tools()
 
-    # Get file management tools for the session
-    file_tools = await get_file_management_tools(session_id)
-
-    # Create session-bound artifact tool
-    artifact_tool = create_artifact_tool(session_id)
-
-    # Get Excel tools for the session
-    excel_tools = await get_excel_tools(session_id)
+    # Get Excel tools
+    excel_tools = get_excel_tools()
 
     # Get specific formulation tools for coder (add_feed, check_feeds, list_feed_bases only)
-    all_formulation_tools = create_formulation_tools(session_id, animal_type)
+    all_formulation_tools = create_formulation_tools(animal_type)
     feed_tools = [tool for tool in all_formulation_tools if tool.name in ['add_feed', 'check_feeds', 'list_feed_bases']]
 
-    return [session_bash_tool, artifact_tool] + file_tools + excel_tools + feed_tools
-
-
-async def get_tools(session_id: str):
-    """Get all available tools for a session (code worker tools)."""
-    # Create session-bound bash tool
-    session_bash_tool = create_bash_command_tool(session_id)
-
-    # Get file management tools for the session
-    file_tools = await get_file_management_tools(session_id)
-
-    # Create session-bound artifact tool
-    artifact_tool = create_artifact_tool(session_id)
-
-    # Get Excel tools for the session
-    excel_tools = await get_excel_tools(session_id)
-
-    return [session_bash_tool, artifact_tool] + file_tools + excel_tools
+    return [bash_command, create_artifact] + file_tools + excel_tools + feed_tools

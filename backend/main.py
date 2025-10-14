@@ -46,7 +46,17 @@ async def lifespan(app: FastAPI):
         await session_manager.initialize()
     except Exception as e:
         raise
-    
+
+    # Initialize all agent types (eager loading for instant first response)
+    try:
+        from core.agent import agent_registry
+        await agent_registry.initialize_all_agents()
+        print("✓ Initialized 4 agent types (dairy_cow, beef_cow, cat, dog)")
+    except Exception as e:
+        print(f"Warning: Failed to initialize agents: {e}")
+        print("Agents will be created on-demand when first accessed")
+        # Non-fatal - agents will be created on-demand
+
     yield
     
     # Clean up shared resources

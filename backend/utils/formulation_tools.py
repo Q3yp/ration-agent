@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional, Annotated
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
-from langchain_core.tools import tool, InjectedToolCallId
+from langchain_core.tools import tool, InjectedToolCallId, InjectedToolArg
 from langchain_core.messages import ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import InjectedState
@@ -46,11 +46,10 @@ def sanitize_feed_name(name: str) -> str:
     return sanitized
 
 
-def create_formulation_tools(session_id: str = None, animal_type: str = "dairy_cow"):
+def create_formulation_tools(animal_type: str = "dairy_cow"):
     """Create formulation tools that operate on LangGraph state.
 
     Args:
-        session_id: Session ID for workspace path resolution (required for export_formulation)
         animal_type: Animal type for feedbase filtering (dairy_cow, beef_cow, cat, dog)
     """
     
@@ -700,16 +699,17 @@ def create_formulation_tools(session_id: str = None, animal_type: str = "dairy_c
                     }
                 )
             
-            # Get session workspace path
-            if session_id:
-                try:
+            # Get session workspace path from config
+            try:
+                session_id = config["configurable"].get("thread_id")
+                if session_id:
                     from services.session_manager import session_manager
                     workspace_path = await session_manager.get_session_workspace_path(session_id)
-                except Exception as e:
-                    logger.error(f"Failed to get session workspace: {e}")
+                else:
+                    logger.warning("No session_id in config, using current directory")
                     workspace_path = Path(".")
-            else:
-                logger.warning("No session_id provided to export_formulation, using current directory")
+            except Exception as e:
+                logger.error(f"Failed to get session workspace: {e}")
                 workspace_path = Path(".")
             
             # Generate filename if not provided

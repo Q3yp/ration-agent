@@ -453,7 +453,7 @@ async def stream_chat(
         asyncio.create_task(generate_title_for_session(session_id, user_message, title_queue))
 
     try:
-        session_agent = await session_manager.get_session_agent(session_id)
+        session_agent = await session_manager.get_agent_for_session(session_id)
     except RuntimeError as e:
         logger.error(f"Failed to get agent for session {session_id}: {e}")
         raise HTTPException(status_code=503, detail=str(e))

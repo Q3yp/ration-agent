@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Optional, Set, List, Any
 from dataclasses import dataclass, field
 from psycopg_pool import AsyncConnectionPool
-from core.agent import create_agent_for_session, cleanup_agent_session
+from core.agent import cleanup_agent_session
 from utils.message_parser import UnifiedMessageParser
 import tiktoken
 
@@ -115,9 +115,7 @@ class SessionManager:
     def __init__(self):
         self._session_info: Dict[str, SessionInfo] = {}  # Lightweight cache for display
         self._db_pool: Optional[AsyncConnectionPool] = None
-        self._session_agents: Dict[str, Any] = {}  # Cache agents per session
         self._session_parsers: Dict[str, UnifiedMessageParser] = {}  # Cache parsers per session
-        self._agent_creation_locks: Dict[str, asyncio.Lock] = {}  # Prevent concurrent agent creation
         self._sessions: Dict[str, SessionContext] = {}  # In-memory session cache
         self._active_sessions: Set[str] = set()  # Set of active session IDs
     
@@ -429,32 +427,17 @@ class SessionManager:
             logger.error(f"Failed to get session {session_id} from database: {e}")
             return None
     
-    async def get_session_agent(self, session_id: str):
-        """Get or create agent for session (session must exist) - thread-safe"""
+    async def get_agent_for_session(self, session_id: str):
+        """Get reusable agent based on session's animal type"""
         session = await self.get_session_from_db(session_id)
         if not session:
             raise RuntimeError(f"Session '{session_id}' not found")
-        
-        # Return cached agent if it exists
-        if session_id in self._session_agents:
-            logger.debug(f"Reusing cached agent for session {session_id}")
-            return self._session_agents[session_id]
-        
-        # Ensure only one agent creation per session using lock
-        if session_id not in self._agent_creation_locks:
-            self._agent_creation_locks[session_id] = asyncio.Lock()
-        
-        async with self._agent_creation_locks[session_id]:
-            # Double-check after acquiring lock
-            if session_id in self._session_agents:
-                logger.debug(f"Agent created while waiting for lock for session {session_id}")
-                return self._session_agents[session_id]
-            
-            # Create new agent and cache it
-            logger.info(f"Creating new agent for session {session_id}")
-            agent = await create_agent_for_session(session_id)
-            self._session_agents[session_id] = agent
-            return agent
+
+        # Import here to avoid circular import
+        from core.agent import agent_registry
+
+        # Get agent for this animal type (creates on first access, reuses thereafter)
+        return await agent_registry.get_or_create_agent(session.animal_type)
     
     def get_session_parser(self, session_id: str) -> UnifiedMessageParser:
         """Get or create message parser for session - thread-safe"""
@@ -634,18 +617,10 @@ class SessionManager:
         # Deactivate in database
         await self.deactivate_session(session_id)
 
-        # Clean up cached agent, parser, and creation lock
-        if session_id in self._session_agents:
-            del self._session_agents[session_id]
-            logger.debug(f"Cleaned up cached agent for session {session_id}")
-        
+        # Clean up cached parser
         if session_id in self._session_parsers:
             del self._session_parsers[session_id]
             logger.debug(f"Cleaned up cached parser for session {session_id}")
-        
-        # Clean up agent creation lock
-        if session_id in self._agent_creation_locks:
-            del self._agent_creation_locks[session_id]
 
         # Remove from memory cache if present
         if session_id in self._sessions:
@@ -669,18 +644,10 @@ class SessionManager:
         # Mark as deleted in database (soft delete)
         await self.mark_session_deleted(session_id)
 
-        # Clean up cached agent, parser, and creation lock
-        if session_id in self._session_agents:
-            del self._session_agents[session_id]
-            logger.debug(f"Cleaned up cached agent for session {session_id}")
-        
+        # Clean up cached parser
         if session_id in self._session_parsers:
             del self._session_parsers[session_id]
             logger.debug(f"Cleaned up cached parser for session {session_id}")
-        
-        # Clean up agent creation lock
-        if session_id in self._agent_creation_locks:
-            del self._agent_creation_locks[session_id]
 
         # Remove from memory cache if present
         if session_id in self._sessions:
