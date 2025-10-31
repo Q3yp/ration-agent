@@ -19,7 +19,7 @@ export default function FeedbasesPage() {
           <header className="py-4 px-6 border-b">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-4">
-                <Link href="/">
+                <Link href="/chat">
                   <Button variant="outline" size="sm">
                     <ArrowLeft className="h-4 w-4 mr-1" />
                     返回对话

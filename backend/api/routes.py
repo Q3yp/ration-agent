@@ -110,8 +110,12 @@ async def create_session(
                     detail=f"User does not have permission for animal type '{request.animal_type}'"
                 )
 
+        # Generate session_id on backend (UUID)
+        import uuid
+        session_id = str(uuid.uuid4())
+
         session_context = await session_manager.create_session(
-            request.session_id,
+            session_id,
             str(current_user.id),
             request.animal_type
         )
@@ -120,7 +124,7 @@ async def create_session(
             "session_id": session_context.session_id,
             "workspace_path": session_context.workspace_path,
             "created_at": session_context.created_at.isoformat(),
-            "message": f"Session '{request.session_id}' created successfully",
+            "message": f"Session '{session_id}' created successfully",
             "title": session_context.title,
             "animal_type": session_context.animal_type
         }
@@ -672,28 +676,68 @@ async def download_file(
 # Feedbase Management Endpoints
 
 @router.get("/feedbases/list", response_model=FeedbaseListResponse)
-async def list_feedbases(current_user: User = Depends(current_active_user)):
-    """List all feedbases for the current user"""
+async def list_feedbases(
+    current_user: User = Depends(current_active_user),
+    animal_type: str = None
+):
+    """
+    List all feedbases for the current user.
+    Includes both user-created feedbases and system default feedbases.
+
+    Args:
+        animal_type: Optional filter by animal type (dairy_cow, beef_cow, cat, dog)
+    """
     try:
         from core.agent import _connection_manager
 
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
-        namespace = ("feedbases", user_id)
 
-        # Get all feedbases for this user
-        feedbase_entries = await store.asearch(namespace)
+        # Get all user feedbases
+        user_namespace = ("feedbases", user_id)
+        feedbase_entries = await store.asearch(user_namespace)
         feedbase_names = []
 
         for entry in feedbase_entries:
             # Extract feedbase name from namespace tuple
             if len(entry.namespace) >= 3:
                 feedbase_name = entry.namespace[2]  # ("feedbases", user_id, feedbase_name)
+
+                # Filter by animal_type if specified
+                if animal_type:
+                    feedbase_data = entry.value
+                    feedbase_animal_type = feedbase_data.get("animal_type", "dairy_cow")
+                    if feedbase_animal_type != animal_type:
+                        continue
+
                 if feedbase_name not in feedbase_names:
                     feedbase_names.append(feedbase_name)
 
-        return FeedbaseListResponse(feedbases=sorted(feedbase_names))
+        # Add system default feedbases
+        system_feedbase_names = ["default_dairy_cow", "default_beef_cow", "default_cat", "default_dog"]
+
+        for system_name in system_feedbase_names:
+            system_namespace = ("system_feedbases", system_name)
+            system_feedbase = await store.aget(system_namespace, "data")
+
+            # Only add if feedbase exists
+            if system_feedbase:
+                feedbase_animal_type = system_feedbase.value.get("animal_type")
+
+                # Filter by animal_type if specified
+                if animal_type:
+                    if feedbase_animal_type == animal_type:
+                        feedbase_names.append(system_name)
+                else:
+                    feedbase_names.append(system_name)
+
+        # Sort feedbases: system defaults first, then user feedbases alphabetically
+        system_defaults = sorted([name for name in feedbase_names if name.startswith("default_")])
+        user_feedbases = sorted([name for name in feedbase_names if not name.startswith("default_")])
+        sorted_feedbases = system_defaults + user_feedbases
+
+        return FeedbaseListResponse(feedbases=sorted_feedbases)
 
     except Exception as e:
         logger.error(f"Error listing feedbases for user {current_user.id}: {str(e)}")
@@ -701,18 +745,34 @@ async def list_feedbases(current_user: User = Depends(current_active_user)):
 
 
 @router.get("/feedbases/{feedbase_name}", response_model=FeedbaseResponse)
-async def get_feedbase(feedbase_name: str, current_user: User = Depends(current_active_user)):
-    """Get feedbase details by name"""
+async def get_feedbase(
+    feedbase_name: str,
+    current_user: User = Depends(current_active_user),
+    animal_type: str = None
+):
+    """
+    Get feedbase details by name.
+    Supports both user feedbases and system default feedbases.
+
+    Args:
+        feedbase_name: Name of the feedbase
+        animal_type: Required when accessing system 'default' feedbase
+    """
     try:
         from core.agent import _connection_manager
 
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
-        namespace = ("feedbases", user_id, feedbase_name)
 
-        # Get feedbase data
+        # Try user feedbase first
+        namespace = ("feedbases", user_id, feedbase_name)
         result = await store.aget(namespace, "data")
+
+        # If not found, try system feedbase
+        if not result and feedbase_name.startswith("default_"):
+            system_namespace = ("system_feedbases", feedbase_name)
+            result = await store.aget(system_namespace, "data")
 
         if not result:
             raise HTTPException(status_code=404, detail=f"Feedbase '{feedbase_name}' not found")
@@ -734,8 +794,15 @@ async def update_feedbase(
     request: FeedbaseUpdateRequest,
     current_user: User = Depends(current_active_user)
 ):
-    """Update or create a feedbase"""
+    """Update or create a feedbase. System default feedbases cannot be modified."""
     try:
+        # Block editing of system default feedbases
+        if feedbase_name.startswith("default_"):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot modify system default feedbase. Create a new feedbase with a different name."
+            )
+
         from core.agent import _connection_manager
 
         # Get shared store instance
@@ -750,6 +817,8 @@ async def update_feedbase(
         logger.info(f"Updated feedbase {feedbase_name} for user {current_user.id}")
         return FeedbaseResponse(name=feedbase_name, data=request.data)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating feedbase {feedbase_name} for user {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update feedbase: {str(e)}")
@@ -757,8 +826,15 @@ async def update_feedbase(
 
 @router.delete("/feedbases/{feedbase_name}", response_model=FeedbaseDeleteResponse)
 async def delete_feedbase(feedbase_name: str, current_user: User = Depends(current_active_user)):
-    """Delete a feedbase"""
+    """Delete a feedbase. System default feedbases cannot be deleted."""
     try:
+        # Block deletion of system default feedbases
+        if feedbase_name.startswith("default_"):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot delete system default feedbase."
+            )
+
         from core.agent import _connection_manager
 
         # Get shared store instance
@@ -796,10 +872,16 @@ async def export_feedbase(feedbase_name: str, current_user: User = Depends(curre
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
-        namespace = ("feedbases", user_id, feedbase_name)
 
-        # Get feedbase data
+        # Try user feedbase first
+        namespace = ("feedbases", user_id, feedbase_name)
         result = await store.aget(namespace, "data")
+
+        # If not found, try system feedbase
+        if not result and feedbase_name.startswith("default_"):
+            system_namespace = ("system_feedbases", feedbase_name)
+            result = await store.aget(system_namespace, "data")
+
         if not result:
             raise HTTPException(status_code=404, detail=f"Feedbase '{feedbase_name}' not found")
 

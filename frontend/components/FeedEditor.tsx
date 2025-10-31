@@ -11,9 +11,10 @@ interface FeedEditorProps {
   feedName: string
   feedData: FeedData
   onChange: (name: string, data: FeedData) => void
+  readOnly?: boolean
 }
 
-export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorProps) {
+export default function FeedEditor({ feedName, feedData, onChange, readOnly = false }: FeedEditorProps) {
   const [name, setName] = useState(feedName)
   const [dryMatterPercent, setDryMatterPercent] = useState(feedData.dm_percent.toString())
   const [costPerKg, setCostPerKg] = useState(feedData.cost_per_kg.toString())
@@ -97,6 +98,8 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
             <label className="block text-sm font-medium mb-2 text-foreground">饲料名称</label>
             <Input
               value={name}
+              disabled={readOnly}
+              readOnly={readOnly}
               onChange={(e) => {
                 const newValue = e.target.value
                 setName(newValue)
@@ -113,6 +116,8 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
               <Input
                 type="number"
                 value={dryMatterPercent}
+                disabled={readOnly}
+                readOnly={readOnly}
                 onChange={(e) => {
                   const newValue = e.target.value
                   setDryMatterPercent(newValue)
@@ -132,6 +137,8 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
               <Input
                 type="number"
                 value={costPerKg}
+                disabled={readOnly}
+                readOnly={readOnly}
                 onChange={(e) => {
                   const newValue = e.target.value
                   setCostPerKg(newValue)
@@ -177,6 +184,8 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
                     <Input
                       type="number"
                       value={value}
+                      disabled={readOnly}
+                      readOnly={readOnly}
                       onChange={(e) => {
                         const newValue = e.target.value
                         const updatedNutrients = { ...nutrients, [key]: newValue }
@@ -190,15 +199,17 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
                       className="h-9 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-9 w-9 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                    onClick={() => removeNutrient(key)}
-                    title={`删除 ${key}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {!readOnly && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 w-9 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => removeNutrient(key)}
+                      title={`删除 ${key}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </Card>
             ))}
@@ -206,6 +217,7 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
         )}
 
         {/* Add custom nutrient */}
+        {!readOnly && (
         <Card className="p-3 bg-muted/30">
           <div className="flex gap-2">
             <Input
@@ -229,6 +241,7 @@ export default function FeedEditor({ feedName, feedData, onChange }: FeedEditorP
             </Button>
           </div>
         </Card>
+        )}
       </div>
     </div>
   )

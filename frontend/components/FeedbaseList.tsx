@@ -67,7 +67,10 @@ export default function FeedbaseList({
   return (
     <div className="h-full overflow-auto">
       <div className="space-y-3 p-1">
-        {feedbases.map((feedbase) => (
+        {feedbases.map((feedbase) => {
+          const isSystemDefault = feedbase.name.startsWith('default_')
+
+          return (
           <Card
             key={feedbase.name}
             className={`transition-all duration-200 hover:shadow-sm ${
@@ -83,8 +86,13 @@ export default function FeedbaseList({
                   onClick={() => onSelect(feedbase.name)}
                   title={feedbase.name}
                 >
-                  <div className="font-medium text-foreground group-hover:text-primary transition-colors mb-2">
+                  <div className="font-medium text-foreground group-hover:text-primary transition-colors mb-2 flex items-center gap-2">
                     {feedbase.name}
+                    {isSystemDefault && (
+                      <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-normal">
+                        系统
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-base">
@@ -95,7 +103,7 @@ export default function FeedbaseList({
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    点击编辑饲料库
+                    {isSystemDefault ? '点击查看（只读）' : '点击编辑饲料库'}
                   </div>
                 </button>
 
@@ -118,20 +126,25 @@ export default function FeedbaseList({
                       <Download className="h-4 w-4 mr-2" />
                       导出
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => onDelete(feedbase.name)}
-                      className="text-red-600 focus:text-red-700 text-sm"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      删除
-                    </DropdownMenuItem>
+                    {!isSystemDefault && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => onDelete(feedbase.name)}
+                          className="text-red-600 focus:text-red-700 text-sm"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          删除
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
             </CardContent>
           </Card>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

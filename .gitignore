@@ -96,6 +96,10 @@ backend/files/
 test_connection.py
 simple_test.py
 
+# Test cases and test scripts
+backend/test_cases/
+backend/test_beef_scenarios.py
+test.*
 # Database
 *.db
 *.sqlite

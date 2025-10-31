@@ -282,9 +282,9 @@ export default function UserGuide() {
                 <ul className="space-y-2 text-sm text-muted-foreground ml-7">
                   <li>• 奶牛：NRC 2021 标准</li>
                   <li>• 肉牛：NEm/NEg 系统</li>
-                  <li>• 猫：AAFCO 标准</li>
-                  <li>• 狗：全生命周期营养</li>
-                </ul>
+                  <li>• 猫：FEDIAF 标准</li>
+                  <li>• 狗：FEDIAF 全生命周期营养</li>
+               </ul>
               </div>
 
               <div className="space-y-3">

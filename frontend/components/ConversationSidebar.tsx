@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, MessageCircle, Loader2, TrashIcon } from 'lucide-react'
 import { Session, AnimalType } from '@/types/chat'
-import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -71,16 +70,14 @@ export default function ConversationSidebar({
   }
 
   const createNewSession = async (animalType: AnimalType) => {
-    const newSessionId = uuidv4()
     try {
       const response = await httpClient.postJson(`/sessions/create`, {
-        session_id: newSessionId,
         animal_type: animalType
       })
 
-      // Add new session to local state instead of refetching all sessions
+      // Backend generates session_id, use it from response
       const newSession: Session = {
-        session_id: newSessionId,
+        session_id: response.session_id,
         title: '新对话',
         created_at: new Date().toISOString(),
         animal_type: response.animal_type
@@ -88,8 +85,8 @@ export default function ConversationSidebar({
       setSessions(prev => [newSession, ...prev])
 
       setShowAnimalTypeSelector(false)
-      onSessionSelect(newSessionId)
-      onNewSession(newSessionId)
+      onSessionSelect(response.session_id)
+      onNewSession(response.session_id)
     } catch (error) {
       console.error('Error creating session:', error)
       alert('创建新对话失败，请重试')

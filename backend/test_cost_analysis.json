@@ -1,0 +1,304 @@
+{
+  "complete_tests": [
+    {
+      "scenario": "场景11_断奶犊牛生长期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景11_断奶犊牛生长期",
+      "input_tokens": 75778,
+      "output_tokens": 6844,
+      "total_tokens": 82622,
+      "cost": 0.109998
+    },
+    {
+      "scenario": "场景07_育肥中期生长期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景07_育肥中期生长期",
+      "input_tokens": 447645,
+      "output_tokens": 20094,
+      "total_tokens": 467739,
+      "cost": 0.548115
+    },
+    {
+      "scenario": "场景18_犊牛早期断奶",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景18_犊牛早期断奶",
+      "input_tokens": 93520,
+      "output_tokens": 9083,
+      "total_tokens": 102603,
+      "cost": 0.138935
+    },
+    {
+      "scenario": "场景22_育肥牛关注胴体质量",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景22_育肥牛关注胴体质量",
+      "input_tokens": 76991,
+      "output_tokens": 8892,
+      "total_tokens": 85883,
+      "cost": 0.121451
+    },
+    {
+      "scenario": "场景19_妊娠中期母牛牧场放牧",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景19_妊娠中期母牛牧场放牧",
+      "input_tokens": 436701,
+      "output_tokens": 14563,
+      "total_tokens": 451264,
+      "cost": 0.509516
+    },
+    {
+      "scenario": "场景25_混合牛群TMR挑战",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景25_混合牛群TMR挑战",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "cost": 0.0
+    },
+    {
+      "scenario": "场景27_自然牛或有机育肥限制性",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景27_自然牛或有机育肥限制性",
+      "input_tokens": 529232,
+      "output_tokens": 17968,
+      "total_tokens": 547200,
+      "cost": 0.6190720000000001
+    },
+    {
+      "scenario": "场景17_淘汰Cull母牛育肥",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景17_淘汰Cull母牛育肥",
+      "input_tokens": 1041687,
+      "output_tokens": 26351,
+      "total_tokens": 1068038,
+      "cost": 1.173442
+    },
+    {
+      "scenario": "场景09_过瘦母牛恢复期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景09_过瘦母牛恢复期",
+      "input_tokens": 112613,
+      "output_tokens": 9364,
+      "total_tokens": 121977,
+      "cost": 0.159433
+    },
+    {
+      "scenario": "场景04_育肥冲刺期终结期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景04_育肥冲刺期终结期",
+      "input_tokens": 572403,
+      "output_tokens": 19820,
+      "total_tokens": 592223,
+      "cost": 0.671503
+    },
+    {
+      "scenario": "场景26_参展牛ShowCattle准备期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景26_参展牛ShowCattle准备期",
+      "input_tokens": 978884,
+      "output_tokens": 21749,
+      "total_tokens": 1000633,
+      "cost": 1.087629
+    },
+    {
+      "scenario": "场景13_育肥牛热应激期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景13_育肥牛热应激期",
+      "input_tokens": 130278,
+      "output_tokens": 10335,
+      "total_tokens": 140613,
+      "cost": 0.181953
+    },
+    {
+      "scenario": "场景28_矿物质缺乏纠正期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景28_矿物质缺乏纠正期",
+      "input_tokens": 265670,
+      "output_tokens": 11675,
+      "total_tokens": 277345,
+      "cost": 0.324045
+    },
+    {
+      "scenario": "场景10_种公牛非配种季",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景10_种公牛非配种季",
+      "input_tokens": 132227,
+      "output_tokens": 10071,
+      "total_tokens": 142298,
+      "cost": 0.18258200000000002
+    },
+    {
+      "scenario": "场景20_育肥牛寒冷应激期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景20_育肥牛寒冷应激期",
+      "input_tokens": 398387,
+      "output_tokens": 17749,
+      "total_tokens": 416136,
+      "cost": 0.487132
+    },
+    {
+      "scenario": "场景16_育肥牛轻微酸中毒恢复期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景16_育肥牛轻微酸中毒恢复期",
+      "input_tokens": 462500,
+      "output_tokens": 16665,
+      "total_tokens": 479165,
+      "cost": 0.545825
+    },
+    {
+      "scenario": "场景21_犊牛腹泻恢复期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景21_犊牛腹泻恢复期",
+      "input_tokens": 191374,
+      "output_tokens": 11532,
+      "total_tokens": 202906,
+      "cost": 0.24903399999999998
+    },
+    {
+      "scenario": "场景24_后备公牛12月龄",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景24_后备公牛12月龄",
+      "input_tokens": 846929,
+      "output_tokens": 22082,
+      "total_tokens": 869011,
+      "cost": 0.957339
+    },
+    {
+      "scenario": "场景14_第一胎母牛带犊",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景14_第一胎母牛带犊",
+      "input_tokens": 582030,
+      "output_tokens": 25484,
+      "total_tokens": 607514,
+      "cost": 0.70945
+    },
+    {
+      "scenario": "场景15_种公牛配种季",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景15_种公牛配种季",
+      "input_tokens": 75662,
+      "output_tokens": 7138,
+      "total_tokens": 82800,
+      "cost": 0.11135199999999999
+    },
+    {
+      "scenario": "场景29_青年公牛刚完成性能测定",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景29_青年公牛刚完成性能测定",
+      "input_tokens": 695866,
+      "output_tokens": 23090,
+      "total_tokens": 718956,
+      "cost": 0.8113159999999999
+    },
+    {
+      "scenario": "场景12_过肥后备母牛减控期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景12_过肥后备母牛减控期",
+      "input_tokens": 156310,
+      "output_tokens": 13027,
+      "total_tokens": 169337,
+      "cost": 0.221445
+    },
+    {
+      "scenario": "场景30_紧急情况饲料短缺替代",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景30_紧急情况饲料短缺替代",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "cost": 0.0
+    },
+    {
+      "scenario": "场景03_后备母牛培育期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景03_后备母牛培育期",
+      "input_tokens": 129929,
+      "output_tokens": 8586,
+      "total_tokens": 138515,
+      "cost": 0.17285899999999998
+    },
+    {
+      "scenario": "场景08_空怀干乳母牛维持期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景08_空怀干乳母牛维持期",
+      "input_tokens": 892371,
+      "output_tokens": 20738,
+      "total_tokens": 913109,
+      "cost": 0.9960610000000001
+    },
+    {
+      "scenario": "场景23_母牛低质量粗饲料期",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景23_母牛低质量粗饲料期",
+      "input_tokens": 382283,
+      "output_tokens": 20908,
+      "total_tokens": 403191,
+      "cost": 0.486823
+    },
+    {
+      "scenario": "场景06_应激期犊牛新购入",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景06_应激期犊牛新购入",
+      "input_tokens": 100111,
+      "output_tokens": 9668,
+      "total_tokens": 109779,
+      "cost": 0.148451
+    },
+    {
+      "scenario": "场景01_育肥初期架子牛",
+      "category": "success",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/success/场景01_育肥初期架子牛",
+      "input_tokens": 219897,
+      "output_tokens": 12273,
+      "total_tokens": 232170,
+      "cost": 0.281262
+    }
+  ],
+  "incomplete_tests": [
+    {
+      "scenario": "场景02_妊娠晚期母牛保胎",
+      "category": "failed",
+      "animal_type": "beef_cattle",
+      "path": "beef_cattle/failed/场景02_妊娠晚期母牛保胎",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "cost": 0.0
+    }
+  ],
+  "total_input_tokens": 10027278,
+  "total_output_tokens": 395749,
+  "total_tokens": 10423027,
+  "total_cost": 12.006022999999997,
+  "complete_count": 28,
+  "incomplete_count": 1,
+  "average_cost_per_test": 0.4287865357142856,
+  "average_tokens_per_test": 372250.96428571426
+}

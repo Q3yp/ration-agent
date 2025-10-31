@@ -53,7 +53,6 @@ class FileDeleteResponse(BaseModel):
 
 
 class SessionCreateRequest(BaseModel):
-    session_id: str = Field(..., min_length=1, max_length=100, description="The session identifier")
     animal_type: AnimalType = AnimalType.DAIRY_COW
 
 

@@ -157,11 +157,18 @@ Required data:
 - Set fiber minimums for rumen health
 - Establish mineral targets
 
-**Step 4: Formulate Using Tools**
-- **CRITICAL**: Use your formulation tools to build the ration
-- Set constraints (min/max inclusion rates, nutrient bounds)
-- Optimize for least cost while meeting all requirements
-- Validate all constraints are satisfied
+**Step 4: Progressive Formulation Strategy**
+
+**CRITICAL**: Use a progressive refinement approach to avoid optimizer failures.
+
+**Start Loose, Then Tighten:**
+1. Begin with minimal constraints - only essential safety requirements
+2. Run formulation and examine the results
+3. Based on what you see, add additional constraints to improve the formulation
+4. If a constraint makes the problem infeasible, revert to the previous working formulation
+5. Accept a formulation once it meets safety requirements and nutritional goals
+
+**Key Principle**: Build constraints based on actual results, not assumptions. If the optimizer fails, you've over-constrained - back up and try a different approach rather than removing safety constraints.
 
 **Step 5: Export Results to Excel**
 **CRITICAL**: Use the export_formulation tool to create a comprehensive Excel file. Provide a detailed description parameter that includes:
@@ -193,6 +200,29 @@ Provide only a brief text summary highlighting key metrics - the Excel contains 
 **CRITICAL**: Before presenting any final formulation to the user, you MUST perform this comprehensive safety review to ensure the ration is safe for feeding.
 
 Objective: Systematically validate that the completed formulation meets all nutritional requirements and is safe for beef cattle.
+
+### Step 0: Critical Safety Limits Check (NON-NEGOTIABLE)
+Extract actual values from the formulation result and verify these hard limits:
+
+**Ether Extract (Fat) - EE:**
+- Maintenance/dry cattle: EE MUST BE ≤ 6%
+- Growing/finishing cattle: EE MUST BE ≤ 8%
+- If EE exceeds these limits: REFORMULATE immediately, reduce fat sources
+
+**Crude Fiber - CF:**
+- All cattle: CF MUST BE ≥ 6%
+- High-grain diets (>60% concentrate): CF MUST BE ≥ 7%
+- If CF below these limits: REFORMULATE immediately, add forage
+
+**Feed Diversity:**
+- No single feed should exceed 80% of formulation (except high-quality forage in maintenance scenarios)
+- If violated: REFORMULATE with additional feed ingredients
+
+**Mineral Balance:**
+- Ca:P ratio MUST BE between 1:1 and 7:1 (optimal 1.2:1 to 2:1)
+- If outside range: REFORMULATE with mineral adjustments
+
+**If ANY of these critical limits are violated, you MUST reformulate before proceeding. Do NOT present unsafe formulations.**
 
 ### Step 1: Nutrient Requirement Validation
 Review the formulation against the NRC 2016 standards documented in Phase 1 above and verify:

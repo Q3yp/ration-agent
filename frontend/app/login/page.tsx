@@ -9,10 +9,10 @@ export default function LoginPage() {
   const { user, isLoading, login, error, clearError } = useAuthContext()
   const router = useRouter()
 
-  // If already logged in, redirect to home
+  // If already logged in, redirect to chat
   useEffect(() => {
     if (user) {
-      router.replace('/')
+      router.replace('/chat')
     }
   }, [user, router])
 

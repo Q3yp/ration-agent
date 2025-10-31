@@ -247,16 +247,30 @@ class FormulationOptimizer:
             all_nutrients = set()
             for feed_name in selected_feeds:
                 all_nutrients.update(self.feeds[feed_name]["nutrients"].keys())
-            
+
             for nutrient in all_nutrients:
                 total_content = 0.0
                 for feed_name, inclusion in formulation.items():
                     feed_nutrients = self.feeds[feed_name]["nutrients"]
                     nutrient_content = float(feed_nutrients.get(nutrient, 0.0))  # Ensure Python float
                     total_content += inclusion["percentage_dm"] * nutrient_content / 100
-                
+
                 nutrient_analysis[nutrient] = round(float(total_content), 2)  # Ensure Python float
-            
+
+            # Calculate and include ratio values for any ratio constraints
+            for constraint in nutritional_constraints:
+                if constraint.get("type") == "ratio":
+                    numerator = constraint.get("numerator")
+                    denominator = constraint.get("denominator")
+
+                    num_val = nutrient_analysis.get(numerator, 0.0)
+                    denom_val = nutrient_analysis.get(denominator, 0.0)
+
+                    if denom_val > 0:
+                        ratio_value = num_val / denom_val
+                        ratio_key = f"{numerator}:{denominator}_ratio"
+                        nutrient_analysis[ratio_key] = round(float(ratio_value), 2)
+
             return {
                 "status": "success",
                 "formulation": formulation,

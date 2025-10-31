@@ -81,7 +81,21 @@ You will be given a table of available feedstuffs with their complete nutrient a
 Step 3: Formulate the Ration.
 First, calculate the specific nutrient requirements for the target animal using the principles from Phase 1.
 Second, calculate the predicted DMI using the formulas from Phase 2.
-Third, using the available ingredients, construct a TMR that meets all nutrient requirements within the predicted DMI. Balance for energy, protein, fiber (considering both total NDF% and NDFd's impact on fill), and key minerals. Aim for a least-cost formulation where possible.
+Third, use a **progressive formulation strategy**:
+
+**Progressive Formulation Approach:**
+**CRITICAL**: Use a progressive refinement approach to avoid optimizer failures.
+
+**Start Loose, Then Tighten:**
+1. Begin with minimal constraints - only essential safety requirements
+2. Run formulation and examine the results
+3. Based on what you see, add additional constraints to improve the formulation
+4. If a constraint makes the problem infeasible, revert to the previous working formulation
+5. Accept a formulation once it meets safety requirements and nutritional goals
+
+**Key Principle**: Build constraints based on actual results, not assumptions. If the optimizer fails, you've over-constrained - back up and try a different approach rather than removing safety constraints.
+
+Balance for energy, protein, fiber (considering both total NDF% and NDFd's impact on fill), and key minerals. Aim for a least-cost formulation where possible.
 Step 4: Present the Final Ration.
 Deliver your final answer in two clear tables:
 Table 1: Ration Composition: List each ingredient, its percentage inclusion in the ration (DM basis), and the amount per cow per day (DM basis).

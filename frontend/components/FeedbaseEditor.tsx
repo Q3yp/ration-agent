@@ -17,6 +17,7 @@ interface FeedbaseEditorProps {
 type LegacyFeedData = { dry_matter_percent: number; nutrients: Record<string, number>; cost_per_kg: number }
 
 export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseEditorProps) {
+  const isSystemDefault = feedbase.name.startsWith('default_')
   const [name, setName] = useState(feedbase.name)
   const [animalType, setAnimalType] = useState(feedbase.data.animal_type || 'dairy_cow')
   
@@ -128,16 +129,23 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
             <div className="flex-1">
               <Input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => !isSystemDefault && setName(e.target.value)}
                 placeholder="饲料库名称"
-                className="text-lg font-semibold border border-dashed border-muted-foreground/30 bg-transparent px-3 py-2 hover:border-muted-foreground/50 focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
+                disabled={isSystemDefault}
+                className="text-lg font-semibold border border-dashed border-muted-foreground/30 bg-transparent px-3 py-2 hover:border-muted-foreground/50 focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
               />
             </div>
+            {isSystemDefault && (
+              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                系统饲料库（只读）
+              </span>
+            )}
             <div className="w-48">
               <select
                 value={animalType}
-                onChange={(e) => setAnimalType(e.target.value)}
-                className="w-full px-3 py-2 border border-muted rounded-md text-sm focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors bg-background"
+                onChange={(e) => !isSystemDefault && setAnimalType(e.target.value)}
+                disabled={isSystemDefault}
+                className="w-full px-3 py-2 border border-muted rounded-md text-sm focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors bg-background disabled:opacity-70 disabled:cursor-not-allowed"
               >
                 {animalTypeOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -150,12 +158,14 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
           <div className="flex gap-2 ml-4">
             <Button variant="outline" onClick={onCancel}>
               <X className="h-4 w-4 mr-1" />
-              取消
+              {isSystemDefault ? '关闭' : '取消'}
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              <Save className="h-4 w-4 mr-1" />
-              {saving ? '保存中...' : '保存'}
-            </Button>
+            {!isSystemDefault && (
+              <Button onClick={handleSave} disabled={saving}>
+                <Save className="h-4 w-4 mr-1" />
+                {saving ? '保存中...' : '保存'}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -172,10 +182,12 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
         <div className="w-full lg:w-80 lg:flex-shrink-0 flex flex-col min-h-0">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 flex-shrink-0">
             <h3 className="font-semibold text-lg">饲料列表 ({feedNames.length})</h3>
-            <Button size="sm" onClick={addNewFeed} className="flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">添加饲料</span>
-            </Button>
+            {!isSystemDefault && (
+              <Button size="sm" onClick={addNewFeed} className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">添加饲料</span>
+              </Button>
+            )}
           </div>
 
           <div className="flex-1 min-h-0 overflow-auto">
@@ -212,18 +224,20 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
                             DM: {feeds[feedName].dm_percent}% | 成本: ¥{feeds[feedName].cost_per_kg}/kg
                           </div>
                         </button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-red-600 hover:text-red-700 opacity-60 hover:opacity-100 transition-opacity"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            deleteFeed(feedName)
-                          }}
-                          title="删除饲料"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {!isSystemDefault && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 opacity-60 hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              deleteFeed(feedName)
+                            }}
+                            title="删除饲料"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -246,6 +260,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
                     feedName={editingFeed}
                     feedData={feeds[editingFeed]}
                     onChange={handleFeedChange}
+                    readOnly={isSystemDefault}
                   />
                 </div>
               </div>
@@ -257,11 +272,13 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
                   <Plus className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
                   <h3 className="text-lg font-semibold mb-2">选择饲料进行编辑</h3>
                   <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
-                    从左侧列表中选择一个饲料进行编辑，或添加新的饲料
+                    {isSystemDefault ? '从左侧列表中选择一个饲料查看详情' : '从左侧列表中选择一个饲料进行编辑，或添加新的饲料'}
                   </p>
-                  <Button onClick={addNewFeed} className="w-full">
-                    添加新饲料
-                  </Button>
+                  {!isSystemDefault && (
+                    <Button onClick={addNewFeed} className="w-full">
+                      添加新饲料
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             </div>
