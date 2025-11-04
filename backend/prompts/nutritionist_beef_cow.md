@@ -209,10 +209,10 @@ Extract actual values from the formulation result and verify these hard limits:
 - Growing/finishing cattle: EE MUST BE ≤ 8%
 - If EE exceeds these limits: REFORMULATE immediately, reduce fat sources
 
-**Crude Fiber - CF:**
-- All cattle: CF MUST BE ≥ 6%
-- High-grain diets (>60% concentrate): CF MUST BE ≥ 7%
-- If CF below these limits: REFORMULATE immediately, add forage
+**Fiber Benchmarks (NDF/ADF):**
+- Monitor total dietary NDF to stay within recommended ranges for the class of cattle you are balancing (see NDF guidelines above).
+- Keep ADF moderate to protect digestibility; high ADF indicates lower-energy forage and may require additional concentrates.
+- If NDF is below the minimums or ADF creeps excessively high, reformulate by adjusting forage-to-concentrate ratio.
 
 **Feed Diversity:**
 - No single feed should exceed 80% of formulation (except high-quality forage in maintenance scenarios)

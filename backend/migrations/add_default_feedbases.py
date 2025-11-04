@@ -82,10 +82,15 @@ async def load_csv_feedbase(csv_path: Path, animal_type: str) -> dict:
             elif 'EE_percent_DM' in row and pd.notna(row['EE_percent_DM']):
                 nutrients['EE'] = float(row['EE_percent_DM'])
 
-            if 'CF_percent' in row and pd.notna(row['CF_percent']):
-                nutrients['CF'] = float(row['CF_percent'])
-            elif 'CF_percent_DM' in row and pd.notna(row['CF_percent_DM']):
-                nutrients['CF'] = float(row['CF_percent_DM'])
+            if 'NDF_percent' in row and pd.notna(row['NDF_percent']):
+                nutrients['NDF'] = float(row['NDF_percent'])
+            elif 'NDF_percent_DM' in row and pd.notna(row['NDF_percent_DM']):
+                nutrients['NDF'] = float(row['NDF_percent_DM'])
+
+            if 'ADF_percent' in row and pd.notna(row['ADF_percent']):
+                nutrients['ADF'] = float(row['ADF_percent'])
+            elif 'ADF_percent_DM' in row and pd.notna(row['ADF_percent_DM']):
+                nutrients['ADF'] = float(row['ADF_percent_DM'])
 
             if 'NFE_percent' in row and pd.notna(row['NFE_percent']):
                 nutrients['NFE'] = float(row['NFE_percent'])
@@ -134,6 +139,20 @@ async def load_csv_feedbase(csv_path: Path, animal_type: str) -> dict:
                     nutrients['NEg_MJ'] = float(row['BeefGainNetEnergy_MJ_per_kg'])
                 if 'Digestible_CP_g_per_kg' in row and pd.notna(row['Digestible_CP_g_per_kg']):
                     nutrients['DCP'] = float(row['Digestible_CP_g_per_kg'])
+
+                # Trace minerals (ppm)
+                if 'Copper_ppm' in row and pd.notna(row['Copper_ppm']):
+                    nutrients['Cu_ppm'] = float(row['Copper_ppm'])
+                if 'Zinc_ppm' in row and pd.notna(row['Zinc_ppm']):
+                    nutrients['Zn_ppm'] = float(row['Zinc_ppm'])
+                if 'Manganese_ppm' in row and pd.notna(row['Manganese_ppm']):
+                    nutrients['Mn_ppm'] = float(row['Manganese_ppm'])
+                if 'Selenium_ppm' in row and pd.notna(row['Selenium_ppm']):
+                    nutrients['Se_ppm'] = float(row['Selenium_ppm'])
+                if 'Cobalt_ppm' in row and pd.notna(row['Cobalt_ppm']):
+                    nutrients['Co_ppm'] = float(row['Cobalt_ppm'])
+                if 'Iodine_ppm' in row and pd.notna(row['Iodine_ppm']):
+                    nutrients['I_ppm'] = float(row['Iodine_ppm'])
 
             # Cat and Dog-specific nutrients
             elif animal_type in ["cat", "dog"]:

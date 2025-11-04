@@ -15,6 +15,44 @@ from typing import Dict, List
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dump_session import dump_session
+from conclude_results import summarise_run
+from openpyxl import load_workbook
+import re
+
+
+def has_valid_formulation(excel_path: Path) -> bool:
+    """Return True if the workbook contains a non-empty formulation."""
+    try:
+        workbook = load_workbook(excel_path, data_only=True)
+    except Exception:
+        return False
+
+    if "配方说明" in workbook.sheetnames:
+        sheet = workbook["配方说明"]
+        content_lines = 0
+        for row in sheet.iter_rows(values_only=True):
+            if not row:
+                continue
+            if any(str(cell).strip() for cell in row if cell is not None):
+                content_lines += 1
+            if content_lines >= 5:
+                return True
+
+    sheet_name = "配方结果" if "配方结果" in workbook.sheetnames else workbook.sheetnames[0]
+    sheet = workbook[sheet_name]
+    data_rows = 0
+    for row in sheet.iter_rows(values_only=True):
+        if not row or not any(row):
+            continue
+        values = [str(cell).strip() if cell is not None else "" for cell in row]
+        if "饲料名称" in values and "日饲喂量" in "".join(values):
+            continue
+        if all(not value for value in values):
+            continue
+        data_rows += 1
+        if data_rows >= 1:
+            return True
+    return False
 
 
 async def extract_test_results(timestamp: str):
@@ -68,108 +106,117 @@ async def extract_test_results(timestamp: str):
     (results_dir / "failed").mkdir(exist_ok=True)
     (results_dir / "formulations").mkdir(exist_ok=True)
 
-    # Process each scenario
-    successful_extractions = []
-    failed_extractions = []
+    scenario_entries = manifest.get("scenarios", [])
 
-    print(f"\n📦 处理 {len(manifest['scenarios'])} 个场景...\n")
+    successful_extractions: List[Dict] = []
+    failed_extractions: List[Dict] = []
+    successful_ids = set()
 
-    for scenario in manifest['scenarios']:
+    print(f"\n📦 处理 {len(scenario_entries)} 个场景...\n")
+
+    for scenario in scenario_entries:
         scenario_id = scenario['scenario_id']
         scenario_name = scenario['scenario_name']
         session_id = scenario.get('session_id')
-        status = scenario['status']
+        status = scenario.get('status', 'submitted')
+        prompt_text = scenario.get("prompt", "")
+        timestamp_value = scenario.get("timestamp", "")
 
         print(f"场景 {scenario_id:2d}: {scenario_name}")
 
-        if status != "submitted" or not session_id:
-            print(f"  ⊘ 跳过 (状态: {status})")
-            failed_extractions.append({
-                "scenario_id": scenario_id,
-                "scenario_name": scenario_name,
-                "reason": "未成功提交"
-            })
-            continue
+        scenario_success = False
+        failure_reason = None
+        session_files_dir = files_dir / session_id if session_id else None
+        excel_files: List[Path] = []
+        valid_excel_files: List[Path] = []
 
-        try:
-            # Create scenario directory
-            scenario_dir_name = f"场景{scenario_id:02d}_{scenario_name}"
-            scenario_dir = results_dir / "success" / scenario_dir_name
-            scenario_dir.mkdir(exist_ok=True)
-
-            # 1. Dump session data
-            print(f"  📥 导出会话数据...")
-            await dump_session(session_id, scenario_dir, include_artifacts=True)
-
-            # 2. Find and copy Excel formulation files
-            session_files_dir = files_dir / session_id
-            if session_files_dir.exists():
-                excel_files = list(session_files_dir.glob("*.xlsx"))
-                if excel_files:
-                    print(f"  📊 发现 {len(excel_files)} 个配方文件")
-                    for excel_file in excel_files:
-                        # Copy to scenario directory
-                        dest_file = scenario_dir / excel_file.name
-                        shutil.copy2(excel_file, dest_file)
-                        print(f"    ✓ {excel_file.name}")
-
-                        # Also copy to formulations directory with scenario prefix
-                        formulation_file = results_dir / "formulations" / f"场景{scenario_id:02d}_{excel_file.name}"
-                        shutil.copy2(excel_file, formulation_file)
-                else:
-                    print(f"  ⚠️  未找到配方文件")
-                    failed_extractions.append({
-                        "scenario_id": scenario_id,
-                        "scenario_name": scenario_name,
-                        "session_id": session_id,
-                        "reason": "未找到配方文件"
-                    })
-                    continue
+        if not session_id:
+            failure_reason = "缺少会话 ID"
+        else:
+            if not session_files_dir or not session_files_dir.exists():
+                failure_reason = f"会话文件目录不存在: {session_files_dir}"
             else:
-                print(f"  ⚠️  会话文件目录不存在: {session_files_dir}")
-                failed_extractions.append({
-                    "scenario_id": scenario_id,
-                    "scenario_name": scenario_name,
-                    "session_id": session_id,
-                    "reason": "会话文件目录不存在"
-                })
-                continue
+                excel_files = list(session_files_dir.glob("*.xlsx"))
+                valid_excel_files = [excel for excel in excel_files if has_valid_formulation(excel)]
+                if not valid_excel_files:
+                    failure_reason = "未找到有效配方文件"
+                else:
+                    scenario_success = True
 
-            # 3. Save scenario metadata
-            metadata = {
-                "scenario_id": scenario_id,
-                "scenario_name": scenario_name,
-                "session_id": session_id,
-                "prompt": scenario.get("prompt", ""),
-                "timestamp": scenario.get("timestamp", ""),
-            }
+        target_bucket = "success" if scenario_success else "failed"
+        safe_name = re.sub(r'[\\/:*?"<>|]', "_", scenario_name)
+        scenario_dir_name = f"场景{scenario_id:02d}_{safe_name}"
+        scenario_dir = results_dir / target_bucket / scenario_dir_name
+        scenario_dir.mkdir(exist_ok=True)
 
-            metadata_file = scenario_dir / "metadata.json"
-            with open(metadata_file, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
+        # Dump session data for inspection (even for failures if session exists)
+        if session_id:
+            try:
+                print("  📥 导出会话数据...")
+                await dump_session(session_id, scenario_dir, include_artifacts=True)
+            except Exception as dump_error:
+                print(f"  ⚠️ 会话导出失败: {dump_error}")
+                if scenario_success:
+                    # Treat as recoverable; keep success status but note warning
+                    failure_reason = f"会话导出失败: {dump_error}"
+                    scenario_success = False
+                    target_bucket = "failed"
+                    scenario_dir = results_dir / target_bucket / scenario_dir_name
+                    scenario_dir.mkdir(exist_ok=True)
 
+        if scenario_success:
+            print(f"  📊 发现 {len(valid_excel_files)} 个有效配方文件")
+            for excel_file in valid_excel_files:
+                dest_file = scenario_dir / excel_file.name
+                shutil.copy2(excel_file, dest_file)
+                print(f"    ✓ {excel_file.name}")
+
+                formulation_file = results_dir / "formulations" / f"场景{scenario_id:02d}_{excel_file.name}"
+                shutil.copy2(excel_file, formulation_file)
+        else:
+            if excel_files and not valid_excel_files:
+                print("  ⚠️ 检测到配方文件但内容无效，将文件复制至失败目录以供检查")
+                for excel_file in excel_files:
+                    dest_file = scenario_dir / excel_file.name
+                    shutil.copy2(excel_file, dest_file)
+
+        scenario_metadata = {
+            "scenario_id": scenario_id,
+            "scenario_name": scenario_name,
+            "session_id": session_id,
+            "prompt": prompt_text,
+            "timestamp": timestamp_value,
+            "status": "success" if scenario_success else "failed"
+        }
+        if failure_reason:
+            scenario_metadata["failure_reason"] = failure_reason
+        scenario_metadata_file = scenario_dir / "metadata.json"
+        with open(scenario_metadata_file, 'w', encoding='utf-8') as f:
+            json.dump(scenario_metadata, f, indent=2, ensure_ascii=False)
+
+        if scenario_success:
+            successful_ids.add(scenario_id)
             successful_extractions.append({
                 "scenario_id": scenario_id,
                 "scenario_name": scenario_name,
                 "session_id": session_id,
-                "formulation_files": len(excel_files) if session_files_dir.exists() and excel_files else 0
+                "formulation_files": len(valid_excel_files)
             })
-
-            print(f"  ✅ 提取完成\n")
-
-        except Exception as e:
-            print(f"  ❌ 提取失败: {e}\n")
-            failed_extractions.append({
+            print("  ✅ 提取完成\n")
+        else:
+            failure_entry = {
                 "scenario_id": scenario_id,
                 "scenario_name": scenario_name,
                 "session_id": session_id,
-                "reason": str(e)
-            })
+                "reason": failure_reason or "未知原因"
+            }
+            failed_extractions.append(failure_entry)
+            print(f"  ❌ 提取失败: {failure_entry['reason']}\n")
 
     # Generate extraction report
     report = {
         "timestamp": timestamp,
-        "total_scenarios": len(manifest['scenarios']),
+        "total_scenarios": len(scenario_entries),
         "successful_extractions": len(successful_extractions),
         "failed_extractions": len(failed_extractions),
         "success_details": successful_extractions,
@@ -196,6 +243,37 @@ async def extract_test_results(timestamp: str):
         print(f"\n❌ 提取失败的场景:")
         for item in failed_extractions:
             print(f"  场景{item['scenario_id']:2d} ({item['scenario_name']}): {item['reason']}")
+
+    # Update manifest statuses based on actual results
+    for scenario in scenario_entries:
+        scenario_id = scenario['scenario_id']
+        scenario['status'] = "success" if scenario_id in successful_ids else "failed"
+
+    manifest_metadata = manifest.get("metadata", {})
+    manifest_metadata["successful"] = len(successful_ids)
+    manifest_metadata["failed"] = len(scenario_entries) - len(successful_ids)
+    manifest["metadata"] = manifest_metadata
+
+    manifest_file = test_run_dir / "manifest.json"
+    with open(manifest_file, 'w', encoding='utf-8') as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+    # Refresh session mapping with successful scenarios only
+    mapping_file = test_run_dir / "session_mapping.json"
+    session_mapping = {
+        scenario["scenario_name"]: scenario["session_id"]
+        for scenario in scenario_entries
+        if scenario["status"] == "success" and scenario.get("session_id")
+    }
+    with open(mapping_file, 'w', encoding='utf-8') as f:
+        json.dump(session_mapping, f, indent=2, ensure_ascii=False)
+
+    # Generate consolidated summary
+    try:
+        summary_path = summarise_run(timestamp)
+        print(f"\n📄 汇总文件已生成: {summary_path}")
+    except Exception as summary_error:
+        print(f"\n⚠️ 生成汇总文件失败: {summary_error}")
 
     print(f"\n{'='*80}")
     print(f"结果目录: {results_dir}")

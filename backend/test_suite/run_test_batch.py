@@ -7,6 +7,7 @@ Creates timestamped test runs with session tracking and metadata.
 import asyncio
 import httpx
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
@@ -60,60 +61,114 @@ async def create_session(client: httpx.AsyncClient, token: str, animal_type: str
 async def send_message(client: httpx.AsyncClient, token: str, session_id: str, message: str):
     """Send a message to the chat endpoint"""
     headers = {"Authorization": f"Bearer {token}"}
+    url = f"{API_BASE_URL}/chat/stream/{session_id}"
+    timeout = httpx.Timeout(5.0, connect=5.0, read=5.0, write=5.0)
 
-    response = await client.post(
-        f"{API_BASE_URL}/chat/stream/{session_id}",
+    async with client.stream(
+        "POST",
+        url,
         json={"message": message},
         headers=headers,
-        timeout=5.0
-    )
+        timeout=timeout
+    ) as response:
+        if response.status_code not in [200, 202]:
+            print(f"  ⚠️  Warning: Message send returned {response.status_code}")
+            return
 
-    if response.status_code not in [200, 202]:
-        print(f"  ⚠️  Warning: Message send returned {response.status_code}")
+        # Consume only the first SSE payload to confirm dispatch, then exit.
+        lines_iter = response.aiter_lines()
+        try:
+            await asyncio.wait_for(lines_iter.__anext__(), timeout=2.0)
+        except (StopAsyncIteration, asyncio.TimeoutError):
+            # It's acceptable if no event arrives quickly; session keeps processing.
+            pass
 
 
-async def run_scenario(
+SCENE_PREFIX_PATTERN = re.compile(r"^\s*场景\s*\d+\s*[：:]\s*", re.IGNORECASE)
+
+
+def sanitize_prompt(prompt: str) -> str:
+    """Remove leading 场景XX labels from prompts before dispatch."""
+    if not prompt:
+        return prompt
+
+    lines = prompt.splitlines()
+    if not lines:
+        return prompt
+
+    first_line = SCENE_PREFIX_PATTERN.sub("", lines[0]).lstrip()
+
+    if not first_line and len(lines) > 1:
+        sanitized_lines = lines[1:]
+    else:
+        sanitized_lines = [first_line] + lines[1:]
+
+    return "\n".join(sanitized_lines)
+
+
+async def create_session_for_scenario(
     client: httpx.AsyncClient,
     token: str,
     scenario: Dict,
     animal_type: str = "beef_cow"
 ) -> Dict:
-    """Create session and send prompt for a single scenario"""
-    print(f"\n{'='*80}")
-    print(f"场景 {scenario['id']}: {scenario['name']}")
-    print(f"{'='*80}")
+    """Create a session for a scenario."""
+    scenario_id = scenario["id"]
+    print(f"[场景{scenario_id:02d}] 创建会话任务已启动...")
 
     try:
-        # Create session
-        print("  创建会话中...")
         session_id = await create_session(client, token, animal_type)
-        print(f"  ✓ 会话已创建: {session_id}")
-
-        # Send prompt
-        print("  发送配方请求...")
-        await send_message(client, token, session_id, scenario['prompt'])
-        print(f"  ✓ 请求已发送（代理将自主完成配方）")
-
+    except Exception as exc:
+        print(f"[场景{scenario_id:02d}] ✗ 会话创建失败: {exc}")
         return {
-            "scenario_id": scenario['id'],
-            "scenario_name": scenario['name'],
-            "session_id": session_id,
-            "prompt": scenario['prompt'],
-            "status": "submitted",
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        print(f"  ✗ 错误: {str(e)}")
-        return {
-            "scenario_id": scenario['id'],
-            "scenario_name": scenario['name'],
+            "scenario": scenario,
             "session_id": None,
-            "prompt": scenario['prompt'],
+            "error": str(exc)
+        }
+
+    print(f"[场景{scenario_id:02d}] ✓ 会话已创建: {session_id}")
+    return {
+        "scenario": scenario,
+        "session_id": session_id,
+        "error": None
+    }
+
+
+async def submit_prompt_for_scenario(
+    client: httpx.AsyncClient,
+    token: str,
+    scenario: Dict,
+    session_id: str
+) -> Dict:
+    """Submit sanitized prompt for a scenario using an existing session."""
+    scenario_id = scenario["id"]
+    sanitized_prompt = scenario["sanitized_prompt"]
+
+    print(f"[场景{scenario_id:02d}] 发送配方请求...")
+
+    try:
+        await send_message(client, token, session_id, sanitized_prompt)
+    except Exception as exc:
+        print(f"[场景{scenario_id:02d}] ✗ 请求发送失败: {exc}")
+        return {
+            "scenario_id": scenario_id,
+            "scenario_name": scenario["name"],
+            "session_id": session_id,
+            "prompt": sanitized_prompt,
             "status": "failed",
-            "error": str(e),
+            "error": str(exc),
             "timestamp": datetime.now().isoformat()
         }
+
+    print(f"[场景{scenario_id:02d}] ✓ 请求已发送")
+    return {
+        "scenario_id": scenario_id,
+        "scenario_name": scenario["name"],
+        "session_id": session_id,
+        "prompt": sanitized_prompt,
+        "status": "submitted",
+        "timestamp": datetime.now().isoformat()
+    }
 
 
 def create_test_run_directory(timestamp: str) -> Path:
@@ -230,6 +285,11 @@ async def main(
     if scenario_ids:
         scenarios = [s for s in scenarios if s['id'] in scenario_ids]
 
+    # Prepare scenarios with sanitized prompts
+    scenarios = [dict(s) for s in scenarios]
+    for scenario in scenarios:
+        scenario["sanitized_prompt"] = sanitize_prompt(scenario.get("prompt", ""))
+
     print(f"场景总数: {len(scenarios)}")
 
     # Create test run directory
@@ -246,28 +306,91 @@ async def main(
         except Exception as e:
             print(f"✗ 登录失败: {e}")
             return
+        if not scenarios:
+            print("\n⚠️ 未找到匹配的场景，测试终止。")
+            return
 
-        # Fire all scenarios concurrently
-        print(f"\n🚀 并发提交所有 {len(scenarios)} 个场景...")
-        tasks = [run_scenario(client, token, scenario, animal_type) for scenario in scenarios]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Display scenario headers before concurrent work starts
+        for scenario in scenarios:
+            print(f"\n{'='*80}")
+            print(f"场景 {scenario['id']}: {scenario['name']}")
+            print(f"{'='*80}")
 
-        # Process results
-        successful = []
-        failed = []
+        # Concurrently create sessions
+        print(f"\n🚀 并发创建 {len(scenarios)} 个会话...")
+        session_tasks = [
+            create_session_for_scenario(client, token, scenario, animal_type)
+            for scenario in scenarios
+        ]
+        session_results_raw = await asyncio.gather(*session_tasks, return_exceptions=True)
 
-        for i, result in enumerate(results):
+        ready_for_submission = []
+        creation_failures = []
+
+        for idx, result in enumerate(session_results_raw):
+            scenario = scenarios[idx]
+            sanitized_prompt = scenario["sanitized_prompt"]
+
             if isinstance(result, Exception):
-                failed.append({
-                    "scenario_id": scenarios[i]['id'],
-                    "scenario_name": scenarios[i]['name'],
+                print(f"[场景{scenario['id']:02d}] ✗ 会话创建任务异常: {result}")
+                creation_failures.append({
+                    "scenario_id": scenario["id"],
+                    "scenario_name": scenario["name"],
+                    "session_id": None,
+                    "prompt": sanitized_prompt,
+                    "status": "failed",
                     "error": str(result),
-                    "status": "failed"
+                    "timestamp": datetime.now().isoformat()
                 })
-            elif result['status'] == 'submitted':
-                successful.append(result)
+                continue
+
+            if result["session_id"]:
+                ready_for_submission.append(result)
             else:
-                failed.append(result)
+                creation_failures.append({
+                    "scenario_id": scenario["id"],
+                    "scenario_name": scenario["name"],
+                    "session_id": None,
+                    "prompt": sanitized_prompt,
+                    "status": "failed",
+                    "error": result.get("error", "unknown error"),
+                    "timestamp": datetime.now().isoformat()
+                })
+
+        # Concurrently submit prompts for successful sessions
+        submission_results = []
+
+        if ready_for_submission:
+            print(f"\n🚀 并发提交 {len(ready_for_submission)} 个配方请求...")
+            submission_tasks = [
+                submit_prompt_for_scenario(client, token, item["scenario"], item["session_id"])
+                for item in ready_for_submission
+            ]
+            submission_results_raw = await asyncio.gather(*submission_tasks, return_exceptions=True)
+
+            for idx, result in enumerate(submission_results_raw):
+                scenario = ready_for_submission[idx]["scenario"]
+                session_id = ready_for_submission[idx]["session_id"]
+
+                if isinstance(result, Exception):
+                    print(f"[场景{scenario['id']:02d}] ✗ 提交任务异常: {result}")
+                    submission_results.append({
+                        "scenario_id": scenario["id"],
+                        "scenario_name": scenario["name"],
+                        "session_id": session_id,
+                        "prompt": scenario["sanitized_prompt"],
+                        "status": "failed",
+                        "error": str(result),
+                        "timestamp": datetime.now().isoformat()
+                    })
+                else:
+                    submission_results.append(result)
+        else:
+            print("\n⚠️ 没有成功的会话，跳过配方请求提交。")
+
+        # Consolidate results
+        successful = [r for r in submission_results if r["status"] == "submitted"]
+        failed = creation_failures + [r for r in submission_results if r["status"] != "submitted"]
 
         # Save test manifest
         metadata = {

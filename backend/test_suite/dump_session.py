@@ -6,18 +6,19 @@ Exports messages, metadata, and token usage statistics.
 
 import asyncio
 import json
-import os
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from models import UserSession, SessionMessage
-from services.session_manager import SessionManager
-from core.agent import get_shared_connection
+from dotenv import load_dotenv
+from services.session_manager import session_manager
+from services.chat_history_service import chat_history_service
+
+# Load environment variables so database credentials are available when running as a script
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env", override=False)
 
 
 async def dump_session(
@@ -36,85 +37,123 @@ async def dump_session(
     Returns:
         Dictionary containing session data
     """
-    # Get database connection
-    conn = await get_shared_connection()
-
-    # Create session manager
-    session_manager = SessionManager(conn)
+    # Ensure session manager is initialized
+    await session_manager.initialize()
 
     try:
-        # Get session context
-        session_context = await session_manager.get_session_context(session_id)
+        # Fetch session context directly from database
+        session_context = await session_manager.get_session_from_db(session_id)
 
         if not session_context:
             raise ValueError(f"Session {session_id} not found")
 
-        # Get message history
-        messages = await session_manager.get_message_history(session_id)
+        # Get message history from LangGraph checkpointer
+        messages = await chat_history_service.get_complete_session_messages(session_id)
+
+        # Fetch session stats (token usage, timestamps, etc.)
+        session_stats = await session_manager.get_session_stats(session_id)
+
+        def _get_message_attr(message, attr, default=None):
+            if isinstance(message, dict):
+                return message.get(attr, default)
+            return getattr(message, attr, default)
+
+        def _get_additional_field(message, key, default=None):
+            additional = _get_message_attr(message, "additional_kwargs", {}) or {}
+            if isinstance(additional, dict):
+                return additional.get(key, default)
+            return default
 
         # Extract session metadata
         session_data = {
             "session_id": session_id,
-            "user_id": session_context.get("user_id"),
-            "animal_type": session_context.get("animal_type", "unknown"),
-            "title": session_context.get("title", "Untitled Session"),
-            "created_at": session_context.get("created_at"),
-            "updated_at": session_context.get("updated_at"),
-            "deleted": session_context.get("deleted", False),
+            "user_id": session_context.user_id,
+            "animal_type": session_context.animal_type,
+            "title": session_context.title if getattr(session_context, "title", None) else "Untitled Session",
+            "created_at": session_context.created_at.isoformat() if getattr(session_context, "created_at", None) else None,
+            "updated_at": session_context.last_accessed.isoformat() if getattr(session_context, "last_accessed", None) else None,
+            "deleted": getattr(session_context, "deleted", False),
             "message_count": len(messages),
+            "workspace_path": session_context.workspace_path,
+            "title_generated": getattr(session_context, "title_generated", False),
         }
 
         # Add token usage if available
-        if "total_tokens" in session_context:
+        token_usage = session_stats.get("token_usage") if isinstance(session_stats, dict) else None
+        if token_usage:
             session_data["token_usage"] = {
-                "total_prompt_tokens": session_context.get("total_prompt_tokens", 0),
-                "total_completion_tokens": session_context.get("total_completion_tokens", 0),
-                "total_tokens": session_context.get("total_tokens", 0),
+                "total_prompt_tokens": token_usage.get("prompt_tokens", 0),
+                "total_completion_tokens": token_usage.get("completion_tokens", 0),
+                "total_tokens": token_usage.get("total_tokens", 0),
             }
 
         # Process messages
         processed_messages = []
         for msg in messages:
+            msg_type = _get_message_attr(msg, "type")
+            if not msg_type:
+                # Fallback to class name for LangChain message objects
+                msg_type = msg.__class__.__name__.replace("Message", "").lower()
+
+            additional_kwargs = _get_message_attr(msg, "additional_kwargs", {}) or {}
+            response_metadata = _get_message_attr(msg, "response_metadata", {}) or {}
+
             msg_data = {
-                "content": msg.get("content", ""),
-                "additional_kwargs": msg.get("additional_kwargs", {}),
-                "response_metadata": msg.get("response_metadata", {}),
-                "type": msg.get("type", ""),
-                "name": msg.get("name"),
-                "id": msg.get("id"),
-                "example": msg.get("example", False),
+                "content": _get_message_attr(msg, "content", ""),
+                "additional_kwargs": additional_kwargs,
+                "response_metadata": response_metadata,
+                "type": msg_type,
+                "name": _get_message_attr(msg, "name"),
+                "id": _get_message_attr(msg, "id") or additional_kwargs.get("id"),
+                "example": _get_message_attr(msg, "example", False),
             }
 
             # Add tool calls if present
-            if "tool_calls" in msg:
-                msg_data["tool_calls"] = msg["tool_calls"]
+            tool_calls = _get_message_attr(msg, "tool_calls")
+            if tool_calls is None:
+                tool_calls = additional_kwargs.get("tool_calls")
+            if tool_calls:
+                msg_data["tool_calls"] = tool_calls
 
             # Add invalid tool calls if present
-            if "invalid_tool_calls" in msg:
-                msg_data["invalid_tool_calls"] = msg["invalid_tool_calls"]
+            invalid_tool_calls = _get_message_attr(msg, "invalid_tool_calls")
+            if invalid_tool_calls is None:
+                invalid_tool_calls = additional_kwargs.get("invalid_tool_calls")
+            if invalid_tool_calls:
+                msg_data["invalid_tool_calls"] = invalid_tool_calls
 
             # Add usage metadata if present
-            if "usage_metadata" in msg:
-                msg_data["usage_metadata"] = msg["usage_metadata"]
+            usage_metadata = _get_message_attr(msg, "usage_metadata")
+            if usage_metadata is None:
+                usage_metadata = additional_kwargs.get("usage_metadata")
+            if usage_metadata:
+                msg_data["usage_metadata"] = usage_metadata
 
             # Add tool-specific fields
-            if msg.get("type") == "tool":
-                msg_data["tool_call_id"] = msg.get("tool_call_id")
-                if include_artifacts and "artifact" in msg:
-                    msg_data["artifact"] = msg["artifact"]
-                msg_data["status"] = msg.get("status", "success")
+            if msg_type == "tool":
+                tool_call_id = _get_message_attr(msg, "tool_call_id") or additional_kwargs.get("tool_call_id")
+                if tool_call_id:
+                    msg_data["tool_call_id"] = tool_call_id
+                if include_artifacts:
+                    artifact = _get_message_attr(msg, "artifact") or additional_kwargs.get("artifact")
+                    if artifact:
+                        msg_data["artifact"] = artifact
+                msg_data["status"] = _get_message_attr(msg, "status", "success")
 
             processed_messages.append(msg_data)
+
+        # Update message count with processed length (in case of transformations)
+        session_data["message_count"] = len(processed_messages)
 
         # Create summary statistics
         summary = {
             "session_id": session_id,
-            "total_messages": len(messages),
-            "human_messages": sum(1 for m in messages if m.get("type") == "human"),
-            "ai_messages": sum(1 for m in messages if m.get("type") == "ai"),
-            "system_messages": sum(1 for m in messages if m.get("type") == "system"),
-            "tool_messages": sum(1 for m in messages if m.get("type") == "tool"),
-            "has_history": len(messages) > 0,
+            "total_messages": len(processed_messages),
+            "human_messages": sum(1 for m in processed_messages if m.get("type") == "human"),
+            "ai_messages": sum(1 for m in processed_messages if m.get("type") == "ai"),
+            "system_messages": sum(1 for m in processed_messages if m.get("type") == "system"),
+            "tool_messages": sum(1 for m in processed_messages if m.get("type") == "tool"),
+            "has_history": len(processed_messages) > 0,
         }
 
         # Combine all data
@@ -154,11 +193,6 @@ async def dump_session(
     except Exception as e:
         print(f"✗ Error dumping session {session_id}: {e}")
         raise
-
-    finally:
-        # Close connection if we created it
-        if conn:
-            await conn.close()
 
 
 async def main():
