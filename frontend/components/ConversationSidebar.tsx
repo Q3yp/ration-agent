@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { httpClient } from '@/utils/httpClient'
 import { AnimalTypeSelector } from './AnimalTypeSelector'
 import { TokenUsage } from './TokenUsage'
+import { useI18n } from '@/contexts/I18nContext'
 
 interface ConversationSidebarProps {
   currentSessionId: string | null
@@ -28,6 +29,7 @@ export default function ConversationSidebar({
   const [sessions, setSessions] = useState<Session[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showAnimalTypeSelector, setShowAnimalTypeSelector] = useState(false)
+  const { t, formatRelativeTime } = useI18n()
 
   // Update session titles when sessionTitles prop changes
   useEffect(() => {
@@ -52,14 +54,9 @@ export default function ConversationSidebar({
       const data = await httpClient.getJson(`/sessions/list`)
       const sessions = data.active_sessions || []
       setSessions(sessions)
-      
-      // If no sessions exist and no current session, show selector
-      if (sessions.length === 0 && !currentSessionId) {
-        setShowAnimalTypeSelector(true)
-      }
     } catch (error) {
       console.error('Error fetching sessions:', error)
-      alert('获取对话列表失败，请刷新页面重试')
+      alert(t('errors.networkRetry'))
     } finally {
       setIsLoading(false)
     }
@@ -78,7 +75,7 @@ export default function ConversationSidebar({
       // Backend generates session_id, use it from response
       const newSession: Session = {
         session_id: response.session_id,
-        title: '新对话',
+        title: t('chat.newConversation'),
         created_at: new Date().toISOString(),
         animal_type: response.animal_type
       }
@@ -89,80 +86,56 @@ export default function ConversationSidebar({
       onNewSession(response.session_id)
     } catch (error) {
       console.error('Error creating session:', error)
-      alert('创建新对话失败，请重试')
+      alert(t('errors.networkRetry'))
     }
   }
 
   const deleteSession = async (sessionId: string, event: React.MouseEvent) => {
     event.stopPropagation()
-    
-    if (!confirm('您确定要删除这个对话吗？')) {
+
+    if (!confirm(t('sidebar.deleteConfirm'))) {
       return
     }
 
     try {
       await httpClient.deleteJson(`/sessions/${sessionId}`)
-      
+
       // Remove session from local state instead of refetching all sessions
       setSessions(prev => prev.filter(session => session.session_id !== sessionId))
-      
-      // If we deleted the current session, show the selector
-      if (sessionId === currentSessionId) {
-        setShowAnimalTypeSelector(true)
-      }
     } catch (error) {
       console.error('Error deleting session:', error)
-      alert('删除对话失败，请重试')
+      alert(t('errors.networkRetry'))
     }
   }
 
   const deleteAllSessions = async () => {
-    if (!confirm('您确定要删除所有对话吗？这个操作不可恢复。')) {
+    if (!confirm(t('sidebar.deleteAllConfirm'))) {
       return
     }
 
     try {
       await httpClient.deleteJson(`/sessions/delete-all`)
-      
+
       // Clear all sessions from local state
       setSessions([])
-
-      // Show animal type selector for new session
-      setShowAnimalTypeSelector(true)
     } catch (error) {
       console.error('Error deleting all sessions:', error)
-      alert('删除所有对话失败，请重试')
+      alert(t('errors.networkRetry'))
     }
   }
 
   const formatTimestamp = (session: Session) => {
-    const date = new Date(session.created_at)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-    const diffDays = Math.floor(diffHours / 24)
-
-    if (diffHours < 1) {
-      return '刚刚'
-    } else if (diffHours < 24) {
-      return `${diffHours}小时前`
-    } else if (diffDays === 1) {
-      return '昨天'
-    } else if (diffDays < 7) {
-      return `${diffDays}天前`
-    } else {
-      return date.toLocaleDateString()
-    }
+    return formatRelativeTime(session.created_at)
   }
 
   const getAnimalTypeLabel = (animalType?: string) => {
     const labels: Record<string, string> = {
-      'dairy_cow': '奶牛',
-      'beef_cow': '肉牛',
-      'cat': '猫',
-      'dog': '狗'
+      'dairy_cow': t('animalTypes.dairy_cow'),
+      'beef_cow': t('animalTypes.beef_cow'),
+      'cat': t('animalTypes.cat'),
+      'dog': t('animalTypes.dog')
     }
-    return labels[animalType || 'dairy_cow'] || '奶牛'
+    return labels[animalType || 'dairy_cow'] || t('animalTypes.dairy_cow')
   }
 
   const getAnimalTypeEmoji = (animalType?: string) => {
@@ -183,7 +156,7 @@ export default function ConversationSidebar({
     return (
       <div className="w-80 bg-muted/30 border-r flex flex-col">
         <CardHeader className="pb-3">
-          <h2 className="text-lg font-semibold">对话历史</h2>
+          <h2 className="text-lg font-semibold">{t('sidebar.title')}</h2>
         </CardHeader>
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="animate-spin h-6 w-6 text-muted-foreground" />
@@ -205,14 +178,14 @@ export default function ConversationSidebar({
         {/* Header */}
         <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">对话列表</h2>
+          <h2 className="text-lg font-semibold">{t('sidebar.title')}</h2>
           <div className="flex items-center gap-1">
             {sessions.length > 0 && (
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={deleteAllSessions}
-                title="删除所有对话"
+                title={t('sidebar.deleteAllConfirm')}
                 className="h-8 w-8 text-destructive hover:text-destructive"
               >
                 <TrashIcon className="h-4 w-4" />
@@ -222,7 +195,7 @@ export default function ConversationSidebar({
               variant="ghost"
               size="icon"
               onClick={handleNewSessionClick}
-              title="新建对话"
+              title={t('sidebar.newChat')}
               className="h-8 w-8"
             >
               <Plus className="h-4 w-4" />
@@ -237,13 +210,13 @@ export default function ConversationSidebar({
         {sessions.length === 0 ? (
           <div className="text-center py-8">
             <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground mb-3">还没有对话</p>
+            <p className="text-sm text-muted-foreground mb-3">{t('common.statuses.historyPrompt')}</p>
             <Button
               variant="outline"
               size="sm"
               onClick={handleNewSessionClick}
             >
-              开始对话
+              {t('sidebar.newChat')}
             </Button>
           </div>
         ) : (
@@ -278,7 +251,7 @@ export default function ConversationSidebar({
                         size="icon"
                         onClick={(e) => deleteSession(session.session_id, e)}
                         className="opacity-0 group-hover:opacity-100 h-6 w-6 text-destructive hover:text-destructive flex-shrink-0"
-                        title="删除对话"
+                        title={t('sidebar.deleteConfirm')}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>

@@ -1,12 +1,20 @@
 'use client'
 
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect } from 'react'
 import { useAuth, AuthContextType } from '@/hooks/useAuth'
+import { useI18n } from './I18nContext'
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const auth = useAuth()
+  const { setLocale } = useI18n()
+
+  useEffect(() => {
+    if (auth.user?.preferred_language) {
+      void setLocale(auth.user.preferred_language, { notifyServer: false })
+    }
+  }, [auth.user?.preferred_language, setLocale])
   
   return (
     <AuthContext.Provider value={auth}>

@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { AttachedFile, ArtifactData } from '@/types/chat'
 import { getAuthHeaders } from '@/utils/authHeaders'
+import { useI18n } from '@/contexts/I18nContext'
 
 interface ChatInterfaceProps {
   sessionId: string
@@ -28,6 +29,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
   const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { t } = useI18n()
 
   const {
     messages,
@@ -130,7 +132,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
       })
 
       if (!res.ok) {
-        throw new Error(`下载失败: HTTP ${res.status}`)
+        throw new Error(t('errors.downloadFailed', { code: res.status.toString() }))
       }
 
       const blob = await res.blob()
@@ -176,17 +178,17 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
               {isLoading ? (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  正在加载对话...
+                  {t('common.statuses.loading')}
                 </>
               ) : connectionState === 'connected' ? (
-                <>已连接</>
+                <>{t('common.statuses.connected')}</>
               ) : connectionState === 'connecting' || isTyping ? (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  正在连接...
+                  {t('common.statuses.connecting')}
                 </>
               ) : (
-                <>连接错误</>
+                <>{t('common.statuses.error')}</>
               )}
             </Badge>
             {error && !isLoading && (
@@ -196,7 +198,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
                 onClick={retryConnection}
                 className="text-xs"
               >
-                重试
+                {t('common.buttons.retry')}
               </Button>
             )}
           </div>
@@ -242,7 +244,6 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
               size="icon"
               onClick={() => setShowFileUpload(!showFileUpload)}
               disabled={!isConnected || isLoading || isTyping}
-              title="切换文件上传"
             >
               <Upload className="h-4 w-4" />
             </Button>
@@ -251,7 +252,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入您的消息..."
+              placeholder={t('chat.inputPlaceholder')}
               disabled={!isConnected || isTyping || isStreaming || isLoading}
               className="flex-1"
             />
@@ -260,7 +261,6 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
                 onClick={stopMessage}
                 variant="destructive"
                 size="icon"
-                title="停止执行"
               >
                 <Square className="h-4 w-4" />
               </Button>
@@ -269,18 +269,16 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
                 onClick={handleSendMessage}
                 disabled={!inputValue.trim() || !isConnected || isLoading}
                 size="icon"
-                title="发送消息"
               >
                 <Send className="h-4 w-4" />
               </Button>
             )}
           </div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            按 Enter 发送消息 • Shift+Enter 换行 • {showFileUpload ? '上传牧场信息和饲料数据文件进行配方优化' : '点击上传按钮添加牧场信息和饲料数据'} • 支持Excel格式的牛群和饲料文件
-            {uploadedFiles.length > 0 && (
-              <span className="ml-2 text-primary">• 已附加 {uploadedFiles.length} 个文件</span>
-            )}
-          </div>
+          {uploadedFiles.length > 0 && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              • {uploadedFiles.length} files attached
+            </div>
+          )}
         </div>
       </Card>
 

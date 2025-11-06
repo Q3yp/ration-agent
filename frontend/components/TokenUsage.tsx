@@ -1,3 +1,7 @@
+'use client'
+
+import { useI18n } from '@/contexts/I18nContext'
+
 interface TokenUsageProps {
   tokenUsage?: {
     prompt_tokens: number
@@ -5,6 +9,7 @@ interface TokenUsageProps {
 }
 
 export function TokenUsage({ tokenUsage }: TokenUsageProps) {
+  const { t } = useI18n()
   if (!tokenUsage || tokenUsage.prompt_tokens === 0) {
     return null
   }
@@ -21,7 +26,7 @@ export function TokenUsage({ tokenUsage }: TokenUsageProps) {
   return (
     <div className="flex items-center gap-1 text-xs text-muted-foreground">
       <span className="font-mono">{formatNumber(tokenUsage.prompt_tokens)}</span>
-      <span>对话长度</span>
+      <span>{t('chat.tokenUsageLabel')}</span>
     </div>
   )
 }

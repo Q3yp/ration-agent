@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertTriangle } from 'lucide-react'
+import Link from 'next/link'
+import { useI18n } from '@/contexts/I18nContext'
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => Promise<void>
@@ -15,6 +17,7 @@ interface LoginFormProps {
 export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const { t } = useI18n()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,7 +31,7 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-center">
-            辉途智能配方助手 登录
+            {t('auth.loginTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -36,7 +39,7 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
             <div>
               <Input
                 type="email"
-                placeholder="邮箱地址"
+                placeholder={t('auth.emailPlaceholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
@@ -47,7 +50,7 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
             <div>
               <Input
                 type="password"
-                placeholder="密码"
+                placeholder={t('auth.passwordPlaceholder')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isLoading}
@@ -67,8 +70,14 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
               className="w-full" 
               disabled={isLoading || !email || !password}
             >
-              {isLoading ? '登录中...' : '登录'}
+              {isLoading ? t('auth.loggingIn') : t('common.buttons.login')}
             </Button>
+
+            <p className="text-center text-sm text-muted-foreground">
+              <Link href="/register" className="text-primary hover:underline">
+                {t('auth.registerLink')}
+              </Link>
+            </p>
           </form>
         </CardContent>
       </Card>

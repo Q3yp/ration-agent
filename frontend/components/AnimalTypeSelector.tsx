@@ -5,6 +5,7 @@ import { AnimalType, AnimalTypeOption } from '@/types/chat'
 import { Card } from './ui/card'
 import { Button } from './ui/button'
 import { httpClient } from '@/utils/httpClient'
+import { useI18n } from '@/contexts/I18nContext'
 
 interface AnimalTypeSelectorProps {
   onSelect: (animalType: AnimalType) => void
@@ -24,6 +25,7 @@ export function AnimalTypeSelector({ onSelect, onCancel }: AnimalTypeSelectorPro
   const [selectedType, setSelectedType] = useState<AnimalType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { t } = useI18n()
 
   useEffect(() => {
     fetchAnimalTypes()
@@ -61,7 +63,7 @@ export function AnimalTypeSelector({ onSelect, onCancel }: AnimalTypeSelectorPro
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-in fade-in duration-200">
         <Card className="p-6 max-w-md w-full mx-4 shadow-2xl">
-          <div className="text-center">加载中...</div>
+          <div className="text-center">{t('animalTypes.loading')}</div>
         </Card>
       </div>
     )
@@ -73,7 +75,7 @@ export function AnimalTypeSelector({ onSelect, onCancel }: AnimalTypeSelectorPro
         <Card className="p-6 max-w-md w-full mx-4 shadow-2xl">
           <div className="text-center text-red-600">{error}</div>
           <Button onClick={onCancel} className="mt-4 w-full">
-            取消
+            {t('common.buttons.cancel')}
           </Button>
         </Card>
       </div>
@@ -89,7 +91,7 @@ export function AnimalTypeSelector({ onSelect, onCancel }: AnimalTypeSelectorPro
         className="p-6 max-w-md w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-300"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-xl font-semibold mb-4 text-center">选择动物类型</h2>
+        <h2 className="text-xl font-semibold mb-4 text-center">{t('animalTypes.selectTitle')}</h2>
 
         <div className="grid grid-cols-2 gap-3 mb-6">
           {animalTypes.map((type) => (
@@ -117,14 +119,14 @@ export function AnimalTypeSelector({ onSelect, onCancel }: AnimalTypeSelectorPro
 
         <div className="flex gap-3">
           <Button onClick={onCancel} variant="outline" className="flex-1">
-            取消
+            {t('common.buttons.cancel')}
           </Button>
           <Button
             onClick={handleConfirm}
             disabled={!selectedType}
             className="flex-1"
           >
-            创建对话
+            {t('animalTypes.create')}
           </Button>
         </div>
       </Card>

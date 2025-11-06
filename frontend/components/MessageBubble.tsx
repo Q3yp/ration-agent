@@ -228,7 +228,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                 className={cn("font-medium", !roleInfo.customStyles && roleInfo.color)}
                 style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
               >
-                {roleInfo.transitionMessage}
+                {message.content}
               </span>
             </div>
             

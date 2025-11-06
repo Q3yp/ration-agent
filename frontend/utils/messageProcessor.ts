@@ -7,6 +7,28 @@
 
 import { Message, MessageType, ArtifactData } from '@/types/chat'
 
+const LOADING_COPY = {
+  'zh-CN': {
+    title: '正在创建内容...',
+    description: '请稍候，正在生成内容中...',
+    subtitle: '请稍候...'
+  },
+  'en-US': {
+    title: 'Generating content...',
+    description: 'Please wait while we generate your content.',
+    subtitle: 'Please wait...'
+  }
+}
+
+const getLocale = () => {
+  if (typeof document === 'undefined') {
+    return 'zh-CN'
+  }
+  return document.documentElement.lang === 'en-US' ? 'en-US' : 'zh-CN'
+}
+
+const getLoadingText = () => LOADING_COPY[getLocale() as 'zh-CN' | 'en-US']
+
 export type MessageSource = 'history' | 'sse_stream' | 'user_input'
 
 export type SSEEventType =
@@ -154,8 +176,8 @@ export class MessageProcessor {
             results.push({
               type: 'artifact_update',
               data: {
-                title: '正在创建内容...',
-                description: '请稍候，正在生成内容中...',
+                title: getLoadingText().title,
+                description: getLoadingText().description,
                 html_content: MessageProcessor.createLoadingArtifactHTML(),
                 isLoading: true
               }
@@ -350,13 +372,15 @@ export class MessageProcessor {
    * Create loading artifact HTML content
    */
   private static createLoadingArtifactHTML(): string {
+    const copy = getLoadingText()
+    const locale = getLocale()
     return `
       <!DOCTYPE html>
-      <html lang="zh">
+      <html lang="${locale}">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>正在创建内容</title>
+        <title>${copy.title}</title>
         <style>
           body {
             margin: 0;
@@ -397,12 +421,12 @@ export class MessageProcessor {
         </style>
       </head>
       <body>
-        <div class="loading-container">
-          <div class="spinner"></div>
-          <div class="loading-text">正在创建内容</div>
-          <div class="loading-subtitle">请稍候...</div>
-        </div>
-      </body>
+          <div class="loading-container">
+            <div class="spinner"></div>
+            <div class="loading-text">${copy.title}</div>
+            <div class="loading-subtitle">${copy.subtitle}</div>
+          </div>
+        </body>
       </html>
     `
   }

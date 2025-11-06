@@ -1,12 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Plus, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import FeedbaseList from './FeedbaseList'
 import FeedbaseEditor from './FeedbaseEditor'
 import { useAuthContext } from '@/contexts/AuthContext'
+import { useI18n } from '@/contexts/I18nContext'
+import { getFeedbaseCopy } from './feedbaseCopy'
 
 export interface FeedData {
   dm_percent: number
@@ -24,8 +26,12 @@ export interface Feedbase {
   data: FeedbaseData
 }
 
+const PLACEHOLDER_NAMES = ['新饲料库', 'New Feedbase']
+
 export default function FeedbaseManager() {
   const { token } = useAuthContext()
+  const { locale } = useI18n()
+  const copy = useMemo(() => getFeedbaseCopy(locale), [locale])
   const [feedbases, setFeedbases] = useState<string[]>([])
   const [feedbasesData, setFeedbasesData] = useState<Record<string, FeedbaseData>>({})
   const [selectedFeedbase, setSelectedFeedbase] = useState<Feedbase | null>(null)
@@ -33,6 +39,7 @@ export default function FeedbaseManager() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [animalTypeFilter, setAnimalTypeFilter] = useState<string>('all')
+  const placeholderNames = useMemo(() => new Set([...PLACEHOLDER_NAMES, copy.manager.newFeedbaseName]), [copy.manager.newFeedbaseName])
 
   // Helper function to get auth headers
   const getAuthHeaders = () => ({
@@ -104,7 +111,7 @@ export default function FeedbaseManager() {
       // If name changed, we need to delete the old one and create a new one
       if (originalName !== newName) {
         // Delete the old feedbase if it exists and is not a new one
-        if (originalName !== '新饲料库' && feedbases.includes(originalName)) {
+        if (!placeholderNames.has(originalName) && feedbases.includes(originalName)) {
           const deleteResponse = await fetch(`/api/feedbases/${encodeURIComponent(originalName)}`, {
             method: 'DELETE',
             headers: getAuthHeaders()
@@ -139,7 +146,8 @@ export default function FeedbaseManager() {
 
   // Delete feedbase
   const deleteFeedbase = async (name: string) => {
-    if (!confirm(`确定要删除饲料库 "${name}" 吗？此操作不可撤销。`)) {
+    const confirmMessage = copy.manager.confirmDelete.replace('{{name}}', name)
+    if (!confirm(confirmMessage)) {
       return
     }
 
@@ -219,7 +227,7 @@ export default function FeedbaseManager() {
   // Create new feedbase
   const createNew = () => {
     const newFeedbase: Feedbase = {
-      name: '新饲料库',
+      name: copy.manager.newFeedbaseName,
       data: {
         animal_type: 'dairy_cow', // Default to dairy_cow
         feeds: {}
@@ -239,7 +247,7 @@ export default function FeedbaseManager() {
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          <div className="text-muted-foreground">正在加载饲料库...</div>
+          <div className="text-muted-foreground">{copy.manager.loading}</div>
         </div>
       </div>
     )
@@ -250,23 +258,17 @@ export default function FeedbaseManager() {
       <div className="flex flex-col items-center justify-center h-full gap-4">
         <div className="flex items-center gap-2 text-red-600">
           <AlertCircle className="h-5 w-5" />
-          <span>错误: {error}</span>
+          <span>{copy.manager.errorPrefix}: {error}</span>
         </div>
         <Button onClick={() => { setError(null); loadFeedbases() }} variant="outline">
-          重试
+          {copy.manager.retry}
         </Button>
       </div>
     )
   }
 
   // Filter feedbases by animal type
-  const animalTypeLabels: Record<string, string> = {
-    'all': '全部',
-    'dairy_cow': '奶牛',
-    'beef_cow': '肉牛',
-    'cat': '猫',
-    'dog': '狗'
-  }
+  const animalOptions = copy.common.animals
 
   const filteredFeedbases = animalTypeFilter === 'all'
     ? feedbases
@@ -285,20 +287,20 @@ export default function FeedbaseManager() {
         <div className="h-full flex flex-col">
           <div className="flex flex-col gap-3 mb-4 pb-3 border-b">
             <div className="flex sm:justify-between sm:items-center gap-3">
-              <h2 className="text-lg font-semibold text-foreground">饲料库列表</h2>
+              <h2 className="text-lg font-semibold text-foreground">{copy.manager.sidebarTitle}</h2>
               <Button
                 size="sm"
                 onClick={createNew}
                 className="flex items-center gap-2"
               >
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">新建</span>
+                <span className="hidden sm:inline">{copy.manager.createButton}</span>
               </Button>
             </div>
 
             {/* Animal type filter */}
             <div className="flex gap-2 flex-wrap">
-              {Object.entries(animalTypeLabels).map(([type, label]) => (
+              {Object.entries(animalOptions).map(([type, { label }]) => (
                 <button
                   key={type}
                   onClick={() => setAnimalTypeFilter(type)}
@@ -343,12 +345,12 @@ export default function FeedbaseManager() {
             <Card className="w-full max-w-sm">
               <CardContent className="p-8 text-center">
                 <Plus className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">开始管理饲料库</h3>
+                <h3 className="text-lg font-semibold mb-2">{copy.manager.emptyStateTitle}</h3>
                 <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
-                  选择左侧现有的饲料库进行编辑，或创建一个全新的饲料库
+                  {copy.manager.emptyStateDescription}
                 </p>
                 <Button onClick={createNew} className="w-full">
-                  创建新饲料库
+                  {copy.manager.createPrimary}
                 </Button>
               </CardContent>
             </Card>

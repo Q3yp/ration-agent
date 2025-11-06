@@ -1,8 +1,71 @@
+"use client"
+
 /**
  * Comprehensive Error Handling and Recovery System
  * 
  * Provides centralized error classification, recovery strategies, and user-friendly messaging.
  */
+
+import { Locale } from '@/lib/i18n/locales'
+
+const ERROR_TEXT: Record<Locale, Record<string, string>> = {
+  'zh-CN': {
+    networkIssue: '网络连接出现问题，请检查网络连接后重试',
+    networkAction: '检查网络连接',
+    serverIssue: '服务器暂时不可用，请稍后重试',
+    serverAction: '稍后重试',
+    sessionIssue: '会话已过期，请刷新页面重新开始',
+    refreshAction: '刷新页面',
+    validationIssue: '输入内容有误，请检查后重新提交',
+    validationAction: '检查输入内容',
+    permissionIssue: '没有权限执行此操作',
+    permissionAction: '联系管理员',
+    streamingIssue: '实时连接中断，正在尝试重新连接',
+    streamingAction: '自动重连中',
+    unknownIssue: '发生未知错误，请刷新页面重试',
+    unknownAction: '刷新页面或联系技术支持',
+    fileUnsupported: '文件格式不支持或文件过大，请检查文件类型和大小',
+    chooseAnotherFile: '选择其他文件',
+    fileUploadFailed: '文件上传失败，服务器暂时不可用',
+    retryUpload: '稍后重试上传',
+    streamDisconnected: '实时连接中断，请检查网络连接',
+    retryConnect: '点击重试按钮重新连接',
+    suggestionPrefix: ' (建议: {{action}})'
+  },
+  'en-US': {
+    networkIssue: 'Network issue detected. Please check your connection and try again.',
+    networkAction: 'Check your network connection',
+    serverIssue: 'Server is temporarily unavailable. Please try again later.',
+    serverAction: 'Try again later',
+    sessionIssue: 'Session expired. Refresh the page to start again.',
+    refreshAction: 'Refresh the page',
+    validationIssue: 'Input appears invalid. Please review and resubmit.',
+    validationAction: 'Review your input',
+    permissionIssue: 'You do not have permission to perform this action.',
+    permissionAction: 'Contact an administrator',
+    streamingIssue: 'Live connection interrupted. Attempting to reconnect...',
+    streamingAction: 'Reconnecting automatically',
+    unknownIssue: 'An unknown error occurred. Please refresh and try again.',
+    unknownAction: 'Refresh the page or contact support',
+    fileUnsupported: 'File type not supported or too large. Please verify the file.',
+    chooseAnotherFile: 'Select a different file',
+    fileUploadFailed: 'File upload failed. Server is temporarily unavailable.',
+    retryUpload: 'Try uploading again later',
+    streamDisconnected: 'Live connection interrupted. Check your network.',
+    retryConnect: 'Click retry to reconnect',
+    suggestionPrefix: ' (Hint: {{action}})'
+  }
+}
+
+const getLocale = (): Locale => {
+  if (typeof document === 'undefined') {
+    return 'zh-CN'
+  }
+  const lang = document.documentElement.lang
+  return lang === 'en-US' ? 'en-US' : 'zh-CN'
+}
+
+const msg = (key: string) => ERROR_TEXT[getLocale()][key]
 
 export type ErrorCategory = 
   | 'network'        // Network connectivity issues
@@ -50,9 +113,9 @@ export class ErrorHandler {
       return {
         category: 'network',
         message: errorMessage,
-        userMessage: '网络连接出现问题，请检查网络连接后重试',
+        userMessage: msg('networkIssue'),
         isRetryable: true,
-        suggestedAction: '检查网络连接',
+        suggestedAction: msg('networkAction'),
         originalError: error
       }
     }
@@ -62,9 +125,9 @@ export class ErrorHandler {
       return {
         category: 'server',
         message: errorMessage,
-        userMessage: '服务器暂时不可用，请稍后重试',
+        userMessage: msg('serverIssue'),
         isRetryable: true,
-        suggestedAction: '稍后重试',
+        suggestedAction: msg('serverAction'),
         originalError: error
       }
     }
@@ -78,9 +141,9 @@ export class ErrorHandler {
       return {
         category: 'session',
         message: errorMessage,
-        userMessage: '会话已过期，请刷新页面重新开始',
+        userMessage: msg('sessionIssue'),
         isRetryable: false,
-        suggestedAction: '刷新页面',
+        suggestedAction: msg('refreshAction'),
         originalError: error
       }
     }
@@ -95,9 +158,9 @@ export class ErrorHandler {
       return {
         category: 'validation',
         message: errorMessage,
-        userMessage: '输入内容有误，请检查后重新提交',
+        userMessage: msg('validationIssue'),
         isRetryable: false,
-        suggestedAction: '检查输入内容',
+        suggestedAction: msg('validationAction'),
         originalError: error
       }
     }
@@ -112,9 +175,9 @@ export class ErrorHandler {
       return {
         category: 'permission',
         message: errorMessage,
-        userMessage: '没有权限执行此操作',
+        userMessage: msg('permissionIssue'),
         isRetryable: false,
-        suggestedAction: '联系管理员',
+        suggestedAction: msg('permissionAction'),
         originalError: error
       }
     }
@@ -128,9 +191,9 @@ export class ErrorHandler {
       return {
         category: 'streaming',
         message: errorMessage,
-        userMessage: '实时连接中断，正在尝试重新连接',
+        userMessage: msg('streamingIssue'),
         isRetryable: true,
-        suggestedAction: '自动重连中',
+        suggestedAction: msg('streamingAction'),
         originalError: error
       }
     }
@@ -139,9 +202,9 @@ export class ErrorHandler {
     return {
       category: 'unknown',
       message: errorMessage,
-      userMessage: '发生未知错误，请刷新页面重试',
+      userMessage: msg('unknownIssue'),
       isRetryable: true,
-      suggestedAction: '刷新页面或联系技术支持',
+      suggestedAction: msg('unknownAction'),
       originalError: error
     }
   }
@@ -204,16 +267,16 @@ export class ErrorHandler {
     if (classified.category === 'validation') {
       return {
         ...classified,
-        userMessage: '文件格式不支持或文件过大，请检查文件类型和大小',
-        suggestedAction: '选择其他文件'
+        userMessage: msg('fileUnsupported'),
+        suggestedAction: msg('chooseAnotherFile')
       }
     }
 
     if (classified.category === 'server') {
       return {
         ...classified,
-        userMessage: '文件上传失败，服务器暂时不可用',
-        suggestedAction: '稍后重试上传'
+        userMessage: msg('fileUploadFailed'),
+        suggestedAction: msg('retryUpload')
       }
     }
 
@@ -229,8 +292,8 @@ export class ErrorHandler {
     if (classified.category === 'network') {
       return {
         ...classified,
-        userMessage: '实时连接中断，请检查网络连接',
-        suggestedAction: '点击重试按钮重新连接'
+        userMessage: msg('streamDisconnected'),
+        suggestedAction: msg('retryConnect')
       }
     }
 
@@ -246,7 +309,8 @@ export class ErrorHandler {
     let message = classified.userMessage
     
     if (classified.suggestedAction) {
-      message += ` (建议: ${classified.suggestedAction})`
+      const prefix = msg('suggestionPrefix').replace('{{action}}', classified.suggestedAction)
+      message += prefix
     }
     
     return message

@@ -7,6 +7,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import FeedEditor from './FeedEditor'
 import { Feedbase, FeedbaseData, FeedData } from './FeedbaseManager'
+import { useI18n } from '@/contexts/I18nContext'
+import { getFeedbaseCopy } from './feedbaseCopy'
 
 interface FeedbaseEditorProps {
   feedbase: Feedbase
@@ -18,6 +20,10 @@ type LegacyFeedData = { dry_matter_percent: number; nutrients: Record<string, nu
 
 export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseEditorProps) {
   const isSystemDefault = feedbase.name.startsWith('default_')
+  const { locale } = useI18n()
+  const copy = getFeedbaseCopy(locale)
+  const editorCopy = copy.editor
+  const commonCopy = copy.common
   const [name, setName] = useState(feedbase.name)
   const [animalType, setAnimalType] = useState(feedbase.data.animal_type || 'dairy_cow')
   
@@ -43,7 +49,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
 
   const handleSave = async () => {
     if (!name.trim()) {
-      setError('请输入饲料库名称')
+      setError(editorCopy.validationName)
       return
     }
 
@@ -55,14 +61,14 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
         feeds
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败')
+      setError(err instanceof Error ? err.message : editorCopy.saveError)
     } finally {
       setSaving(false)
     }
   }
 
   const addNewFeed = () => {
-    const feedName = `新饲料${Object.keys(feeds).length + 1}`
+    const feedName = `${editorCopy.newFeedPrefix}${Object.keys(feeds).length + 1}`
     const newFeed: FeedData = {
       dm_percent: 90,
       nutrients: {},
@@ -113,31 +119,28 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
 
   const feedNames = Object.keys(feeds).sort()
 
-  const animalTypeOptions = [
-    { value: 'dairy_cow', label: '奶牛 Dairy Cow' },
-    { value: 'beef_cow', label: '肉牛 Beef Cow' },
-    { value: 'cat', label: '猫 Cat' },
-    { value: 'dog', label: '狗 Dog' }
-  ]
+  const animalTypeOptions = Object.entries(commonCopy.animals)
+    .filter(([value]) => value !== 'all')
+    .map(([value, { label }]) => ({ value, label }))
 
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="space-y-4 mb-6">
-        <div className="flex justify-between items-center">
-          <div className="flex-1 flex gap-4 items-center">
-            <div className="flex-1">
-              <Input
-                value={name}
-                onChange={(e) => !isSystemDefault && setName(e.target.value)}
-                placeholder="饲料库名称"
+      <div className="flex justify-between items-center">
+        <div className="flex-1 flex gap-4 items-center">
+          <div className="flex-1">
+            <Input
+              value={name}
+              onChange={(e) => !isSystemDefault && setName(e.target.value)}
+                placeholder={editorCopy.namePlaceholder}
                 disabled={isSystemDefault}
                 className="text-lg font-semibold border border-dashed border-muted-foreground/30 bg-transparent px-3 py-2 hover:border-muted-foreground/50 focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
               />
             </div>
             {isSystemDefault && (
               <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                系统饲料库（只读）
+                {editorCopy.systemBadge}
               </span>
             )}
             <div className="w-48">
@@ -158,12 +161,12 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
           <div className="flex gap-2 ml-4">
             <Button variant="outline" onClick={onCancel}>
               <X className="h-4 w-4 mr-1" />
-              {isSystemDefault ? '关闭' : '取消'}
+              {isSystemDefault ? editorCopy.close : editorCopy.cancel}
             </Button>
             {!isSystemDefault && (
               <Button onClick={handleSave} disabled={saving}>
                 <Save className="h-4 w-4 mr-1" />
-                {saving ? '保存中...' : '保存'}
+                {saving ? editorCopy.saving : editorCopy.save}
               </Button>
             )}
           </div>
@@ -172,7 +175,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
-          {error}
+          {error === 'Save failed' ? editorCopy.saveError : error}
         </div>
       )}
 
@@ -181,11 +184,11 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
         {/* Feed List */}
         <div className="w-full lg:w-80 lg:flex-shrink-0 flex flex-col min-h-0">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 flex-shrink-0">
-            <h3 className="font-semibold text-lg">饲料列表 ({feedNames.length})</h3>
+            <h3 className="font-semibold text-lg">{editorCopy.feedListTitle(feedNames.length)}</h3>
             {!isSystemDefault && (
               <Button size="sm" onClick={addNewFeed} className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">添加饲料</span>
+                <span className="hidden sm:inline">{editorCopy.addFeed}</span>
               </Button>
             )}
           </div>
@@ -195,8 +198,8 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
               <div className="flex items-center justify-center h-full">
                 <div className="text-center py-12">
                   <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
-                  <div className="text-muted-foreground font-medium">暂无饲料</div>
-                  <div className="text-sm text-muted-foreground mt-1">点击上方按钮添加饲料</div>
+                  <div className="text-muted-foreground font-medium">{editorCopy.emptyFeedTitle}</div>
+                  <div className="text-sm text-muted-foreground mt-1">{editorCopy.emptyFeedDescription}</div>
                 </div>
               </div>
             ) : (
@@ -221,7 +224,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
                             {feedName}
                           </div>
                           <div className="text-sm text-muted-foreground mt-1">
-                            DM: {feeds[feedName].dm_percent}% | 成本: ¥{feeds[feedName].cost_per_kg}/kg
+                            {editorCopy.feedSummary(feeds[feedName].dm_percent, feeds[feedName].cost_per_kg)}
                           </div>
                         </button>
                         {!isSystemDefault && (
@@ -233,7 +236,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
                               e.stopPropagation()
                               deleteFeed(feedName)
                             }}
-                            title="删除饲料"
+                            title={editorCopy.deleteFeedTooltip(feedName)}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -252,7 +255,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
           {editingFeed && feeds[editingFeed] ? (
             <div className="h-full flex flex-col">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 pb-3 border-b">
-                <h3 className="font-semibold text-lg text-foreground">编辑: {editingFeed}</h3>
+                <h3 className="font-semibold text-lg text-foreground">{editorCopy.editHeading(editingFeed)}</h3>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <div className="h-full overflow-y-auto">
@@ -270,13 +273,13 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
               <Card className="w-full max-w-sm">
                 <CardContent className="p-8 text-center">
                   <Plus className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
-                  <h3 className="text-lg font-semibold mb-2">选择饲料进行编辑</h3>
+                  <h3 className="text-lg font-semibold mb-2">{editorCopy.selectFeedTitle}</h3>
                   <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
-                    {isSystemDefault ? '从左侧列表中选择一个饲料查看详情' : '从左侧列表中选择一个饲料进行编辑，或添加新的饲料'}
+                    {isSystemDefault ? editorCopy.selectFeedDescriptionReadOnly : editorCopy.selectFeedDescription}
                   </p>
                   {!isSystemDefault && (
                     <Button onClick={addNewFeed} className="w-full">
-                      添加新饲料
+                      {editorCopy.addFeedPrimary}
                     </Button>
                   )}
                 </CardContent>

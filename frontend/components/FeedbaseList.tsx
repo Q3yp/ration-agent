@@ -10,6 +10,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
+import { useI18n } from '@/contexts/I18nContext'
+import { getFeedbaseCopy } from './feedbaseCopy'
 
 interface FeedbaseItem {
   name: string
@@ -31,25 +33,17 @@ export default function FeedbaseList({
   onDelete,
   onExport
 }: FeedbaseListProps) {
+  const { locale } = useI18n()
+  const copy = getFeedbaseCopy(locale)
 
   const getAnimalTypeLabel = (animalType?: string) => {
-    const labels: Record<string, string> = {
-      'dairy_cow': '奶牛',
-      'beef_cow': '肉牛',
-      'cat': '猫',
-      'dog': '狗'
-    }
-    return labels[animalType || 'dairy_cow'] || '奶牛'
+    const labels = copy.common.animals
+    return labels[animalType || 'dairy_cow']?.label || labels.dairy_cow.label
   }
 
   const getAnimalTypeEmoji = (animalType?: string) => {
-    const emojis: Record<string, string> = {
-      'dairy_cow': '🐄',
-      'beef_cow': '🐂',
-      'cat': '🐱',
-      'dog': '🐶'
-    }
-    return emojis[animalType || 'dairy_cow'] || '🐄'
+    const emojis = copy.common.animals
+    return emojis[animalType || 'dairy_cow']?.emoji || emojis.dairy_cow.emoji
   }
 
   if (feedbases.length === 0) {
@@ -57,8 +51,8 @@ export default function FeedbaseList({
       <div className="flex items-center justify-center h-full">
         <div className="text-center py-12">
           <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
-          <div className="text-muted-foreground font-medium">暂无饲料库</div>
-          <div className="text-sm text-muted-foreground mt-1">点击上方的「新建」按钮创建饲料库</div>
+          <div className="text-muted-foreground font-medium">{copy.list.emptyTitle}</div>
+          <div className="text-sm text-muted-foreground mt-1">{copy.list.emptyDescription}</div>
         </div>
       </div>
     )
@@ -90,7 +84,7 @@ export default function FeedbaseList({
                     {feedbase.name}
                     {isSystemDefault && (
                       <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-normal">
-                        系统
+                        {copy.list.systemTag}
                       </span>
                     )}
                   </div>
@@ -103,7 +97,7 @@ export default function FeedbaseList({
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {isSystemDefault ? '点击查看（只读）' : '点击编辑饲料库'}
+                    {isSystemDefault ? copy.list.viewOnly : copy.list.clickToEdit}
                   </div>
                 </button>
 
@@ -124,7 +118,7 @@ export default function FeedbaseList({
                       className="text-sm"
                     >
                       <Download className="h-4 w-4 mr-2" />
-                      导出
+                      {copy.list.export}
                     </DropdownMenuItem>
                     {!isSystemDefault && (
                       <>
@@ -134,7 +128,7 @@ export default function FeedbaseList({
                           className="text-red-600 focus:text-red-700 text-sm"
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
-                          删除
+                          {copy.list.delete}
                         </DropdownMenuItem>
                       </>
                     )}

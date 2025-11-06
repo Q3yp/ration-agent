@@ -9,9 +9,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAuthContext } from '@/contexts/AuthContext'
 import Link from 'next/link'
+import { useI18n } from '@/contexts/I18nContext'
+import { LocaleToggle } from '@/components/LocaleToggle'
 
 export default function Home() {
   const { user, logout } = useAuthContext()
+  const { t } = useI18n()
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [chatKey, setChatKey] = useState(0) // Force ChatInterface re-render when session changes
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>({})
@@ -59,35 +62,36 @@ export default function Home() {
             <header className="py-4 px-6 border-b">
               <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-                  辉途智能配方助手
+                  {t('common.appName')}
                 </h1>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">
-                    欢迎，{user?.username}
+                    {user?.username ? t('common.welcomeUser', { name: user.username }) : t('common.welcomeGeneric')}
                   </span>
                   <Link href="/guide">
                     <Button variant="outline" size="sm">
                       <BookOpen className="h-4 w-4 mr-1" />
-                      使用指南
+                      {t('chat.guide')}
                     </Button>
                   </Link>
                   <Link href="/feedbases">
                     <Button variant="outline" size="sm">
                       <Database className="h-4 w-4 mr-1" />
-                      饲料库管理
+                      {t('chat.feedbase')}
                     </Button>
                   </Link>
                   {user?.is_superuser && (
                     <Link href="/admin">
                       <Button variant="outline" size="sm">
                         <User className="h-4 w-4 mr-1" />
-                        用户管理
+                        {t('chat.admin')}
                       </Button>
                     </Link>
                   )}
+                  <LocaleToggle />
                   <Button variant="outline" size="sm" onClick={logout}>
                     <LogOut className="h-4 w-4 mr-1" />
-                    退出登录
+                    {t('common.buttons.logout')}
                   </Button>
                 </div>
               </div>
@@ -108,7 +112,7 @@ export default function Home() {
                 <Card className="w-96">
                   <CardContent className="p-6 text-center">
                     <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                    <p className="text-muted-foreground mb-3">请选择或创建一个对话</p>
+                    <p className="text-muted-foreground mb-3">{t('chat.selectPrompt')}</p>
                   </CardContent>
                 </Card>
               </div>

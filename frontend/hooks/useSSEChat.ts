@@ -4,6 +4,28 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Message, MessageType, AttachedFile, ArtifactData } from '@/types/chat'
 import { backendClient } from '@/utils/httpClient'
 
+const LOADING_COPY = {
+  'zh-CN': {
+    title: '正在创建内容...',
+    description: '请稍候，正在生成内容中...',
+    subtitle: '请稍候...'
+  },
+  'en-US': {
+    title: 'Generating content...',
+    description: 'Please wait while we generate your content.',
+    subtitle: 'Please wait...'
+  }
+}
+
+const getLocale = () => {
+  if (typeof document === 'undefined') {
+    return 'zh-CN'
+  }
+  return document.documentElement.lang === 'en-US' ? 'en-US' : 'zh-CN'
+}
+
+const getLoadingText = () => LOADING_COPY[getLocale() as 'zh-CN' | 'en-US']
+
 interface UseSSEChatProps {
   sessionId: string
   endpoint?: string
@@ -109,17 +131,18 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
 
         case 'artifact_loading':
           if (data.type === 'artifact_loading') {
-            // Show loading artifact
+            const copy = getLoadingText()
+            const locale = getLocale()
             onArtifactUpdate?.({ 
-              title: '正在创建内容...', 
-              description: '请稍候，正在生成内容中...', 
+              title: copy.title, 
+              description: copy.description, 
               html_content: `
                 <!DOCTYPE html>
-                <html lang="zh">
+                <html lang="${locale}">
                 <head>
                   <meta charset="UTF-8">
                   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <title>正在创建内容</title>
+                  <title>${copy.title}</title>
                   <style>
                     body {
                       margin: 0;
@@ -162,8 +185,8 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
                 <body>
                   <div class="loading-container">
                     <div class="spinner"></div>
-                    <div class="loading-text">正在创建内容</div>
-                    <div class="loading-subtitle">请稍候...</div>
+                    <div class="loading-text">${copy.title}</div>
+                    <div class="loading-subtitle">${copy.subtitle}</div>
                   </div>
                 </body>
                 </html>

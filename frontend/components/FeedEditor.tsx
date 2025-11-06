@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { FeedData } from './FeedbaseManager'
+import { useI18n } from '@/contexts/I18nContext'
+import { getFeedbaseCopy } from './feedbaseCopy'
 
 interface FeedEditorProps {
   feedName: string
@@ -15,6 +17,8 @@ interface FeedEditorProps {
 }
 
 export default function FeedEditor({ feedName, feedData, onChange, readOnly = false }: FeedEditorProps) {
+  const { locale } = useI18n()
+  const copy = getFeedbaseCopy(locale).feedEditor
   const [name, setName] = useState(feedName)
   const [dryMatterPercent, setDryMatterPercent] = useState(feedData.dm_percent.toString())
   const [costPerKg, setCostPerKg] = useState(feedData.cost_per_kg.toString())
@@ -84,18 +88,18 @@ export default function FeedEditor({ feedName, feedData, onChange, readOnly = fa
     <div className="p-6 space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-lg font-semibold">饲料详细信息</h2>
+        <h2 className="text-lg font-semibold">{copy.title}</h2>
       </div>
       
       {/* Basic Info */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 pb-2 border-b">
-          <h3 className="font-semibold text-foreground">基本信息</h3>
+          <h3 className="font-semibold text-foreground">{copy.basicInfo}</h3>
         </div>
         
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium mb-2 text-foreground">饲料名称</label>
+            <label className="block text-sm font-medium mb-2 text-foreground">{copy.nameLabel}</label>
             <Input
               value={name}
               disabled={readOnly}
@@ -105,14 +109,14 @@ export default function FeedEditor({ feedName, feedData, onChange, readOnly = fa
                 setName(newValue)
                 handleChange(newValue)
               }}
-              placeholder="请输入饲料名称"
+              placeholder={copy.namePlaceholder}
               className="focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2 text-foreground">干物质含量 (%)</label>
+              <label className="block text-sm font-medium mb-2 text-foreground">{copy.dmLabel}</label>
               <Input
                 type="number"
                 value={dryMatterPercent}
@@ -133,7 +137,7 @@ export default function FeedEditor({ feedName, feedData, onChange, readOnly = fa
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2 text-foreground">成本 (¥/kg)</label>
+              <label className="block text-sm font-medium mb-2 text-foreground">{copy.costLabel}</label>
               <Input
                 type="number"
                 value={costPerKg}
@@ -158,9 +162,9 @@ export default function FeedEditor({ feedName, feedData, onChange, readOnly = fa
       {/* Nutrients */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 pb-2 border-b">
-          <h3 className="font-semibold text-foreground">营养成分</h3>
+          <h3 className="font-semibold text-foreground">{copy.nutrientsTitle}</h3>
           <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-            {Object.keys(nutrients).length} 项
+            {copy.nutrientCount(Object.keys(nutrients).length)}
           </span>
         </div>
 
@@ -168,8 +172,8 @@ export default function FeedEditor({ feedName, feedData, onChange, readOnly = fa
         {Object.keys(nutrients).length === 0 ? (
           <div className="flex items-center justify-center py-12 text-muted-foreground">
             <div className="text-center">
-              <div className="text-sm">暂无营养成分</div>
-              <div className="text-xs mt-1">使用下方输入框添加营养成分</div>
+              <div className="text-sm">{copy.noNutrients}</div>
+              <div className="text-xs mt-1">{copy.addNutrientHint}</div>
             </div>
           </div>
         ) : (
@@ -205,7 +209,7 @@ export default function FeedEditor({ feedName, feedData, onChange, readOnly = fa
                       size="sm"
                       className="h-9 w-9 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                       onClick={() => removeNutrient(key)}
-                      title={`删除 ${key}`}
+                      title={copy.deleteTooltip(key)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -223,7 +227,7 @@ export default function FeedEditor({ feedName, feedData, onChange, readOnly = fa
             <Input
               value={newNutrientName}
               onChange={(e) => setNewNutrientName(e.target.value)}
-              placeholder="输入营养成分名称（如：crude_protein）"
+              placeholder={copy.nutrientNamePlaceholder}
               onKeyPress={(e) => {
                 if (e.key === 'Enter') {
                   addNutrient()
@@ -237,7 +241,7 @@ export default function FeedEditor({ feedName, feedData, onChange, readOnly = fa
               className="flex items-center gap-2"
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">添加</span>
+              <span className="hidden sm:inline">{copy.addButton}</span>
             </Button>
           </div>
         </Card>

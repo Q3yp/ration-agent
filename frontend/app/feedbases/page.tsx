@@ -7,9 +7,11 @@ import FeedbaseManager from '@/components/FeedbaseManager'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { useAuthContext } from '@/contexts/AuthContext'
 import Link from 'next/link'
+import { useI18n } from '@/contexts/I18nContext'
 
 export default function FeedbasesPage() {
   const { user, logout } = useAuthContext()
+  const { t } = useI18n()
 
   return (
     <ProtectedRoute>
@@ -22,19 +24,19 @@ export default function FeedbasesPage() {
                 <Link href="/chat">
                   <Button variant="outline" size="sm">
                     <ArrowLeft className="h-4 w-4 mr-1" />
-                    返回对话
+                    {t('feedbases.back')}
                   </Button>
                 </Link>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-                  饲料库管理
+                  {t('feedbases.title')}
                 </h1>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">
-                  欢迎，{user?.username}
+                  {user?.username ? t('common.welcomeUser', { name: user.username }) : t('common.welcomeGeneric')}
                 </span>
                 <Button variant="outline" size="sm" onClick={logout}>
-                  退出登录
+                  {t('common.buttons.logout')}
                 </Button>
               </div>
             </div>

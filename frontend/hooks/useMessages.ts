@@ -14,8 +14,9 @@ import {
   MessageProcessorState,
   ProcessedEvent
 } from '@/utils/messageProcessor'
-import { ErrorHandler } from '@/utils/errorHandler'
+import { ErrorHandler } from '@/utils/ErrorHandler'
 import { getAuthHeadersWithDefaults } from '@/utils/authHeaders'
+import { useI18n } from '@/contexts/I18nContext'
 
 interface UseMessagesConfig {
   sessionId: string
@@ -80,6 +81,8 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     onError,
     onTokenUsageUpdate
   } = config
+
+  const { t } = useI18n()
 
   // Core state using MessageProcessor state structure
   const [state, setState] = useState<MessageProcessorState>({
@@ -620,7 +623,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
         },
         onMaxRetriesReached: () => {
           updateState({
-            error: '多次重试失败，请检查网络连接或刷新页面',
+            error: t('errors.networkRetry'),
             connectionState: 'error'
           })
         }

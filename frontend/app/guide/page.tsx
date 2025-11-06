@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button'
 import UserGuide from '@/components/UserGuide'
 import Link from 'next/link'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
+import { useI18n } from '@/contexts/I18nContext'
 
 export default function GuidePage() {
+  const { t } = useI18n()
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gradient-to-br from-background to-muted">
@@ -15,7 +17,7 @@ export default function GuidePage() {
             <Link href="/chat">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                返回对话
+                {t('guide.back')}
               </Button>
             </Link>
           </div>

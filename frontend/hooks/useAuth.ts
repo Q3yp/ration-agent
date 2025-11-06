@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, useEffect } from 'react'
 import { httpClient } from '@/utils/httpClient'
 
 interface User {
@@ -10,6 +10,7 @@ interface User {
   full_name?: string
   role: string
   is_superuser: boolean
+  preferred_language: 'zh-CN' | 'en-US'
 }
 
 interface AuthState {
