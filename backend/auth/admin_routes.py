@@ -55,6 +55,7 @@ async def list_users(
             full_name=user.full_name,
             role=user.role,
             allowed_animal_types=user.allowed_animal_types,
+            preferred_language=user.preferred_language,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat()
         ))
@@ -80,7 +81,8 @@ async def create_user(
             role=user_create.role,
             is_active=user_create.is_active,
             is_superuser=user_create.is_superuser,
-            is_verified=user_create.is_verified
+            is_verified=user_create.is_verified,
+            preferred_language=user_create.preferred_language
         )
         
         user = await user_manager.create(user_create_data)
@@ -94,6 +96,7 @@ async def create_user(
             is_verified=user.is_verified,
             full_name=user.full_name,
             role=user.role,
+            preferred_language=user.preferred_language,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat()
         )
@@ -139,6 +142,7 @@ async def get_user(
         is_verified=user.is_verified,
         full_name=user.full_name,
         role=user.role,
+        preferred_language=user.preferred_language,
         created_at=user.created_at.isoformat(),
         updated_at=user.updated_at.isoformat()
     )
@@ -178,6 +182,7 @@ async def update_user(
             is_verified=updated_user.is_verified,
             full_name=updated_user.full_name,
             role=updated_user.role,
+            preferred_language=updated_user.preferred_language,
             created_at=updated_user.created_at.isoformat(),
             updated_at=updated_user.updated_at.isoformat()
         )

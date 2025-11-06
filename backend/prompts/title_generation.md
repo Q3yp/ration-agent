@@ -8,7 +8,6 @@ Instructions:
 - Do not use markdown, bold, italics, or any special formatting
 - Do not include quotes, asterisks, or symbols
 - Return only plain text
-- title should be in chinese
+- Title must be written in {{ target_language_name }}
 
 User message: {{ user_message }}
-

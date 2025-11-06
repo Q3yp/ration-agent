@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, AliasChoices
 from enum import Enum
 import uuid
+from utils.language import normalize_locale
 
 
 class AnimalType(str, Enum):
@@ -137,16 +138,29 @@ def create_agent_message(content: str, message_id: str, timestamp: float, is_str
         metadata={"is_streaming": is_streaming} if is_streaming else None
     )
 
-def create_tool_call_message(tool_name: str, tool_args: Dict[str, Any], tool_id: str, timestamp: float) -> ParsedMessage:
+def create_tool_call_message(
+    tool_name: str,
+    tool_args: Dict[str, Any],
+    tool_id: str,
+    timestamp: float,
+    preferred_language: str = "zh-CN",
+) -> ParsedMessage:
     """Tool execution indicator"""
+    locale = normalize_locale(preferred_language)
+    if locale == "en-US":
+        content = f"Executing {tool_name}"
+    else:
+        content = f"正在执行 {tool_name}"
+
     return ParsedMessage(
         id=tool_id,
         type="tool_call",
-        content=f"Executing {tool_name}",
+        content=content,
         timestamp=timestamp,
         metadata={
             "tool_name": tool_name,
-            "tool_args": tool_args
+            "tool_args": tool_args,
+            "preferred_language": locale,
         }
     )
 
@@ -160,15 +174,30 @@ def create_tool_result_message(content: str, tool_name: str, tool_id: str, times
         metadata={"tool_name": tool_name}
     )
 
-def create_role_transition_message(to_role: str, message_id: str, timestamp: float) -> ParsedMessage:
+def create_role_transition_message(
+    to_role: str,
+    message_id: str,
+    timestamp: float,
+    preferred_language: str = "zh-CN",
+) -> ParsedMessage:
     """Simple bubble for agent handoffs"""
-    role_messages = {
-        "researcher": "🔬 Delegating to researcher",
-        "coder": "💻 Delegating to coder", 
-        "nutritionist": "🥛 Returning to nutritionist"
-    }
-    
-    transition_message = role_messages.get(to_role, f"Transitioning to {to_role}")
+    locale = normalize_locale(preferred_language)
+    if locale == "en-US":
+        role_messages = {
+            "researcher": "🔬 Delegating to researcher",
+            "coder": "💻 Delegating to coder",
+            "nutritionist": "🥛 Returning to nutritionist"
+        }
+        default_message = f"Transitioning to {to_role}"
+    else:
+        role_messages = {
+            "researcher": "🔬 正在切换到研究专员",
+            "coder": "💻 正在切换到代码专员",
+            "nutritionist": "🥛 返回营养师"
+        }
+        default_message = f"切换到 {to_role}"
+
+    transition_message = role_messages.get(to_role, default_message)
     
     return ParsedMessage(
         id=message_id,
@@ -176,7 +205,64 @@ def create_role_transition_message(to_role: str, message_id: str, timestamp: flo
         content=transition_message,
         timestamp=timestamp,
         metadata={
-            "to_role": to_role
+            "to_role": to_role,
+            "preferred_language": locale,
+        }
+    )
+
+def create_file_export_message(
+    filename: str,
+    file_type: str,
+    filepath: str,
+    message_id: str,
+    timestamp: float,
+    preferred_language: str = "zh-CN",
+) -> ParsedMessage:
+    """File export with download capability"""
+    locale = normalize_locale(preferred_language)
+    if locale == "en-US":
+        content = f"📊 {filename} ready for download"
+        status_label = "Ready to download"
+    else:
+        content = f"📊 {filename} 已准备好下载"
+        status_label = "准备下载"
+
+    return ParsedMessage(
+        id=message_id,
+        type="file_export",
+        content=content,
+        timestamp=timestamp,
+        metadata={
+            "filename": filename,
+            "file_type": file_type,
+            "filepath": filepath,
+            "status_label": status_label,
+            "preferred_language": locale,
+        }
+    )
+
+def create_analysis_start_message(
+    analysis_type: str,
+    message_id: str,
+    timestamp: float,
+    preferred_language: str = "zh-CN",
+) -> ParsedMessage:
+    """Start of analysis status block"""
+    locale = normalize_locale(preferred_language)
+    if locale == "en-US":
+        content = f"{analysis_type}: Initializing..."
+    else:
+        content = f"{analysis_type}: 正在初始化..."
+
+    return ParsedMessage(
+        id=message_id,
+        type="analysis_start",
+        content=content,
+        timestamp=timestamp,
+        metadata={
+            "analysis_type": analysis_type,
+            "operations": [],
+            "preferred_language": locale,
         }
     )
 
@@ -194,33 +280,6 @@ def create_artifact_message(title: str, description: str, html_content: str, mes
         }
     )
 
-def create_file_export_message(filename: str, file_type: str, filepath: str, message_id: str, timestamp: float) -> ParsedMessage:
-    """File export with download capability"""
-    return ParsedMessage(
-        id=message_id,
-        type="file_export",
-        content=f"📊 {filename} ready for download",
-        timestamp=timestamp,
-        metadata={
-            "filename": filename,
-            "file_type": file_type,
-            "filepath": filepath
-        }
-    )
-
-def create_analysis_start_message(analysis_type: str, message_id: str, timestamp: float) -> ParsedMessage:
-    """Start of analysis status block"""
-    return ParsedMessage(
-        id=message_id,
-        type="analysis_start",
-        content=f"{analysis_type}: 正在初始化...",
-        timestamp=timestamp,
-        metadata={
-            "analysis_type": analysis_type,
-            "operations": []
-        }
-    )
-
 def create_analysis_update_message(operation: str, message_id: str, timestamp: float) -> ParsedMessage:
     """Live update to analysis progress"""
     return ParsedMessage(
@@ -233,8 +292,16 @@ def create_analysis_update_message(operation: str, message_id: str, timestamp: f
         }
     )
 
-def create_analysis_complete_message(summary: str, message_id: str, timestamp: float, operations_count: int = 0, operations: list = None) -> ParsedMessage:
+def create_analysis_complete_message(
+    summary: str,
+    message_id: str,
+    timestamp: float,
+    operations_count: int = 0,
+    operations: list = None,
+    preferred_language: str = "zh-CN",
+) -> ParsedMessage:
     """Final analysis summary"""
+    locale = normalize_locale(preferred_language)
     return ParsedMessage(
         id=message_id,
         type="analysis_complete",
@@ -243,20 +310,33 @@ def create_analysis_complete_message(summary: str, message_id: str, timestamp: f
         metadata={
             "operations_count": operations_count,
             "operations": operations or [],
-            "completed": True
+            "completed": True,
+            "preferred_language": locale,
         }
     )
 
-def create_formulation_start_message(formulation_type: str, message_id: str, timestamp: float) -> ParsedMessage:
+def create_formulation_start_message(
+    formulation_type: str,
+    message_id: str,
+    timestamp: float,
+    preferred_language: str = "zh-CN",
+) -> ParsedMessage:
     """Start of feed formulation block"""
+    locale = normalize_locale(preferred_language)
+    if locale == "en-US":
+        content = f"{formulation_type}: Initializing..."
+    else:
+        content = f"{formulation_type}: 正在初始化..."
+
     return ParsedMessage(
         id=message_id,
         type="formulation_start",
-        content=f"{formulation_type}: 正在初始化...",
+        content=content,
         timestamp=timestamp,
         metadata={
             "formulation_type": formulation_type,
-            "operations": []
+            "operations": [],
+            "preferred_language": locale,
         }
     )
 
@@ -273,8 +353,17 @@ def create_formulation_update_message(operation: str, message_id: str, timestamp
         }
     )
 
-def create_formulation_complete_message(summary: str, message_id: str, timestamp: float, operations_count: int = 0, operations: list = None, formulation_results: dict = None) -> ParsedMessage:
+def create_formulation_complete_message(
+    summary: str,
+    message_id: str,
+    timestamp: float,
+    operations_count: int = 0,
+    operations: list = None,
+    formulation_results: dict = None,
+    preferred_language: str = "zh-CN",
+) -> ParsedMessage:
     """Final feed formulation summary"""
+    locale = normalize_locale(preferred_language)
     return ParsedMessage(
         id=message_id,
         type="formulation_complete",
@@ -284,7 +373,8 @@ def create_formulation_complete_message(summary: str, message_id: str, timestamp
             "operations_count": operations_count,
             "operations": operations or [],
             "formulation_results": formulation_results or {},
-            "completed": True
+            "completed": True,
+            "preferred_language": locale,
         }
     )
 

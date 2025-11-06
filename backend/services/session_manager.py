@@ -387,7 +387,13 @@ class SessionManager:
             logger.error(f"Failed to get active sessions from database: {e}")
             return []
 
-    async def create_session(self, session_id: str, user_id: str = "default_user", animal_type: str = "dairy_cow") -> SessionContext:
+    async def create_session(
+        self,
+        session_id: str,
+        user_id: str = "default_user",
+        animal_type: str = "dairy_cow",
+        preferred_language: str = "zh-CN"
+    ) -> SessionContext:
         """Create a new session with workspace and prepare agent context"""
         # Check if session already exists in database
         existing_session = await self.get_session_from_db(session_id)
@@ -406,6 +412,8 @@ class SessionManager:
             workspace_path=workspace_path,
             animal_type=animal_type
         )
+        if preferred_language == "en-US":
+            session_context.title = "New Conversation"
         
         # Persist to database only
         await self.persist_session_to_database(session_context)
@@ -469,11 +477,13 @@ class SessionManager:
         # Get agent for this animal type (creates on first access, reuses thereafter)
         return await agent_registry.get_or_create_agent(session.animal_type)
     
-    def get_session_parser(self, session_id: str) -> UnifiedMessageParser:
+    def get_session_parser(self, session_id: str, preferred_language: Optional[str] = None) -> UnifiedMessageParser:
         """Get or create message parser for session - thread-safe"""
         if session_id not in self._session_parsers:
             logger.debug(f"Creating new message parser for session {session_id}")
-            self._session_parsers[session_id] = UnifiedMessageParser(session_id)
+            self._session_parsers[session_id] = UnifiedMessageParser(session_id, preferred_language=preferred_language)
+        elif preferred_language:
+            self._session_parsers[session_id].set_preferred_language(preferred_language)
         
         return self._session_parsers[session_id]
     

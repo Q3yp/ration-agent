@@ -260,7 +260,8 @@ class StopManager:
         agent: Any,
         agent_input: Dict[str, Any],
         config: Dict[str, Any],
-        title_queue: Optional[Any] = None
+        title_queue: Optional[Any] = None,
+        preferred_language: str = "zh-CN",
     ) -> AsyncIterator[str]:
         """Start producer and stream cached events to frontend (unified with reconnection)"""
         try:
@@ -274,7 +275,7 @@ class StopManager:
                 self.stream_tasks[session_id] = current_task
 
             # Delegate to unified replay+tail logic
-            async for sse_event in self.replay_and_tail_cache(session_id, title_queue):
+            async for sse_event in self.replay_and_tail_cache(session_id, title_queue, preferred_language=preferred_language):
                 yield sse_event
 
         except asyncio.CancelledError:
@@ -364,7 +365,8 @@ class StopManager:
     async def replay_and_tail_cache(
         self,
         session_id: str,
-        title_queue: Optional[asyncio.Queue] = None
+        title_queue: Optional[asyncio.Queue] = None,
+        preferred_language: str = "zh-CN",
     ) -> AsyncIterator[str]:
         """
         Unified cache-based streaming: replay cached events then tail new ones.
@@ -383,7 +385,7 @@ class StopManager:
             yield f"event: connected\ndata: {json.dumps({'message_id': current_message_id, 'session_id': session_id, 'mode': 'stream'})}\n\n"
 
             # Get parser for this session
-            parser = session_manager.get_session_parser(session_id)
+            parser = session_manager.get_session_parser(session_id, preferred_language=preferred_language)
             artifact_loading_sent = False
 
             # Replay all cached events

@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Request
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 import pandas as pd
 from models import (
     ChatRequest, FileUploadResponse, FileDeleteResponse,
@@ -22,6 +22,7 @@ from utils.prompt_loader import env
 from utils.stop_manager import StopManager
 from auth.config import current_active_user
 from auth.models import User
+from utils.language import get_language_label, normalize_locale
 
 
 router = APIRouter()
@@ -31,7 +32,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def generate_title_for_session(session_id: str, user_message: str, title_queue: asyncio.Queue):
+async def generate_title_for_session(
+    session_id: str,
+    user_message: str,
+    title_queue: asyncio.Queue,
+    preferred_language: str = "zh-CN",
+):
     """Background task to generate title for session based on first user message"""
     # Truncate message if too long for title generation
     preview = user_message[:500] if len(user_message) > 500 else user_message
@@ -41,7 +47,10 @@ async def generate_title_for_session(session_id: str, user_message: str, title_q
 
     # Load and render the title generation prompt template
     template = env.get_template("title_generation.md")
-    title_prompt = template.render(user_message=preview)
+    title_prompt = template.render(
+        user_message=preview,
+        target_language_name=get_language_label(preferred_language)
+    )
 
     # Generate title using the model
     response = await model.ainvoke(title_prompt)
@@ -114,10 +123,13 @@ async def create_session(
         import uuid
         session_id = str(uuid.uuid4())
 
+        preferred_language = normalize_locale(getattr(current_user, "preferred_language", "zh-CN"))
+
         session_context = await session_manager.create_session(
             session_id,
             str(current_user.id),
-            request.animal_type
+            request.animal_type,
+            preferred_language=preferred_language
         )
 
         return {
@@ -227,13 +239,15 @@ async def get_session_history(
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    preferred_language = normalize_locale(getattr(current_user, "preferred_language", "zh-CN"))
+
     accept = (request.headers.get("accept") or "").lower()
     if "text/event-stream" not in accept:
         # JSON response (backward-compatible)
         try:
             raw_messages, summary = await chat_history_service.get_session_data(session_id)
             logger.info(f"API: Retrieved {len(raw_messages)} raw messages for session {session_id}")
-            session_parser = session_manager.get_session_parser(session_id)
+            session_parser = session_manager.get_session_parser(session_id, preferred_language=preferred_language)
             parsed_messages = session_parser.parse_messages(raw_messages)
             logger.info(f"API: Parsed into {len(parsed_messages)} messages for session {session_id}")
             messages_for_frontend = [msg.dict() for msg in parsed_messages]
@@ -264,7 +278,7 @@ async def get_session_history(
 
         # Load persisted history and stream it first
         raw_messages, _summary = await chat_history_service.get_session_data(session_id)
-        session_parser = session_manager.get_session_parser(session_id)
+        session_parser = session_manager.get_session_parser(session_id, preferred_language=preferred_language)
         parsed_messages = session_parser.parse_messages(raw_messages)
         last_ts = 0.0
         for msg in parsed_messages:
@@ -449,12 +463,24 @@ async def stream_chat(
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found. Create session first.")
 
+    preferred_language = normalize_locale(getattr(current_user, "preferred_language", "zh-CN"))
+
     # Create title queue for single stream approach
     title_queue = asyncio.Queue()
 
+    # Ensure parser uses current language preference
+    session_manager.get_session_parser(session_id, preferred_language=preferred_language)
+
     # Start title generation immediately if this is the first message
     if not session_context.title_generated:
-        asyncio.create_task(generate_title_for_session(session_id, user_message, title_queue))
+        asyncio.create_task(
+            generate_title_for_session(
+                session_id,
+                user_message,
+                title_queue,
+                preferred_language=preferred_language
+            )
+        )
 
     try:
         session_agent = await session_manager.get_agent_for_session(session_id)
@@ -471,13 +497,23 @@ async def stream_chat(
         config = {
             "configurable": {
                 "thread_id": session_id,
-                "user_id": str(current_user.id)  # Add user_id for store operations
+                "user_id": str(current_user.id),  # Add user_id for store operations
+                "preferred_language": preferred_language,
             },
             "recursion_limit": agent_config["recursion_limit"]
         }
 
         # Add user message to appropriate thread based on workflow stage
-        user_msg = HumanMessage(content=user_message)
+        from langchain_core.messages import SystemMessage
+
+        language_label = get_language_label(preferred_language)
+        system_instruction = SystemMessage(
+            content=(
+                f"The user interface language is {language_label} ({preferred_language}). "
+                f"Respond exclusively in {language_label}, including tables, units, and explanations."
+            )
+        )
+        user_msg = HumanMessage(content=user_message, additional_kwargs={"preferred_language": preferred_language})
 
         # Get current state to check workflow_stage
         try:
@@ -486,17 +522,22 @@ async def stream_chat(
             logger.info(f"ROUTES: Current workflow_stage: {workflow_stage}")
 
             # Add to main messages - pre_model_hook will route to appropriate thread
-            agent_input = {"messages": [user_msg]}
+            agent_input = {"messages": [system_instruction, user_msg]}
         except Exception as e:
             logger.error(f"ROUTES: Failed to get state, defaulting to messages: {e}")
-            agent_input = {"messages": [user_msg]}
+            agent_input = {"messages": [system_instruction, user_msg]}
 
         # Use StopManager as true middleware - direct streaming to frontend
         stop_manager = StopManager.get_instance()
         logger.error(f"ROUTES_DEBUG: About to call stream_to_frontend for {session_id}")
         try:
             async for event in stop_manager.stream_to_frontend(
-                session_id, session_agent, agent_input, config, title_queue
+                session_id,
+                session_agent,
+                agent_input,
+                config,
+                title_queue,
+                preferred_language=preferred_language,
             ):
                 yield event
         except Exception as e:

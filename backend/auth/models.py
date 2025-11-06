@@ -28,6 +28,7 @@ class User(SQLAlchemyBaseUserTable[uuid.UUID], Base):
     full_name: Mapped[Optional[str]] = mapped_column(String(length=200), nullable=True)
     role: Mapped[str] = mapped_column(String(length=50), default="user")  # user, admin
     allowed_animal_types: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True, default=None)  # List of allowed animal types
+    preferred_language: Mapped[str] = mapped_column(String(length=10), default="zh-CN")
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     """User manager for FastAPI-Users"""

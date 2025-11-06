@@ -24,6 +24,7 @@ from models import (
     create_formulation_update_message,
     create_formulation_complete_message
 )
+from utils.language import normalize_locale
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class UnifiedMessageParser:
     detects artifacts, handles normal tool calls/results separately.
     """
     
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, preferred_language: Optional[str] = None):
         self.session_id = session_id
         self.delegation_tools = {
             # LangGraph Swarm tools with custom prefix
@@ -57,6 +58,12 @@ class UnifiedMessageParser:
 
         # Token usage tracking
         self.accumulated_token_usage = None  # Will store the latest usage_metadata from chunks
+        self.preferred_language = normalize_locale(preferred_language) if preferred_language else "zh-CN"
+
+    def set_preferred_language(self, preferred_language: Optional[str]) -> None:
+        """Update the language used for generated copy."""
+        if preferred_language:
+            self.preferred_language = normalize_locale(preferred_language)
     
     def reset_state(self):
         """Reset parser state - call this before parsing history to avoid state carryover"""
@@ -198,17 +205,37 @@ class UnifiedMessageParser:
         
         # End only if it's NOT an analysis tool (allows all analysis tools to contribute to same block)
         return not self._is_analysis_tool(tool_name)
+
+    def _get_analysis_label(self) -> str:
+        """Localized label for analysis sections."""
+        return "Data Analysis" if self.preferred_language == "en-US" else "数据分析"
+
+    def _get_formulation_label(self) -> str:
+        """Localized label for formulation sections."""
+        return "Formulation" if self.preferred_language == "en-US" else "饲料配方"
     
     def _get_operation_description(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
         """Get human-readable description for tool operation with detailed context"""
+        locale = self.preferred_language
+
+        def zh_cn(text: str) -> str:
+            return text
+
+        def en_us(text: str) -> str:
+            return text
+
         # Excel tools
         if tool_name == "excel_metadata":
             filepaths = tool_args.get("filepaths", [])
             if len(filepaths) == 1:
                 filename = filepaths[0].split('/')[-1]
-                return f"分析 {filename} 文件结构"
-            else:
-                return f"分析 {len(filepaths)} 个文件结构"
+                return (
+                    f"分析 {filename} 文件结构"
+                    if locale != "en-US"
+                    else f"Inspect structure of {filename}"
+                )
+            count = len(filepaths)
+            return f"分析 {count} 个文件结构" if locale != "en-US" else f"Inspect structure of {count} files"
                 
         elif tool_name == "excel_query":
             filepath = tool_args.get("filepath", "文件")
@@ -219,16 +246,18 @@ class UnifiedMessageParser:
             # Extract meaningful info from query if possible
             query_preview = ""
             if "head(" in query_string:
-                query_preview = " (预览数据)"
+                query_preview = " (预览数据)" if locale != "en-US" else " (preview rows)"
             elif "describe(" in query_string:
-                query_preview = " (统计信息)"
+                query_preview = " (统计信息)" if locale != "en-US" else " (summary stats)"
             elif "groupby" in query_string:
-                query_preview = " (数据分组)"
+                query_preview = " (数据分组)" if locale != "en-US" else " (grouping data)"
             elif "filter" in query_string or "[" in query_string:
-                query_preview = " (数据筛选)"
+                query_preview = " (数据筛选)" if locale != "en-US" else " (filtering data)"
             elif "count" in query_string or "len(" in query_string:
-                query_preview = " (记录计数)"
+                query_preview = " (记录计数)" if locale != "en-US" else " (counting records)"
             
+            if locale == "en-US":
+                return f"Query {filename}:{sheet}{query_preview}"
             return f"查询 {filename}:{sheet}{query_preview}"
             
         elif tool_name == "read_excel":
@@ -239,30 +268,44 @@ class UnifiedMessageParser:
             # Make coordinates more readable
             coord_desc = coordinates
             if ":" in coordinates:
-                coord_desc = f"范围 {coordinates}"
+                coord_desc = f"范围 {coordinates}" if locale != "en-US" else f"range {coordinates}"
             elif coordinates.isdigit():
-                coord_desc = f"第 {coordinates} 行"
+                coord_desc = f"第 {coordinates} 行" if locale != "en-US" else f"row {coordinates}"
             
+            if locale == "en-US":
+                return f"Read {coord_desc} from {filename}"
             return f"读取 {filename} 中的{coord_desc}"
             
         # File tools
         elif tool_name == "write_file":
             file_path = tool_args.get("file_path", "文件")
             filename = file_path.split('/')[-1] if "/" in file_path else file_path
-            return f"写入文件 {filename}"
+            return (
+                f"写入文件 {filename}"
+                if locale != "en-US"
+                else f"Write file {filename}"
+            )
             
         elif tool_name == "list_directory":
             dir_path = tool_args.get("dir_path", "目录")
             if dir_path == "." or dir_path == "":
-                return "列出当前目录内容"
+                return "列出当前目录内容" if locale != "en-US" else "List current directory"
             else:
                 dirname = dir_path.split('/')[-1] if "/" in dir_path else dir_path
-                return f"列出目录 {dirname} 内容"
+                return (
+                    f"列出目录 {dirname} 内容"
+                    if locale != "en-US"
+                    else f"List contents of {dirname}"
+                )
                 
         elif tool_name == "read_file":
             file_path = tool_args.get("file_path", "文件")
             filename = file_path.split('/')[-1] if "/" in file_path else file_path
-            return f"读取文件 {filename}"
+            return (
+                f"读取文件 {filename}"
+                if locale != "en-US"
+                else f"Read file {filename}"
+            )
             
         # Bash tools
         elif tool_name == "bash_command_for_session":
@@ -272,29 +315,33 @@ class UnifiedMessageParser:
             if cmd_parts:
                 main_cmd = cmd_parts[0]
                 if main_cmd in ["ls", "ll"]:
-                    return "列出文件"
+                    return "列出文件" if locale != "en-US" else "List files"
                 elif main_cmd == "cd":
-                    return "切换目录"
+                    return "切换目录" if locale != "en-US" else "Change directory"
                 elif main_cmd in ["mkdir"]:
-                    return "创建目录"
+                    return "创建目录" if locale != "en-US" else "Create directory"
                 elif main_cmd in ["rm", "rmdir"]:
-                    return "删除文件"
+                    return "删除文件" if locale != "en-US" else "Remove files"
                 elif main_cmd in ["cp", "mv"]:
-                    return "移动/复制文件"
+                    return "移动/复制文件" if locale != "en-US" else "Move or copy files"
                 elif main_cmd in ["grep", "find"]:
-                    return "搜索文件内容"
+                    return "搜索文件内容" if locale != "en-US" else "Search file contents"
                 elif main_cmd in ["cat", "head", "tail"]:
-                    return "查看文件内容"
+                    return "查看文件内容" if locale != "en-US" else "View file contents"
                 else:
-                    return f"执行 {main_cmd} 命令"
-            else:
-                return "执行命令"
+                    return (
+                        f"执行 {main_cmd} 命令"
+                        if locale != "en-US"
+                        else f"Run command {main_cmd}"
+                    )
+            return "执行命令" if locale != "en-US" else "Run shell command"
         
         else:
-            return f"执行 {tool_name}"
+            return f"执行 {tool_name}" if locale != "en-US" else f"Execute {tool_name}"
     
     def _get_formulation_operation_description(self, tool_name: str, tool_args: Dict[str, Any]) -> tuple[str, dict]:
         """Get description and structured data for formulation operation"""
+        locale = self.preferred_language
         if tool_name == "add_feed":
             name = tool_args.get("name", "饲料")
             feed_base_name = tool_args.get("feed_base_name", "")
@@ -309,7 +356,12 @@ class UnifiedMessageParser:
                 "cost_per_kg": f"¥{cost:.2f}",
                 "nutrients": nutrients
             }
-            return f"添加饲料 {name} 到饲料库 [{feed_base_name}] (干物质{dm_percent}%, ¥{cost:.2f}/kg)", operation_data
+            description = (
+                f"添加饲料 {name} 到饲料库 [{feed_base_name}] (干物质{dm_percent}%, ¥{cost:.2f}/kg)"
+                if locale != "en-US"
+                else f"Add feed {name} to feedbase [{feed_base_name}] (DM {dm_percent}%, ¥{cost:.2f}/kg)"
+            )
+            return description, operation_data
             
         elif tool_name == "formulate_ration":
             target_animals = tool_args.get("target_animals", "奶牛")
@@ -321,43 +373,62 @@ class UnifiedMessageParser:
                 "requirements": requirements,
                 "constraints": constraints
             }
-            return f"进行配方优化", operation_data
+            description = "进行配方优化" if locale != "en-US" else "Run ration optimization"
+            return description, operation_data
             
         elif tool_name == "check_feeds":
             operation_data = {"action": "检查可用饲料"}
-            return "检查可用饲料库", operation_data
+            description = "检查可用饲料库" if locale != "en-US" else "Check available feeds"
+            return description, operation_data
             
         elif tool_name == "export_formulation":
             format_type = tool_args.get("format", "Excel")
             operation_data = {"export_format": format_type}
-            return f"导出配方为 {format_type} 格式", operation_data
+            description = (
+                f"导出配方为 {format_type} 格式"
+                if locale != "en-US"
+                else f"Export formulation as {format_type}"
+            )
+            return description, operation_data
             
         elif tool_name == "list_feed_bases":
             operation_data = {"action": "列出饲料基础库"}
-            return "获取饲料基础库列表", operation_data
+            description = "获取饲料基础库列表" if locale != "en-US" else "List feedbases"
+            return description, operation_data
             
         else:
-            return f"执行配方工具 {tool_name}", {}
+            description = (
+                f"执行配方工具 {tool_name}"
+                if locale != "en-US"
+                else f"Run formulation tool {tool_name}"
+            )
+            return description, {}
     
     def _create_analysis_summary(self) -> str:
         """Create final summary of analysis"""
+        label = self._get_analysis_label()
         if not self.active_analysis:
-            return "数据分析: 已完成"
+            return f"{label}: Completed" if self.preferred_language == "en-US" else f"{label}: 已完成"
         
         operations = self.active_analysis["operations"]
         operation_count = len(operations)
         
-        return f"数据分析: {operation_count}项操作 已完成"
+        if self.preferred_language == "en-US":
+            return f"{label}: {operation_count} operations completed"
+        return f"{label}: {operation_count}项操作 已完成"
     
     def _create_formulation_summary(self) -> str:
         """Create final summary of formulation"""
+        label = self._get_formulation_label()
         if not self.active_formulation:
-            return "配方制作: 已完成"
+            return f"{label}: Completed" if self.preferred_language == "en-US" else f"{label}: 已完成"
         
         operations = self.active_formulation["operations"]
         operation_count = len(operations)
         
-        return f"配方制作: {operation_count}项操作 已完成"
+        if self.preferred_language == "en-US":
+            return f"{label}: {operation_count} operations completed"
+        return f"{label}: {operation_count}项操作 已完成"
     
     def parse_message(self, message: BaseMessage, context: str = "history") -> List[ParsedMessage]:
         """
@@ -415,7 +486,8 @@ class UnifiedMessageParser:
                             tool_name=tool_name,
                             tool_args=tool_args,
                             tool_id=tool_id,
-                            timestamp=timestamp
+                            timestamp=timestamp,
+                            preferred_language=self.preferred_language,
                         ))
             
             return result
@@ -432,7 +504,8 @@ class UnifiedMessageParser:
                 return [create_role_transition_message(
                     to_role=to_role,
                     message_id=f"{tool_id}_transition",
-                    timestamp=timestamp
+                    timestamp=timestamp,
+                    preferred_language=self.preferred_language,
                 )]
             
             # First, extract any special data and create events
@@ -447,7 +520,8 @@ class UnifiedMessageParser:
                     file_type=file_export_data['file_type'],
                     filepath=file_export_data['filepath'],
                     message_id=f"{tool_id}_export",
-                    timestamp=timestamp
+                    timestamp=timestamp,
+                    preferred_language=self.preferred_language,
                 ))
             
             # Check for legacy artifact data and create artifact event
@@ -541,7 +615,8 @@ class UnifiedMessageParser:
                                 message_id=self.active_analysis["message_id"],
                                 timestamp=timestamp,
                                 operations_count=len(self.active_analysis["operations"]),
-                                operations=self.active_analysis["operations"]
+                                operations=self.active_analysis["operations"],
+                                preferred_language=self.preferred_language,
                             ))
                             self.active_analysis = None
                         
@@ -558,7 +633,8 @@ class UnifiedMessageParser:
                                 timestamp=timestamp,
                                 operations_count=len(self.active_formulation["operations"]),
                                 operations=self.active_formulation["operations"],
-                                formulation_results=self.active_formulation.get("results", {})
+                                formulation_results=self.active_formulation.get("results", {}),
+                                preferred_language=self.preferred_language,
                             ))
                             self.active_formulation = None
                         
@@ -618,7 +694,8 @@ class UnifiedMessageParser:
                                 tool_name=tool_name,
                                 tool_args=tool_args,
                                 tool_id=tool_id,
-                                timestamp=timestamp
+                                timestamp=timestamp,
+                                preferred_language=self.preferred_language,
                             ))
                 else:
                     # AIMessage without tool calls - end any active groups
@@ -629,7 +706,8 @@ class UnifiedMessageParser:
                             message_id=self.active_analysis["message_id"],
                             timestamp=timestamp,
                             operations_count=len(self.active_analysis["operations"]),
-                            operations=self.active_analysis["operations"]
+                            operations=self.active_analysis["operations"],
+                            preferred_language=self.preferred_language,
                         ))
                         self.active_analysis = None
                     
@@ -641,7 +719,8 @@ class UnifiedMessageParser:
                             timestamp=timestamp,
                             operations_count=len(self.active_formulation["operations"]),
                             operations=self.active_formulation["operations"],
-                            formulation_results=self.active_formulation.get("results", {})
+                            formulation_results=self.active_formulation.get("results", {}),
+                            preferred_language=self.preferred_language,
                         ))
                         self.active_formulation = None
                 
@@ -669,7 +748,8 @@ class UnifiedMessageParser:
                         file_type=file_export_data['file_type'],
                         filepath=file_export_data['filepath'],
                         message_id=f"{tool_id}_export",
-                        timestamp=timestamp
+                        timestamp=timestamp,
+                        preferred_language=self.preferred_language,
                     ))
                 
                 # Check for legacy artifact data and create artifact event
@@ -698,7 +778,8 @@ class UnifiedMessageParser:
                     result.append(create_role_transition_message(
                         to_role=to_role,
                         message_id=f"{tool_id}_transition",
-                        timestamp=timestamp
+                        timestamp=timestamp,
+                        preferred_language=self.preferred_language,
                     ))
                     continue
                 
@@ -720,7 +801,8 @@ class UnifiedMessageParser:
                         message_id=self.active_analysis["message_id"],
                         timestamp=timestamp,
                         operations_count=len(self.active_analysis["operations"]),
-                        operations=self.active_analysis["operations"]
+                        operations=self.active_analysis["operations"],
+                        preferred_language=self.preferred_language,
                     ))
                     self.active_analysis = None
                 
@@ -732,7 +814,8 @@ class UnifiedMessageParser:
                         timestamp=timestamp,
                         operations_count=len(self.active_formulation["operations"]),
                         operations=self.active_formulation["operations"],
-                        formulation_results=self.active_formulation.get("results", {})
+                        formulation_results=self.active_formulation.get("results", {}),
+                        preferred_language=self.preferred_language,
                     ))
                     self.active_formulation = None
                 
@@ -753,7 +836,8 @@ class UnifiedMessageParser:
                 message_id=self.active_analysis["message_id"],
                 timestamp=timestamp,
                 operations_count=len(self.active_analysis["operations"]),
-                operations=self.active_analysis["operations"]
+                operations=self.active_analysis["operations"],
+                preferred_language=self.preferred_language,
             ))
             self.active_analysis = None
         
@@ -765,7 +849,8 @@ class UnifiedMessageParser:
                 timestamp=timestamp,
                 operations_count=len(self.active_formulation["operations"]),
                 operations=self.active_formulation["operations"],
-                formulation_results=self.active_formulation.get("results", {})
+                formulation_results=self.active_formulation.get("results", {}),
+                preferred_language=self.preferred_language,
             ))
             self.active_formulation = None
         
@@ -817,7 +902,8 @@ class UnifiedMessageParser:
                         message_id=self.active_analysis["message_id"],
                         timestamp=timestamp,
                         operations_count=len(self.active_analysis["operations"]),
-                        operations=self.active_analysis["operations"]
+                        operations=self.active_analysis["operations"],
+                        preferred_language=self.preferred_language,
                     ))
                     self.active_analysis = None
                 
@@ -830,7 +916,8 @@ class UnifiedMessageParser:
                         timestamp=timestamp,
                         operations_count=len(self.active_formulation["operations"]),
                         operations=self.active_formulation["operations"],
-                        formulation_results=self.active_formulation.get("results", {})
+                        formulation_results=self.active_formulation.get("results", {}),
+                        preferred_language=self.preferred_language,
                     ))
                     self.active_formulation = None
                     
@@ -853,7 +940,8 @@ class UnifiedMessageParser:
                     message_id=self.active_analysis["message_id"],
                     timestamp=timestamp,
                     operations_count=len(self.active_analysis["operations"]),
-                    operations=self.active_analysis["operations"]
+                    operations=self.active_analysis["operations"],
+                    preferred_language=self.preferred_language,
                 ))
                 self.active_analysis = None
                 
@@ -870,7 +958,8 @@ class UnifiedMessageParser:
                     timestamp=timestamp,
                     operations_count=len(self.active_formulation["operations"]),
                     operations=self.active_formulation["operations"],
-                    formulation_results=self.active_formulation.get("results", {})
+                    formulation_results=self.active_formulation.get("results", {}),
+                    preferred_language=self.preferred_language,
                 ))
                 self.active_formulation = None
                 
@@ -884,9 +973,10 @@ class UnifiedMessageParser:
                 }
                 
                 result.append(create_analysis_start_message(
-                    analysis_type="数据分析",
+                    analysis_type=self._get_analysis_label(),
                     message_id=analysis_message_id,
-                    timestamp=timestamp
+                    timestamp=timestamp,
+                    preferred_language=self.preferred_language,
                 ))
             
             # Check if we should start new formulation
@@ -900,9 +990,10 @@ class UnifiedMessageParser:
                 }
                 
                 result.append(create_formulation_start_message(
-                    formulation_type="饲料配方",
+                    formulation_type=self._get_formulation_label(),
                     message_id=formulation_message_id,
-                    timestamp=timestamp
+                    timestamp=timestamp,
+                    preferred_language=self.preferred_language,
                 ))
             
             # Handle analysis tools with live updates
@@ -957,7 +1048,8 @@ class UnifiedMessageParser:
                     tool_name=tool_name,
                     tool_args=tool_args,
                     tool_id=tool_id,
-                    timestamp=timestamp
+                    timestamp=timestamp,
+                    preferred_language=self.preferred_language,
                 ))
                 return result
         
@@ -977,7 +1069,8 @@ class UnifiedMessageParser:
                 return [create_role_transition_message(
                     to_role=to_role,
                     message_id=f"{tool_id}_transition",
-                    timestamp=timestamp
+                    timestamp=timestamp,
+                    preferred_language=self.preferred_language,
                 )]
             
             # First, extract any special data and create events
@@ -991,7 +1084,8 @@ class UnifiedMessageParser:
                     file_type=file_export_data['file_type'],
                     filepath=file_export_data['filepath'],
                     message_id=f"{tool_id}_export",
-                    timestamp=timestamp
+                    timestamp=timestamp,
+                    preferred_language=self.preferred_language,
                 ))
             
             # Check for legacy artifact data and create artifact event
