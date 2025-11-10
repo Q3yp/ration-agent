@@ -22,6 +22,7 @@ interface AuthState {
 
 interface AuthActions {
   login: (email: string, password: string) => Promise<void>
+  loginWithGoogleIdToken: (idToken: string) => Promise<void>
   logout: () => void
   clearError: () => void
 }
@@ -107,6 +108,38 @@ export const useAuth = (): AuthContextType => {
     }
   }
 
+  const loginWithGoogleIdToken = async (idToken: string) => {
+    setAuthState(prev => ({ ...prev, isLoading: true, error: null }))
+
+    try {
+      const response = await fetch('/auth/google/id-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id_token: idToken })
+      })
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.detail || 'Google login failed')
+      }
+
+      const data = await response.json()
+      const token = data.access_token
+
+      localStorage.setItem('auth_token', token)
+      await verifyToken(token)
+    } catch (error) {
+      setAuthState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Google login failed'
+      }))
+      throw error
+    }
+  }
+
   const logout = () => {
     localStorage.removeItem('auth_token')
     setAuthState({
@@ -124,6 +157,7 @@ export const useAuth = (): AuthContextType => {
   return {
     ...authState,
     login,
+    loginWithGoogleIdToken,
     logout,
     clearError
   }

@@ -13,7 +13,6 @@ export default function LandingPage() {
 
   const handleGetStarted = () => router.push('/login')
   const handleGoToChat = () => router.push('/chat')
-  const handleRegister = () => router.push('/register')
 
   const renderTags = (key: string, variant: 'primary' | 'secondary' = 'primary') => {
     const tags = t(key).split(',').map(tag => tag.trim())
@@ -44,9 +43,6 @@ export default function LandingPage() {
             <LocaleToggle />
             <Button onClick={handleGoToChat} variant="outline">
               {t('common.buttons.goToApp')}
-            </Button>
-            <Button onClick={handleRegister} variant="outline">
-              {t('common.buttons.register')}
             </Button>
             <Button onClick={handleGetStarted} variant="default">
               {t('common.buttons.login')}

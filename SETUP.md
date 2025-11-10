@@ -12,6 +12,7 @@ This guide covers setting up the new user authentication system for the Ration A
    - Copy `.env.example` to `.env`
    - Set your `JWT_SECRET` to a secure random string (at least 32 characters)
    - Ensure `DATABASE_URL` points to your PostgreSQL instance
+   - For Google login, set `GOOGLE_OAUTH_CLIENT_ID` (backend) and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (frontend) so the web client can render the Google Sign-In button
 
 ## Setup Steps
 
@@ -59,6 +60,16 @@ cd frontend
 npm run dev
 ```
 
+### 5. Configure Google OAuth (optional)
+
+1. Create OAuth 2.0 credentials in the Google Cloud Console (Web application).
+2. Add the authorized JavaScript origin `http://localhost:3000` for local development.
+3. Update your environment files:
+   - In `backend/.env`, set `GOOGLE_OAUTH_CLIENT_ID`.
+   - In `frontend/.env`, set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` to the same value so the web client can initialize the Google Sign-In button.
+4. Re-run `uv sync` in `backend/` so the new Google verification dependencies are installed.
+5. Until valid credentials are provided, the backend will return HTTP 503 from `/auth/google/id-token` to signal that Google Sign-In is disabled.
+
 ## Testing the Authentication System
 
 1. **Access the Application**
@@ -88,6 +99,7 @@ The authentication system adds these new endpoints:
 - `POST /auth/jwt/logout` - Logout (invalidate token)
 - `POST /auth/register` - Register new user (can be disabled)
 - `GET /auth/users/me` - Get current user info
+- `POST /auth/google/id-token` - Exchange a Google ID token (generated client-side) for a session JWT
 
 ### Admin Routes (Superuser only)
 - `GET /admin/users` - List all users
@@ -190,8 +202,8 @@ After setting up authentication, you can:
    - Enable email verification workflow
 
 3. **Social Login**
-   - Add OAuth2 providers (Google, GitHub, etc.)
-   - Configure social authentication backends
+   - Configure Google OAuth2 by creating credentials in the Google Cloud Console
+   - Optional: extend with additional providers (GitHub, WeChat, etc.) following the same pattern
 
 4. **Password Reset**
    - Implement forgot password functionality

@@ -28,9 +28,15 @@ export default async function RootLayout({
   }
 
   const resolvedLocale = initialLocale ?? defaultLocale
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ''
 
   return (
     <html lang={resolvedLocale}>
+      <head>
+        {googleClientId ? (
+          <meta name="google-signin-client_id" content={googleClientId} />
+        ) : null}
+      </head>
       <body className="antialiased">
         <I18nProvider initialLocale={resolvedLocale}>
           <AuthProvider>

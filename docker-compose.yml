@@ -60,6 +60,7 @@ services:
       
       # Authentication
       - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
       
       # LangGraph Configuration
       - LANGGRAPH_RECURSION_LIMIT=${LANGGRAPH_RECURSION_LIMIT:-500}
