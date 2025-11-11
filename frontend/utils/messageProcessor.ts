@@ -40,6 +40,7 @@ export type SSEEventType =
   | 'stopped'
   | 'error'
   | 'token_usage'
+  | 'plan_limit'
 
 export interface SSEEvent {
   type: SSEEventType
@@ -47,7 +48,7 @@ export interface SSEEvent {
 }
 
 export interface ProcessedEvent {
-  type: 'message' | 'title_update' | 'artifact_update' | 'connection_change' | 'error' | 'token_usage_update'
+  type: 'message' | 'title_update' | 'artifact_update' | 'connection_change' | 'error' | 'token_usage_update' | 'plan_limit'
   data: any
 }
 
@@ -221,6 +222,13 @@ export class MessageProcessor {
               }
             })
           }
+          break
+
+        case 'plan_limit':
+          results.push({
+            type: 'plan_limit',
+            data
+          })
           break
 
         case 'error':

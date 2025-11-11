@@ -11,6 +11,7 @@ import { AnimalTypeSelector } from './AnimalTypeSelector'
 import { TokenUsage } from './TokenUsage'
 import { useI18n } from '@/contexts/I18nContext'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { useAuthContext } from '@/contexts/AuthContext'
 
 interface ConversationSidebarProps {
   currentSessionId: string | null
@@ -32,6 +33,8 @@ export default function ConversationSidebar({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [showAnimalTypeSelector, setShowAnimalTypeSelector] = useState(false)
   const { t, formatRelativeTime } = useI18n()
+  const { user } = useAuthContext()
+  const isFreeTier = user?.tier === 'free'
 
   // Update session titles when sessionTitles prop changes
   useEffect(() => {
@@ -65,6 +68,10 @@ export default function ConversationSidebar({
   }
 
   const handleNewSessionClick = () => {
+    if (isFreeTier && sessions.length >= 1) {
+      alert(t('chat.freeTierSessionHint'))
+      return
+    }
     setShowAnimalTypeSelector(true)
   }
 
@@ -95,6 +102,11 @@ export default function ConversationSidebar({
   const deleteSession = async (sessionId: string, event: React.MouseEvent) => {
     event.stopPropagation()
 
+    if (isFreeTier) {
+      alert(t('chat.freeTierSessionHint'))
+      return
+    }
+
     if (!confirm(t('sidebar.deleteConfirm'))) {
       return
     }
@@ -111,6 +123,11 @@ export default function ConversationSidebar({
   }
 
   const deleteAllSessions = async () => {
+    if (isFreeTier) {
+      alert(t('chat.freeTierSessionHint'))
+      return
+    }
+
     if (!confirm(t('sidebar.deleteAllConfirm'))) {
       return
     }
@@ -179,7 +196,7 @@ export default function ConversationSidebar({
       <CardHeader className="pb-3 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{t('sidebar.title')}</h2>
-          {sessions.length > 0 && (
+          {!isFreeTier && sessions.length > 0 && (
             <Button
               variant="ghost"
               size="icon"
@@ -197,10 +214,17 @@ export default function ConversationSidebar({
           onClick={handleNewSessionClick}
           className="w-full h-10 flex items-center justify-center gap-2"
           size="default"
+          disabled={isFreeTier && sessions.length >= 1}
+          title={isFreeTier ? t('chat.freeTierSessionHint') : undefined}
         >
           <Plus className="h-5 w-5" />
           <span className="font-medium">{t('sidebar.newChat')}</span>
         </Button>
+        {isFreeTier && (
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 leading-relaxed">
+            {t('chat.freeTierSessionHint')}
+          </div>
+        )}
       </CardHeader>
 
       {/* Sessions list */}
@@ -213,9 +237,16 @@ export default function ConversationSidebar({
               variant="outline"
               size="sm"
               onClick={handleNewSessionClick}
+              disabled={isFreeTier && sessions.length >= 1}
+              title={isFreeTier ? t('chat.freeTierSessionHint') : undefined}
             >
               {t('sidebar.newChat')}
             </Button>
+            {isFreeTier && (
+              <p className="text-xs text-amber-700 mt-2">
+                {t('chat.freeTierSessionHint')}
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-2 pb-4">
@@ -244,15 +275,17 @@ export default function ConversationSidebar({
                           </p>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => deleteSession(session.session_id, e)}
-                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 h-6 w-6 text-destructive hover:text-destructive flex-shrink-0"
-                        title={t('sidebar.deleteConfirm')}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      {!isFreeTier && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => deleteSession(session.session_id, e)}
+                          className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 h-6 w-6 text-destructive hover:text-destructive flex-shrink-0"
+                          title={t('sidebar.deleteConfirm')}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                     <div className="flex items-center justify-between pl-7">
                       <div className="flex items-center gap-2">

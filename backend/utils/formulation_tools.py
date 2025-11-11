@@ -54,6 +54,27 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         animal_type: Animal type for feedbase filtering (dairy_cow, beef_cow, cat, dog)
     """
     
+    def _is_free_tier(config: Optional[RunnableConfig]) -> bool:
+        """Determine whether current LangGraph run belongs to a free tier account."""
+        try:
+            tier = (config or {}).get("configurable", {}).get("account_tier")
+            return (tier or "free") == "free"
+        except AttributeError:
+            return True
+
+    def _free_tier_feedbase_message(action: str, tool_call_id: Optional[str]) -> Command:
+        """Standardized response when free accounts attempt custom feedbase actions."""
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        f"Free tier accounts can only {action} system feedbases named default_*. Please upgrade to unlock custom feedbases.",
+                        tool_call_id=tool_call_id,
+                    )
+                ]
+            }
+        )
+    
     @tool
     async def add_feed(
         feed_base_name: str,
@@ -89,6 +110,9 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         ]
                     }
                 )
+
+            if _is_free_tier(config):
+                return _free_tier_feedbase_message("create or edit", tool_call_id)
 
             # Block creating feedbases starting with "default"
             if feed_base_name.startswith("default"):
@@ -241,7 +265,41 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                     }
                 )
 
+            free_tier = _is_free_tier(config)
             store = get_store()
+
+            if free_tier:
+                system_feedbase_name = f"default_{animal_type}"
+                system_namespace = ("system_feedbases", system_feedbase_name)
+                system_feedbase = await store.aget(system_namespace, "data")
+
+                if not system_feedbase:
+                    return Command(
+                        update={
+                            "messages": [
+                                ToolMessage(
+                                    f"No system feedbase found for animal type '{animal_type}'. Please contact support.",
+                                    tool_call_id=tool_call_id,
+                                )
+                            ]
+                        }
+                    )
+
+                feed_count = len(system_feedbase.value.get("feeds", {}))
+                message_lines = [
+                    f"Available Feedbases for {animal_type} (1):",
+                    "**System Feedbases:**",
+                    f"- **{system_feedbase_name}** ({feed_count} feeds) [READ-ONLY]",
+                    "",
+                    "Upgrade your plan to create and manage custom feedbases."
+                ]
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage("\n".join(message_lines), tool_call_id=tool_call_id)
+                        ]
+                    }
+                )
 
             # Search for user feedbases
             user_namespace = ("feedbases", user_id)
@@ -361,6 +419,9 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         ]
                     }
                 )
+            
+            if _is_free_tier(config) and not feed_base_name.startswith("default_"):
+                return _free_tier_feedbase_message("use custom", tool_call_id)
                 
             if not isinstance(nutritional_constraints, list):
                 return Command(
@@ -575,6 +636,9 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         ]
                     }
                 )
+            
+            if _is_free_tier(config) and not feed_base_name.startswith("default_"):
+                return _free_tier_feedbase_message("inspect non-system", tool_call_id)
             
             # Get user_id from config and access store
             user_id = config["configurable"].get("user_id")

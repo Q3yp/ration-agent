@@ -15,6 +15,7 @@ interface FeedbaseManagerCopy {
   emptyStateTitle: string
   emptyStateDescription: string
   createPrimary: string
+  freeTierNotice: string
 }
 
 interface FeedbaseListCopy {
@@ -95,7 +96,8 @@ const feedbaseCopy: Record<Locale, FeedbaseCopy> = {
       sidebarTitle: '饲料库列表',
       emptyStateTitle: '开始管理饲料库',
       emptyStateDescription: '选择左侧现有的饲料库进行编辑，或创建一个全新的饲料库',
-      createPrimary: '创建新饲料库'
+      createPrimary: '创建新饲料库',
+      freeTierNotice: '免费版仅能使用系统默认饲料库。升级即可创建和编辑自定义饲料库。',
     },
     list: {
       emptyTitle: '暂无饲料库',
@@ -164,7 +166,8 @@ const feedbaseCopy: Record<Locale, FeedbaseCopy> = {
       sidebarTitle: 'Feedbase library',
       emptyStateTitle: 'Manage your feedbases',
       emptyStateDescription: 'Select a feedbase on the left to edit, or create a brand new one.',
-      createPrimary: 'Create feedbase'
+      createPrimary: 'Create feedbase',
+      freeTierNotice: 'Free plan can only use system feedbases. Upgrade to create and edit custom libraries.',
     },
     list: {
       emptyTitle: 'No feedbases yet',

@@ -15,6 +15,8 @@ class TokenTrackingState:
         self.latest_conversation_length = 0
         self.run_total_tokens = 0
         self.last_seen_total = 0
+        self.last_seen_prompt = 0
+        self.run_prompt_delta = 0
 
 
 def extract_token_event_from_raw(
@@ -44,6 +46,10 @@ def extract_token_event_from_raw(
                 abs_total = int(usage_metadata.get("total_tokens", 0) or 0)
 
                 if abs_total > 0:
+                    delta_prompt = max(0, abs_prompt - token_state.last_seen_prompt)
+                    token_state.run_prompt_delta += delta_prompt
+                    token_state.last_seen_prompt = abs_prompt
+
                     token_state.latest_conversation_length = abs_prompt
                     delta_total = max(0, abs_total - token_state.last_seen_total)
 
@@ -70,6 +76,10 @@ def extract_token_event_from_raw(
 
             if token_usage:
                 token_state.latest_conversation_length = int(token_usage.get("prompt_tokens", 0) or 0)
+                delta_prompt = max(0, token_state.latest_conversation_length - token_state.last_seen_prompt)
+                token_state.run_prompt_delta += delta_prompt
+                token_state.last_seen_prompt = token_state.latest_conversation_length
+
                 current_total = int(token_usage.get("total_tokens", 0) or 0)
                 delta_total = max(0, current_total - token_state.last_seen_total)
 
@@ -198,7 +208,7 @@ class StopManager:
             # Persist accumulated usage to DB (for billing)
             if token_state.run_total_tokens > 0:
                 try:
-                    run_completion_tokens = token_state.run_total_tokens - token_state.latest_conversation_length
+                    run_completion_tokens = max(0, token_state.run_total_tokens - token_state.run_prompt_delta)
                     await session_manager.update_token_usage(
                         session_id,
                         token_state.latest_conversation_length,

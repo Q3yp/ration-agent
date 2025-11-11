@@ -4,7 +4,7 @@ export const supportedLocales: Locale[] = ['zh-CN', 'en-US']
 export const defaultLocale: Locale = 'zh-CN'
 
 interface TranslationTree {
-  [key: string]: string | TranslationTree
+  [key: string]: string | string[] | TranslationTree
 }
 
 export const translations: Record<Locale, TranslationTree> = {
@@ -117,6 +117,58 @@ export const translations: Record<Locale, TranslationTree> = {
       localeToggleLabel: '界面语言',
       tokenUsageLabel: '对话长度',
       inputPlaceholder: '输入您的消息...',
+      tierLabel: '账户等级',
+      tierBadges: {
+        free: '免费版',
+        paid: '专业版',
+      },
+      freeTierSessionHint: '免费版仅支持猫狗对话，且同一时间只能保留一个会话。',
+      promptLimitTitle: '已达到会话上限',
+      promptLimitBody: '当前对话的上下文已超过免费版 50,000 tokens 限制。请开启新的对话或升级账户以继续使用。',
+      promptLimitCTA: '了解升级方案',
+      promptLimitDismiss: '稍后再说',
+    },
+    planUpgrade: {
+      title: '选择适合您的方案',
+      subtitle: '解锁更多功能，提升使用体验',
+      comingSoon: '即将推出',
+      free: {
+        name: '免费版',
+        price: '¥0',
+        period: '永久免费',
+        features: [
+          '系统默认饲料库',
+          '同时 1 个会话',
+          '50,000 tokens 上下文限制',
+          '仅支持猫狗类型',
+        ],
+      },
+      pro: {
+        name: '专业版',
+        price: '敬请期待',
+        period: '按月订阅',
+        features: [
+          '自定义饲料库创建',
+          '无限会话数量',
+          '100,000 tokens 上下文限制',
+          '真实兽医咨询服务（可能产生额外费用）',
+          '多模态问诊（疾病预识别）',
+          '每月消息限额',
+        ],
+      },
+      enterprise: {
+        name: '企业版',
+        price: '联系销售',
+        period: '按需定制',
+        features: [
+          '支持所有畜禽类型（奶牛、肉牛等）',
+          '商业营养模型集成',
+          '智能体定制化',
+          '按使用量付费',
+          '专属技术支持',
+          '企业级 SLA 保障',
+        ],
+      },
     },
     sidebar: {
       title: '对话列表',
@@ -137,6 +189,7 @@ export const translations: Record<Locale, TranslationTree> = {
     feedbases: {
       title: '饲料库管理',
       back: '返回对话',
+      freeTierNotice: '免费版仅能使用系统默认饲料库。升级即可创建和编辑自定义饲料库。',
     },
     guide: {
       back: '返回对话',
@@ -258,11 +311,63 @@ export const translations: Record<Locale, TranslationTree> = {
       guide: 'Guide',
       feedbase: 'Feedbase Manager',
       admin: 'Admin',
-      newConversation: 'New Conversation',
+      newConversation: 'New conversation',
       selectPrompt: 'Select or create a conversation',
       localeToggleLabel: 'Interface language',
       tokenUsageLabel: 'Tokens used',
       inputPlaceholder: 'Type your message...',
+      tierLabel: 'Plan',
+      tierBadges: {
+        free: 'Free',
+        paid: 'Pro',
+      },
+      freeTierSessionHint: 'Free plan supports only cat & dog conversations and allows one active session at a time.',
+      promptLimitTitle: 'Session limit reached',
+      promptLimitBody: 'This conversation exceeded the 50,000-token limit for the free plan. Start a new chat or upgrade your plan to continue.',
+      promptLimitCTA: 'Explore upgrade options',
+      promptLimitDismiss: 'Maybe later',
+    },
+    planUpgrade: {
+      title: 'Choose Your Plan',
+      subtitle: 'Unlock more features and enhance your experience',
+      comingSoon: 'Coming Soon',
+      free: {
+        name: 'Free',
+        price: '$0',
+        period: 'Forever free',
+        features: [
+          'System feedbase only',
+          '1 session at a time',
+          '50,000 tokens context limit',
+          'Cat & dog types only',
+        ],
+      },
+      pro: {
+        name: 'Professional',
+        price: 'TBD',
+        period: 'Monthly subscription',
+        features: [
+          'Custom feedbase creation',
+          'Unlimited sessions',
+          '100,000 tokens context limit',
+          'Real veterinarian service (with potential additional fee)',
+          'Multimodal questions (disease pre-identification)',
+          'Monthly message limit',
+        ],
+      },
+      enterprise: {
+        name: 'Enterprise',
+        price: 'Contact Sales',
+        period: 'Custom pricing',
+        features: [
+          'All livestock types (dairy, beef, etc.)',
+          'Commercial nutrition model integration',
+          'Agent customization',
+          'Pay by usage',
+          'Dedicated technical support',
+          'Enterprise-grade SLA',
+        ],
+      },
     },
     sidebar: {
       title: 'Conversations',
@@ -283,6 +388,7 @@ export const translations: Record<Locale, TranslationTree> = {
     feedbases: {
       title: 'Feedbase Manager',
       back: 'Back to chat',
+      freeTierNotice: 'Free plan can only use system feedbases. Upgrade to create and edit custom libraries.',
     },
     guide: {
       back: 'Back to chat',
@@ -316,6 +422,22 @@ export function translate(locale: Locale, key: string): string | undefined {
     }
   }
   return typeof current === 'string' ? current : undefined
+}
+
+export function getRawTranslation(locale: Locale, key: string): string | string[] | undefined {
+  const parts = key.split('.')
+  let current: string | string[] | TranslationTree | undefined = translations[locale]
+  for (const part of parts) {
+    if (typeof current === 'object' && current !== null && !Array.isArray(current) && part in current) {
+      current = current[part]
+    } else {
+      return undefined
+    }
+  }
+  if (typeof current === 'string' || Array.isArray(current)) {
+    return current
+  }
+  return undefined
 }
 
 export function formatTranslation(locale: Locale, key: string, params?: Record<string, string | number>) {

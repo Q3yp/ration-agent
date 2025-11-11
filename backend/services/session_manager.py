@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
 logger.info("Tiktoken encoder initialized successfully in session manager")
 
+MAX_SESSION_PROMPT_TOKENS = 50_000
+
+
+def _default_token_stats() -> Dict[str, int]:
+    """Return zeroed token usage dict."""
+    return {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+    }
+
 
 def check_token_limit(text: str, max_tokens: int = 7000) -> tuple[bool, int, str]:
     """
@@ -246,11 +257,7 @@ class SessionManager:
             })
 
             if 'token_stats' not in metadata_dict or not isinstance(metadata_dict['token_stats'], dict):
-                metadata_dict['token_stats'] = {
-                    'prompt_tokens': 0,
-                    'completion_tokens': 0,
-                    'total_tokens': 0
-                }
+                metadata_dict['token_stats'] = _default_token_stats()
 
             metadata = Jsonb(metadata_dict)
 
@@ -531,8 +538,9 @@ class SessionManager:
 
     async def update_token_usage(self, session_id: str, prompt_tokens: int, completion_tokens: int, total_tokens: int):
         """
-        Atomically increment cumulative token usage for a session in database metadata.
-        Uses PostgreSQL JSONB operators for atomic increment - no SELECT needed, no race conditions.
+        Persist latest token usage for a session in database metadata.
+        Prompt tokens represent the absolute conversation length reported by the provider,
+        while completion/total tokens are incremented cumulatively for billing visibility.
         """
         if not self._db_pool:
             return
@@ -570,36 +578,42 @@ class SessionManager:
             logger.error(f"Failed to update token usage for session {session_id}: {e}")
     
 
+    async def _fetch_token_stats(self, session_id: str) -> Dict[str, int]:
+        """Fetch token usage metadata for a session."""
+        if not self._db_pool:
+            return _default_token_stats()
+
+        try:
+            async with self._db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        SELECT metadata->'token_stats' as token_stats
+                        FROM user_sessions
+                        WHERE session_id = %s AND deleted = FALSE
+                        """,
+                        (session_id,),
+                    )
+                    result = await cur.fetchone()
+                    if result and isinstance(result[0], dict):
+                        token_stats = result[0]
+                        return {
+                            "prompt_tokens": int(token_stats.get("prompt_tokens", 0) or 0),
+                            "completion_tokens": int(token_stats.get("completion_tokens", 0) or 0),
+                            "total_tokens": int(token_stats.get("total_tokens", 0) or 0),
+                        }
+        except Exception as e:
+            logger.error(f"Failed to get token stats for session {session_id}: {e}")
+
+        return _default_token_stats()
+
     async def get_session_stats(self, session_id: str) -> Dict:
         """Get session statistics and metadata"""
         session = await self.get_session_from_db(session_id)
         if not session:
             return {"exists": False}
 
-        # Get token stats from metadata
-        token_stats = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0
-        }
-
-        if not self._db_pool:
-            return {"exists": False}
-
-        try:
-            async with self._db_pool.connection() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute("""
-                        SELECT metadata->'token_stats' as token_stats
-                        FROM user_sessions
-                        WHERE session_id = %s AND deleted = FALSE
-                    """, (session_id,))
-                    result = await cur.fetchone()
-
-                    if result and result[0]:
-                        token_stats = result[0]
-        except Exception as e:
-            logger.error(f"Failed to get token stats for session {session_id}: {e}")
+        token_stats = await self._fetch_token_stats(session_id)
 
         return {
             "exists": True,
@@ -613,6 +627,15 @@ class SessionManager:
             "title": session.title,
             "token_usage": token_stats
         }
+
+    async def get_session_token_usage(self, session_id: str) -> Dict[str, int]:
+        """Public helper to retrieve cumulative token usage for a session."""
+        return await self._fetch_token_stats(session_id)
+
+    async def has_reached_prompt_limit(self, session_id: str, max_prompt_tokens: int = MAX_SESSION_PROMPT_TOKENS) -> bool:
+        """Check whether the session exceeded the allowed prompt tokens."""
+        token_usage = await self._fetch_token_stats(session_id)
+        return token_usage.get("prompt_tokens", 0) >= max_prompt_tokens
 
     async def get_session_workspace_path(self, session_id: str) -> Path:
         """Get the workspace Path object for a session. 

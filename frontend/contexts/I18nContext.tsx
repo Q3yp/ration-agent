@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { defaultLocale, formatTranslation, Locale, supportedLocales } from '@/lib/i18n/locales'
+import { defaultLocale, formatTranslation, getRawTranslation, Locale, supportedLocales } from '@/lib/i18n/locales'
 import { getAuthHeaders } from '@/utils/authHeaders'
 
 interface SetLocaleOptions {
@@ -11,6 +11,7 @@ interface SetLocaleOptions {
 interface I18nContextValue {
   locale: Locale
   t: (key: string, params?: Record<string, string | number>) => string
+  tRaw: (key: string) => string | string[] | undefined
   setLocale: (next: Locale, options?: SetLocaleOptions) => Promise<void>
   formatRelativeTime: (value: Date | string | number) => string
 }
@@ -70,6 +71,11 @@ export function I18nProvider({
     [locale]
   )
 
+  const tRaw = useCallback(
+    (key: string) => getRawTranslation(locale, key),
+    [locale]
+  )
+
   const formatRelativeTime = useCallback((value: Date | string | number) => {
     const formatter = relativeFormatter(locale)
     const date = value instanceof Date ? value : new Date(value)
@@ -97,9 +103,10 @@ export function I18nProvider({
   const value = useMemo(() => ({
     locale,
     t,
+    tRaw,
     setLocale,
     formatRelativeTime,
-  }), [locale, t, setLocale, formatRelativeTime])
+  }), [locale, t, tRaw, setLocale, formatRelativeTime])
 
   return (
     <I18nContext.Provider value={value}>

@@ -14,6 +14,7 @@ interface User {
   is_superuser: boolean
   preferred_language: 'zh-CN' | 'en-US'
   phone_number?: string | null
+  tier: 'free' | 'paid'
 }
 
 interface SmsRegisterPayload {

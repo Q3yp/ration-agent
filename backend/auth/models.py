@@ -35,11 +35,16 @@ class User(SQLAlchemyBaseUserTable[uuid.UUID], Base):
     # Additional fields for admin management
     full_name: Mapped[Optional[str]] = mapped_column(String(length=200), nullable=True)
     role: Mapped[str] = mapped_column(String(length=50), default="user")  # user, admin
-    allowed_animal_types: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True, default=None)  # List of allowed animal types
+    allowed_animal_types: Mapped[Optional[List[str]]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=lambda: ["cat", "dog"]
+    )  # List of allowed animal types
     preferred_language: Mapped[str] = mapped_column(String(length=10), default="zh-CN")
     phone_number: Mapped[Optional[str]] = mapped_column(
         String(length=20), unique=True, index=True, nullable=True
     )
+    tier: Mapped[str] = mapped_column(String(length=20), default="free")
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(
         "OAuthAccount",
         back_populates="user",

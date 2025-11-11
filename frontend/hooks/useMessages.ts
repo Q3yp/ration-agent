@@ -46,6 +46,13 @@ interface FormulationState {
   operationData?: any[]  // Track structured data for each operation
 }
 
+interface PlanLimitInfo {
+  sessionId: string
+  limit: number
+  tier?: string
+  promptTokens?: number
+}
+
 interface UseMessagesReturn {
   // Core state
   messages: Message[]
@@ -57,6 +64,7 @@ interface UseMessagesReturn {
   isTyping: boolean  // Immediate typing state for responsive UX
   analysisState?: AnalysisState
   formulationState?: FormulationState
+  planLimitInfo: PlanLimitInfo | null
 
   // Actions
   sendMessage: (message: string, filesToShow?: AttachedFile[]) => Promise<void>
@@ -64,6 +72,7 @@ interface UseMessagesReturn {
   loadHistory: () => Promise<void>
   retryConnection: () => void
   clearError: () => void
+  clearPlanLimitInfo: () => void
 
   // State management
   addMessage: (message: Message) => void
@@ -96,9 +105,18 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
   const [isTyping, setIsTyping] = useState(false)  // Immediate typing feedback
   const [analysisState, setAnalysisState] = useState<AnalysisState | undefined>(undefined)
   const [formulationState, setFormulationState] = useState<FormulationState | undefined>(undefined)
+  const [planLimitInfo, setPlanLimitInfo] = useState<PlanLimitInfo | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const historyLoadedRef = useRef(false)
   const resumeStartedRef = useRef(false)
+
+  useEffect(() => {
+    setPlanLimitInfo(null)
+  }, [sessionId])
+
+  const clearPlanLimitInfo = useCallback(() => {
+    setPlanLimitInfo(null)
+  }, [])
 
   // Derived state
   const isStreaming = useMemo(() => state.streamingMessageId !== null, [state.streamingMessageId])
@@ -292,6 +310,21 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           if (onTokenUsageUpdate) {
             onTokenUsageUpdate(event.data.sessionId, event.data.tokenUsage)
           }
+          break
+
+        case 'plan_limit':
+          setPlanLimitInfo({
+            sessionId: event.data.session_id,
+            limit: event.data.limit,
+            tier: event.data.tier,
+            promptTokens: event.data.prompt_tokens,
+          })
+          setIsTyping(false)
+          updateState(prev => ({
+            ...prev,
+            streamingMessageId: null,
+            connectionState: 'connected'
+          }))
           break
 
         case 'error':
@@ -722,6 +755,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     isTyping,  // Immediate responsive typing state
     analysisState,
     formulationState,
+    planLimitInfo,
 
     // Actions
     sendMessage,
@@ -729,6 +763,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     loadHistory,
     retryConnection,
     clearError,
+    clearPlanLimitInfo,
 
     // State management
     addMessage,

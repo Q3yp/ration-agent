@@ -13,6 +13,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     allowed_animal_types: Optional[List[str]] = None
     preferred_language: str
     phone_number: Optional[str] = None
+    tier: Literal["free", "paid"] = "free"
     created_at: str
     updated_at: str
 
@@ -35,6 +36,7 @@ class UserCreate(schemas.BaseUserCreate):
     is_verified: Optional[bool] = False
     preferred_language: str = "zh-CN"
     phone_number: Optional[str] = None
+    tier: Literal["free", "paid"] = "free"
 
 class UserUpdate(schemas.BaseUserUpdate):
     """User schema for updating user data"""
@@ -48,6 +50,7 @@ class UserUpdate(schemas.BaseUserUpdate):
     is_verified: Optional[bool] = None
     preferred_language: Optional[str] = None
     phone_number: Optional[str] = None
+    tier: Optional[Literal["free", "paid"]] = None
 
 # Admin-specific schemas
 class AdminUserCreate(BaseModel):
@@ -62,6 +65,7 @@ class AdminUserCreate(BaseModel):
     is_verified: bool = True
     preferred_language: str = "zh-CN"
     phone_number: Optional[str] = None
+    tier: Literal["free", "paid"] = "free"
 
 class AdminUserUpdate(BaseModel):
     """Admin schema for updating users"""
@@ -75,6 +79,7 @@ class AdminUserUpdate(BaseModel):
     is_verified: Optional[bool] = None
     preferred_language: Optional[str] = None
     phone_number: Optional[str] = None
+    tier: Optional[Literal["free", "paid"]] = None
 
 class UserListResponse(BaseModel):
     """Response schema for user list"""

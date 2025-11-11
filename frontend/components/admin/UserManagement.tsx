@@ -18,6 +18,7 @@ interface User {
   is_superuser: boolean
   is_verified: boolean
   allowed_animal_types?: string[] | null
+  tier: 'free' | 'paid'
   created_at: string
   updated_at: string
 }
@@ -31,6 +32,7 @@ export default function UserManagement() {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [editingPermissions, setEditingPermissions] = useState<string | null>(null)
+  const [updatingTier, setUpdatingTier] = useState<string | null>(null)
 
   const animalTypeOptions = [
     { value: 'dairy_cow', label: '奶牛 Dairy Cow' },
@@ -138,6 +140,38 @@ export default function UserManagement() {
     }
   }
 
+  const handleTierChange = async (userId: string, tier: 'free' | 'paid') => {
+    try {
+      setUpdatingTier(userId)
+      const response = await fetch(`/admin/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ tier })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || '更新账号等级失败')
+      }
+
+      setUsers(prev =>
+        prev.map(user =>
+          user.id === userId ? { ...user, tier } : user
+        )
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '更新账号等级失败')
+    } finally {
+      setUpdatingTier(null)
+    }
+  }
+
+  const toggleTier = (currentTier: 'free' | 'paid') =>
+    currentTier === 'paid' ? 'free' : 'paid'
+
   const toggleAnimalType = (user: User, animalType: string) => {
     const currentTypes = user.allowed_animal_types || []
     const newTypes = currentTypes.includes(animalType)
@@ -204,6 +238,22 @@ export default function UserManagement() {
                       <Badge variant={user.is_active ? 'default' : 'secondary'}>
                         {user.is_active ? '活跃' : '未激活'}
                       </Badge>
+                      <button
+                        type="button"
+                        onClick={() => handleTierChange(user.id, toggleTier(user.tier))}
+                        disabled={updatingTier === user.id}
+                        className="focus:outline-none"
+                        title="点击切换账号等级"
+                        aria-label="切换账号等级"
+                      >
+                        <Badge variant={user.tier === 'paid' ? 'default' : 'secondary'}>
+                          {updatingTier === user.id
+                            ? '更新中...'
+                            : user.tier === 'paid'
+                              ? '付费'
+                              : '免费'}
+                        </Badge>
+                      </button>
                       {user.is_superuser && (
                         <Badge variant="destructive">管理员</Badge>
                       )}

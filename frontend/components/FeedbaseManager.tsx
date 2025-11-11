@@ -29,7 +29,7 @@ export interface Feedbase {
 const PLACEHOLDER_NAMES = ['新饲料库', 'New Feedbase']
 
 export default function FeedbaseManager() {
-  const { token } = useAuthContext()
+  const { token, user } = useAuthContext()
   const { locale } = useI18n()
   const copy = useMemo(() => getFeedbaseCopy(locale), [locale])
   const [feedbases, setFeedbases] = useState<string[]>([])
@@ -40,6 +40,7 @@ export default function FeedbaseManager() {
   const [error, setError] = useState<string | null>(null)
   const [animalTypeFilter, setAnimalTypeFilter] = useState<string>('all')
   const placeholderNames = useMemo(() => new Set([...PLACEHOLDER_NAMES, copy.manager.newFeedbaseName]), [copy.manager.newFeedbaseName])
+  const isFreeTier = user?.tier === 'free'
 
   // Helper function to get auth headers
   const getAuthHeaders = () => ({
@@ -226,6 +227,10 @@ export default function FeedbaseManager() {
 
   // Create new feedbase
   const createNew = () => {
+    if (isFreeTier) {
+      alert(copy.manager.freeTierNotice)
+      return
+    }
     const newFeedbase: Feedbase = {
       name: copy.manager.newFeedbaseName,
       data: {
@@ -291,12 +296,19 @@ export default function FeedbaseManager() {
               <Button
                 size="sm"
                 onClick={createNew}
+                disabled={isFreeTier}
+                title={isFreeTier ? copy.manager.freeTierNotice : undefined}
                 className="flex items-center gap-2 w-full sm:w-auto"
               >
                 <Plus className="h-4 w-4" />
                 <span>{copy.manager.createButton}</span>
               </Button>
             </div>
+            {isFreeTier && (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 leading-relaxed">
+                {copy.manager.freeTierNotice}
+              </div>
+            )}
 
             {/* Animal type filter */}
             <div className="flex gap-1 sm:gap-2 flex-wrap">
@@ -349,9 +361,19 @@ export default function FeedbaseManager() {
                 <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
                   {copy.manager.emptyStateDescription}
                 </p>
-                <Button onClick={createNew} className="w-full">
+                <Button
+                  onClick={createNew}
+                  className="w-full"
+                  disabled={isFreeTier}
+                  title={isFreeTier ? copy.manager.freeTierNotice : undefined}
+                >
                   {copy.manager.createPrimary}
                 </Button>
+                {isFreeTier && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-3 text-left">
+                    {copy.manager.freeTierNotice}
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>

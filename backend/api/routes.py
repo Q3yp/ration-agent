@@ -15,7 +15,7 @@ from models import (
     FeedbaseUpdateRequest, FeedbaseDeleteResponse, FeedbaseData,
     AnimalType
 )
-from services.session_manager import session_manager
+from services.session_manager import session_manager, MAX_SESSION_PROMPT_TOKENS
 from services.chat_history_service import chat_history_service
 from utils.model_config import get_model_config
 from utils.prompt_loader import env
@@ -26,6 +26,25 @@ from utils.language import get_language_label, normalize_locale
 
 
 router = APIRouter()
+
+# Account & usage policies
+FREE_TIER = "free"
+FREE_TIER_MAX_SESSIONS = 1
+DEFAULT_FEEDBASE_PREFIX = "default_"
+
+
+def is_free_tier(user: User) -> bool:
+    """Return True if the user is assigned to the free tier."""
+    return getattr(user, "tier", FREE_TIER) == FREE_TIER
+
+
+def ensure_custom_feedbase_allowed(user: User, feedbase_name: str):
+    """Ensure free tier users only access system default feedbases."""
+    if is_free_tier(user) and not feedbase_name.startswith(DEFAULT_FEEDBASE_PREFIX):
+        raise HTTPException(
+            status_code=403,
+            detail="Free tier accounts can only use system default feedbases. Please upgrade to unlock custom feedbases."
+        )
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -119,6 +138,15 @@ async def create_session(
                     detail=f"User does not have permission for animal type '{request.animal_type}'"
                 )
 
+        # Enforce free tier session limit
+        if is_free_tier(current_user):
+            user_sessions = await session_manager.list_user_sessions(str(current_user.id))
+            if len(user_sessions) >= FREE_TIER_MAX_SESSIONS:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Free tier accounts can only keep one active session. Please delete an existing session or upgrade your plan."
+                )
+
         # Generate session_id on backend (UUID)
         import uuid
         session_id = str(uuid.uuid4())
@@ -170,12 +198,14 @@ async def list_sessions(current_user: User = Depends(current_active_user)):
 @router.get("/animal-types")
 async def get_animal_types(current_user: User = Depends(current_active_user)):
     """Get list of animal types available to the current user"""
+    all_types = [t.value for t in AnimalType]
+
     # If user has specific allowed types, return those
     if current_user.allowed_animal_types:
         allowed_types = current_user.allowed_animal_types
     else:
         # If no restrictions, return all available types
-        allowed_types = [t.value for t in AnimalType]
+        allowed_types = all_types
 
     # Build response with display names
     animal_type_options = [
@@ -186,8 +216,27 @@ async def get_animal_types(current_user: User = Depends(current_active_user)):
         for animal_type in allowed_types
     ]
 
+    restricted = set(allowed_types) != set(all_types)
+    preferred_language = normalize_locale(getattr(current_user, "preferred_language", "zh-CN"))
+    restriction_reason = None
+    if restricted:
+        if getattr(current_user, "tier", FREE_TIER) == FREE_TIER:
+            restriction_reason = (
+                "Free plan currently supports only cat and dog formulations. Upgrade to unlock cattle types."
+                if preferred_language == "en-US"
+                else "当前免费账户仅支持猫狗配方。如需奶牛/肉牛等功能，请升级账户。"
+            )
+        else:
+            restriction_reason = (
+                "Animal type access is limited by your administrator. Please contact them to request more permissions."
+                if preferred_language == "en-US"
+                else "您的管理员限制了可用动物类型。如需更多权限请联系管理员。"
+            )
+
     return {
-        "animal_types": animal_type_options
+        "animal_types": animal_type_options,
+        "restricted": restricted,
+        "restriction_reason": restriction_reason
     }
 
 
@@ -463,6 +512,27 @@ async def stream_chat(
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found. Create session first.")
 
+    # Universal prompt token limit per session - stream back plan limit event instead of HTTP error
+    if await session_manager.has_reached_prompt_limit(session_id):
+        usage = await session_manager.get_session_token_usage(session_id)
+
+        async def limit_event_stream():
+            payload = {
+                "type": "prompt_limit",
+                "session_id": session_id,
+                "limit": MAX_SESSION_PROMPT_TOKENS,
+                "tier": getattr(current_user, "tier", FREE_TIER),
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+            }
+            yield f"event: plan_limit\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            completion_payload = {
+                "type": "agent_complete",
+                "session_id": session_id,
+            }
+            yield f"event: complete\ndata: {json.dumps(completion_payload, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(limit_event_stream(), media_type="text/event-stream")
+
     preferred_language = normalize_locale(getattr(current_user, "preferred_language", "zh-CN"))
 
     # Create title queue for single stream approach
@@ -499,6 +569,7 @@ async def stream_chat(
                 "thread_id": session_id,
                 "user_id": str(current_user.id),  # Add user_id for store operations
                 "preferred_language": preferred_language,
+                "account_tier": getattr(current_user, "tier", FREE_TIER),
             },
             "recursion_limit": agent_config["recursion_limit"]
         }
@@ -734,26 +805,29 @@ async def list_feedbases(
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
+        restrict_user_feedbases = is_free_tier(current_user)
 
         # Get all user feedbases
         user_namespace = ("feedbases", user_id)
-        feedbase_entries = await store.asearch(user_namespace)
         feedbase_names = []
 
-        for entry in feedbase_entries:
-            # Extract feedbase name from namespace tuple
-            if len(entry.namespace) >= 3:
-                feedbase_name = entry.namespace[2]  # ("feedbases", user_id, feedbase_name)
+        if not restrict_user_feedbases:
+            feedbase_entries = await store.asearch(user_namespace)
 
-                # Filter by animal_type if specified
-                if animal_type:
-                    feedbase_data = entry.value
-                    feedbase_animal_type = feedbase_data.get("animal_type", "dairy_cow")
-                    if feedbase_animal_type != animal_type:
-                        continue
+            for entry in feedbase_entries:
+                # Extract feedbase name from namespace tuple
+                if len(entry.namespace) >= 3:
+                    feedbase_name = entry.namespace[2]  # ("feedbases", user_id, feedbase_name)
 
-                if feedbase_name not in feedbase_names:
-                    feedbase_names.append(feedbase_name)
+                    # Filter by animal_type if specified
+                    if animal_type:
+                        feedbase_data = entry.value
+                        feedbase_animal_type = feedbase_data.get("animal_type", "dairy_cow")
+                        if feedbase_animal_type != animal_type:
+                            continue
+
+                    if feedbase_name not in feedbase_names:
+                        feedbase_names.append(feedbase_name)
 
         # Add system default feedbases
         system_feedbase_names = ["default_dairy_cow", "default_beef_cow", "default_cat", "default_dog"]
@@ -805,6 +879,7 @@ async def get_feedbase(
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
+        ensure_custom_feedbase_allowed(current_user, feedbase_name)
 
         # Try user feedbase first
         namespace = ("feedbases", user_id, feedbase_name)
@@ -837,6 +912,7 @@ async def update_feedbase(
 ):
     """Update or create a feedbase. System default feedbases cannot be modified."""
     try:
+        ensure_custom_feedbase_allowed(current_user, feedbase_name)
         # Block editing of system default feedbases
         if feedbase_name.startswith("default_"):
             raise HTTPException(
@@ -869,6 +945,7 @@ async def update_feedbase(
 async def delete_feedbase(feedbase_name: str, current_user: User = Depends(current_active_user)):
     """Delete a feedbase. System default feedbases cannot be deleted."""
     try:
+        ensure_custom_feedbase_allowed(current_user, feedbase_name)
         # Block deletion of system default feedbases
         if feedbase_name.startswith("default_"):
             raise HTTPException(
@@ -908,6 +985,7 @@ async def delete_feedbase(feedbase_name: str, current_user: User = Depends(curre
 async def export_feedbase(feedbase_name: str, current_user: User = Depends(current_active_user)):
     """Export feedbase as Excel file"""
     try:
+        ensure_custom_feedbase_allowed(current_user, feedbase_name)
         from core.agent import _connection_manager
 
         # Get shared store instance

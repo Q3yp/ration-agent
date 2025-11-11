@@ -4,9 +4,11 @@ import { useState } from 'react'
 import { MessageCircle, User, LogOut, Database, BookOpen, Menu, X } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
 import ConversationSidebar from '@/components/ConversationSidebar'
+import { PlanUpgradeModal } from '@/components/PlanUpgradeModal'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { useAuthContext } from '@/contexts/AuthContext'
 import Link from 'next/link'
 import { useI18n } from '@/contexts/I18nContext'
@@ -27,6 +29,7 @@ export default function Home() {
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>({})
   const [sessionTokenUsage, setSessionTokenUsage] = useState<Record<string, import('@/types/chat').TokenUsage>>({})
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   const handleSessionSelect = (newSessionId: string) => {
     setSessionId(newSessionId)
@@ -51,6 +54,12 @@ export default function Home() {
       [sessionId]: tokenUsage
     }))
   }
+
+  const tierBadgeText = user?.tier === 'paid'
+    ? t('chat.tierBadges.paid')
+    : user?.tier === 'free'
+      ? t('chat.tierBadges.free')
+      : null
 
   return (
     <ProtectedRoute>
@@ -83,6 +92,16 @@ export default function Home() {
                   <span className="hidden md:inline text-xs md:text-sm text-muted-foreground truncate max-w-xs">
                     {user?.username ? t('common.welcomeUser', { name: user.username }) : t('common.welcomeGeneric')}
                   </span>
+                  {tierBadgeText && (
+                    <Badge
+                      variant={user?.tier === 'paid' ? 'default' : 'secondary'}
+                      className="text-[10px] md:text-xs tracking-wide uppercase cursor-pointer hover:opacity-80 transition-opacity"
+                      title={t('chat.tierLabel')}
+                      onClick={() => setShowUpgradeModal(true)}
+                    >
+                      {tierBadgeText}
+                    </Badge>
+                  )}
                   <Link href="/guide">
                     <Button variant="outline" size="sm">
                       <BookOpen className="h-4 w-4 md:mr-1" />
@@ -112,6 +131,16 @@ export default function Home() {
 
                 {/* Mobile Menu - Visible only on mobile */}
                 <div className="flex sm:hidden items-center gap-2">
+                  {tierBadgeText && (
+                    <Badge
+                      variant={user?.tier === 'paid' ? 'default' : 'secondary'}
+                      className="text-[10px] uppercase cursor-pointer hover:opacity-80 transition-opacity"
+                      title={t('chat.tierLabel')}
+                      onClick={() => setShowUpgradeModal(true)}
+                    >
+                      {tierBadgeText}
+                    </Badge>
+                  )}
                   <DropdownMenu open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon">
@@ -173,6 +202,12 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* Plan Upgrade Modal */}
+      <PlanUpgradeModal
+        open={showUpgradeModal}
+        onOpenChange={setShowUpgradeModal}
+      />
       </main>
     </ProtectedRoute>
   )

@@ -8,10 +8,16 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { useAuthContext } from '@/contexts/AuthContext'
 import Link from 'next/link'
 import { useI18n } from '@/contexts/I18nContext'
+import { Badge } from '@/components/ui/badge'
 
 export default function FeedbasesPage() {
   const { user, logout } = useAuthContext()
   const { t } = useI18n()
+  const tierBadgeText = user?.tier === 'paid'
+    ? t('chat.tierBadges.paid')
+    : user?.tier === 'free'
+      ? t('chat.tierBadges.free')
+      : null
 
   return (
     <ProtectedRoute>
@@ -35,6 +41,15 @@ export default function FeedbasesPage() {
                 <span className="hidden md:inline text-sm text-muted-foreground truncate">
                   {user?.username ? t('common.welcomeUser', { name: user.username }) : t('common.welcomeGeneric')}
                 </span>
+                {tierBadgeText && (
+                  <Badge
+                    variant={user?.tier === 'paid' ? 'default' : 'secondary'}
+                    className="text-[10px] uppercase"
+                    title={t('chat.tierLabel')}
+                  >
+                    {tierBadgeText}
+                  </Badge>
+                )}
                 <Button variant="outline" size="sm" onClick={logout} className="h-8 sm:h-9">
                   <span className="hidden sm:inline">{t('common.buttons.logout')}</span>
                   <span className="sm:hidden text-xs">{t('common.buttons.logout')}</span>

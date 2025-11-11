@@ -5,6 +5,7 @@ import { Send, AlertTriangle, Upload, Loader2, Square } from 'lucide-react'
 import MessageList from './MessageList'
 import FileUpload from './FileUpload'
 import HtmlArtifact from './HtmlArtifact'
+import { PlanUpgradeModal } from './PlanUpgradeModal'
 import { useMessages } from '@/hooks/useMessages'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,6 +28,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
   const [uploadedFiles, setUploadedFiles] = useState<AttachedFile[]>([])
   const [pendingFileNotifications, setPendingFileNotifications] = useState<string[]>([])
   const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { t } = useI18n()
@@ -43,7 +45,9 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
     formulationState,
     sendMessage,
     stopMessage,
-    retryConnection
+    retryConnection,
+    planLimitInfo,
+    clearPlanLimitInfo
   } = useMessages({
     sessionId,
     endpoint,
@@ -52,6 +56,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
     onArtifactUpdate: setCurrentArtifact,
     onTokenUsageUpdate
   })
+  const planLimitActive = planLimitInfo?.sessionId === sessionId
 
   // Clear artifact when switching sessions
   useEffect(() => {
@@ -83,7 +88,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
   }
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim()) return
+    if (!inputValue.trim() || planLimitActive) return
 
     let messageToSend = inputValue.trim()
     
@@ -210,6 +215,36 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
           ) : null}
         </div>
 
+        {planLimitActive && (
+          <div className="px-4 py-3 border-b bg-amber-50">
+            <div className="space-y-2">
+              <div>
+                <p className="text-sm font-semibold text-amber-900">
+                  {t('chat.promptLimitTitle')}
+                </p>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  {t('chat.promptLimitBody')}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => setShowUpgradeModal(true)}
+                >
+                  {t('chat.promptLimitCTA')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearPlanLimitInfo}
+                >
+                  {t('chat.promptLimitDismiss')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Messages */}
         <CardContent className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 sm:space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
           <MessageList
@@ -243,7 +278,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
               variant={showFileUpload ? "default" : "outline"}
               size="icon"
               onClick={() => setShowFileUpload(!showFileUpload)}
-              disabled={!isConnected || isLoading || isTyping}
+              disabled={!isConnected || isLoading || isTyping || planLimitActive}
               className="h-10 w-10 sm:h-9 sm:w-9"
             >
               <Upload className="h-4 w-4" />
@@ -254,7 +289,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={t('chat.inputPlaceholder')}
-              disabled={!isConnected || isTyping || isStreaming || isLoading}
+              disabled={!isConnected || isTyping || isStreaming || isLoading || planLimitActive}
               className="flex-1 text-base sm:text-sm"
             />
             {isTyping || isStreaming ? (
@@ -269,7 +304,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
             ) : (
               <Button
                 onClick={handleSendMessage}
-                disabled={!inputValue.trim() || !isConnected || isLoading}
+                disabled={!inputValue.trim() || !isConnected || isLoading || planLimitActive}
                 size="icon"
                 className="h-10 w-10 sm:h-9 sm:w-9"
               >
@@ -296,6 +331,12 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
           />
         </div>
       )}
+
+      {/* Plan Upgrade Modal */}
+      <PlanUpgradeModal
+        open={showUpgradeModal}
+        onOpenChange={setShowUpgradeModal}
+      />
     </div>
   )
 }

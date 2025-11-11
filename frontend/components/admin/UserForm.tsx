@@ -16,6 +16,7 @@ interface User {
   is_active: boolean
   is_superuser: boolean
   is_verified: boolean
+  tier: 'free' | 'paid'
 }
 
 interface UserFormProps {
@@ -34,7 +35,8 @@ export default function UserForm({ user, onSuccess, onCancel }: UserFormProps) {
     role: 'user',
     is_active: true,
     is_superuser: false,
-    is_verified: true
+    is_verified: true,
+    tier: 'free' as 'free' | 'paid'
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +53,8 @@ export default function UserForm({ user, onSuccess, onCancel }: UserFormProps) {
         role: user.role,
         is_active: user.is_active,
         is_superuser: user.is_superuser,
-        is_verified: user.is_verified
+        is_verified: user.is_verified,
+        tier: user.tier
       })
     }
   }, [user])
@@ -216,6 +219,19 @@ export default function UserForm({ user, onSuccess, onCancel }: UserFormProps) {
                 />
                 <span className="text-sm">已验证</span>
               </label>
+              <div>
+                <label className="block text-sm font-medium mb-1">账户等级</label>
+                <select
+                  name="tier"
+                  value={formData.tier}
+                  onChange={handleInputChange}
+                  disabled={isLoading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="free">免费</option>
+                  <option value="paid">付费</option>
+                </select>
+              </div>
             </div>
 
             {error && (

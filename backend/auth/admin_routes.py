@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
-from fastapi_users.exceptions import UserAlreadyExists
+from fastapi_users.exceptions import UserAlreadyExists, UserNotExists
 from pydantic import BaseModel
 from .database import get_async_session
 from .models import User
@@ -40,7 +40,7 @@ async def list_users(
     result = await session.execute(
         select(User).offset(skip).limit(limit).order_by(User.created_at.desc())
     )
-    users = result.scalars().all()
+    users = result.scalars().unique().all()
     
     # Convert to UserRead format
     user_reads = []
@@ -57,6 +57,7 @@ async def list_users(
             allowed_animal_types=user.allowed_animal_types,
             preferred_language=user.preferred_language,
             phone_number=user.phone_number,
+            tier=user.tier,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat()
         ))
@@ -85,7 +86,8 @@ async def create_user(
             is_superuser=user_create.is_superuser,
             is_verified=user_create.is_verified,
             preferred_language=user_create.preferred_language,
-            phone_number=user_create.phone_number
+            phone_number=user_create.phone_number,
+            tier=user_create.tier
         )
         
         user = await user_manager.create(user_create_data)
@@ -101,6 +103,7 @@ async def create_user(
             role=user.role,
             preferred_language=user.preferred_language,
             phone_number=user.phone_number,
+            tier=user.tier,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat()
         )
@@ -129,7 +132,7 @@ async def get_user(
 ):
     """Get user by ID (admin only)"""
     result = await session.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    user = result.unique().scalar_one_or_none()
     
     if not user:
         raise HTTPException(
@@ -148,6 +151,7 @@ async def get_user(
         role=user.role,
         preferred_language=user.preferred_language,
         phone_number=user.phone_number,
+        tier=user.tier,
         created_at=user.created_at.isoformat(),
         updated_at=user.updated_at.isoformat()
     )
@@ -156,16 +160,13 @@ async def get_user(
 async def update_user(
     user_id: uuid.UUID,
     user_update: AdminUserUpdate,
-    session: AsyncSession = Depends(get_async_session),
     user_manager: UserManager = Depends(get_user_manager),
     admin_user: User = Depends(current_superuser)
 ):
     """Update user (admin only)"""
-    # Get existing user
-    result = await session.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    
-    if not user:
+    try:
+        user = await user_manager.get(user_id)
+    except UserNotExists:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
@@ -194,6 +195,7 @@ async def update_user(
             role=updated_user.role,
             preferred_language=updated_user.preferred_language,
             phone_number=updated_user.phone_number,
+            tier=updated_user.tier,
             created_at=updated_user.created_at.isoformat(),
             updated_at=updated_user.updated_at.isoformat()
         )
@@ -212,22 +214,18 @@ async def update_user(
 @admin_router.delete("/users/{user_id}")
 async def delete_user(
     user_id: uuid.UUID,
-    session: AsyncSession = Depends(get_async_session),
     user_manager: UserManager = Depends(get_user_manager),
     admin_user: User = Depends(current_superuser)
 ):
     """Delete user (admin only)"""
-    # Get existing user
-    result = await session.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    
-    if not user:
+    try:
+        user = await user_manager.get(user_id)
+    except UserNotExists:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
     
-    # Prevent admin from deleting themselves
     if user.id == admin_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -240,7 +238,6 @@ async def delete_user(
             "message": f"User {user.username} deleted successfully",
             "user_id": str(user_id)
         }
-        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -258,7 +255,7 @@ async def update_user_animal_types(
     """Update user's allowed animal types (admin only)"""
     # Get existing user
     result = await session.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    user = result.unique().scalar_one_or_none()
 
     if not user:
         raise HTTPException(
