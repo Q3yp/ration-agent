@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -38,14 +39,15 @@ declare global {
 }
 
 interface LoginFormProps {
-  onLogin: (email: string, password: string) => Promise<void>
+  onLogin: (identifier: string, password: string) => Promise<void>
   isLoading?: boolean
   error?: string
 }
 
 export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [localError, setLocalError] = useState<string | null>(null)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [googleError, setGoogleError] = useState<string | null>(null)
   const buttonRef = useRef<HTMLDivElement | null>(null)
@@ -53,11 +55,25 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
   const { loginWithGoogleIdToken } = useAuthContext()
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
 
+  const clearLocalError = () => {
+    if (localError) {
+      setLocalError(null)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (email && password) {
-      await onLogin(email, password)
+    const trimmedIdentifier = identifier.trim()
+    if (!trimmedIdentifier) {
+      setLocalError(t('auth.accountRequired'))
+      return
     }
+    if (!password) {
+      setLocalError(t('auth.passwordRequired'))
+      return
+    }
+
+    await onLogin(trimmedIdentifier, password)
   }
 
   const handleGoogleCredential = useCallback(
@@ -161,10 +177,13 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Input
-                type="email"
-                placeholder={t('auth.emailPlaceholder')}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                placeholder={t('auth.accountPlaceholder')}
+                value={identifier}
+                onChange={(e) => {
+                  setIdentifier(e.target.value)
+                  clearLocalError()
+                }}
                 disabled={isLoading}
                 required
               />
@@ -175,23 +194,26 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
                 type="password"
                 placeholder={t('auth.passwordPlaceholder')}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  clearLocalError()
+                }}
                 disabled={isLoading}
                 required
               />
             </div>
             
-            {error && (
+            {(localError || error) && (
               <div className="flex items-center gap-2 text-red-600 text-sm">
                 <AlertTriangle size={16} />
-                {error}
+                {localError || error}
               </div>
             )}
             
             <Button 
               type="submit" 
               className="w-full" 
-              disabled={isLoading || !email || !password}
+              disabled={isLoading || !identifier || !password}
             >
               {isLoading ? t('auth.loggingIn') : t('common.buttons.login')}
             </Button>
@@ -224,6 +246,12 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
 
             <p className="text-center text-sm text-muted-foreground">
               {t('auth.googleOnlyNote')}
+            </p>
+
+            <p className="text-center text-sm text-muted-foreground">
+              <Link href="/register" className="text-primary hover:underline">
+                {t('auth.registerLink')}
+              </Link>
             </p>
           </form>
         </CardContent>

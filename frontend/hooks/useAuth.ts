@@ -3,14 +3,27 @@
 import { useState, useEffect } from 'react'
 import { httpClient } from '@/utils/httpClient'
 
+type SmsPurpose = 'register' | 'login' | 'bind'
+
 interface User {
   id: string
-  email: string
+  email?: string | null
   username: string
   full_name?: string
   role: string
   is_superuser: boolean
   preferred_language: 'zh-CN' | 'en-US'
+  phone_number?: string | null
+}
+
+interface SmsRegisterPayload {
+  mobile: string
+  code: string
+  password: string
+  username?: string
+  email?: string
+  full_name?: string
+  preferred_language?: 'zh-CN' | 'en-US'
 }
 
 interface AuthState {
@@ -21,8 +34,10 @@ interface AuthState {
 }
 
 interface AuthActions {
-  login: (email: string, password: string) => Promise<void>
+  login: (identifier: string, password: string) => Promise<void>
   loginWithGoogleIdToken: (idToken: string) => Promise<void>
+  registerWithSms: (payload: SmsRegisterPayload) => Promise<void>
+  requestSmsCode: (mobile: string, purpose?: SmsPurpose) => Promise<{ message: string; expires_in: number }>
   logout: () => void
   clearError: () => void
 }
@@ -69,17 +84,14 @@ export const useAuth = (): AuthContextType => {
     }
   }
 
-  const login = async (email: string, password: string) => {
+  const login = async (identifier: string, password: string) => {
     setAuthState(prev => ({ ...prev, isLoading: true, error: null }))
     
     try {
-      const formData = new FormData()
-      formData.append('username', email) // FastAPI-Users uses 'username' field
-      formData.append('password', password)
-
-      const response = await fetch('/auth/jwt/login', {
+      const response = await fetch('/auth/login', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password })
       })
 
       if (response.ok) {
@@ -105,6 +117,56 @@ export const useAuth = (): AuthContextType => {
         isLoading: false,
         error: 'Network error during login'
       }))
+    }
+  }
+
+  const requestSmsCode = async (
+    mobile: string,
+    purpose: SmsPurpose = 'register'
+  ): Promise<{ message: string; expires_in: number }> => {
+    try {
+      const response = await fetch('/auth/sms/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile, purpose }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to send SMS code')
+      }
+      return data
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'Failed to send SMS code')
+    }
+  }
+
+  const registerWithSms = async (payload: SmsRegisterPayload) => {
+    setAuthState(prev => ({ ...prev, isLoading: true, error: null }))
+    try {
+      const response = await fetch('/auth/sms/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.detail || 'SMS registration failed')
+      }
+
+      const token = data.access_token as string | undefined
+      if (!token) {
+        throw new Error('Registration succeeded but no token was returned')
+      }
+
+      localStorage.setItem('auth_token', token)
+      await verifyToken(token)
+    } catch (error) {
+      setAuthState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'SMS registration failed',
+      }))
+      throw error
     }
   }
 
@@ -158,6 +220,8 @@ export const useAuth = (): AuthContextType => {
     ...authState,
     login,
     loginWithGoogleIdToken,
+    registerWithSms,
+    requestSmsCode,
     logout,
     clearError
   }

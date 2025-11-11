@@ -21,7 +21,9 @@ class User(SQLAlchemyBaseUserTable[uuid.UUID], Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String(length=320), unique=True, index=True)
+    email: Mapped[Optional[str]] = mapped_column(
+        String(length=320), unique=True, index=True, nullable=True
+    )
     username: Mapped[str] = mapped_column(String(length=100), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(length=1024))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -35,6 +37,9 @@ class User(SQLAlchemyBaseUserTable[uuid.UUID], Base):
     role: Mapped[str] = mapped_column(String(length=50), default="user")  # user, admin
     allowed_animal_types: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True, default=None)  # List of allowed animal types
     preferred_language: Mapped[str] = mapped_column(String(length=10), default="zh-CN")
+    phone_number: Mapped[Optional[str]] = mapped_column(
+        String(length=20), unique=True, index=True, nullable=True
+    )
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(
         "OAuthAccount",
         back_populates="user",
@@ -53,6 +58,26 @@ class OAuthAccount(SQLAlchemyBaseOAuthAccountTableUUID, Base):
         GUID, ForeignKey("users.id", ondelete="cascade"), nullable=False
     )
     user: Mapped[User] = relationship("User", back_populates="oauth_accounts")
+
+
+class SMSVerification(Base):
+    """Persisted SMS verification codes for phone-based registration/login flows."""
+
+    __tablename__ = "sms_verifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    mobile: Mapped[str] = mapped_column(String(length=20), index=True)
+    code_hash: Mapped[str] = mapped_column(String(length=255))
+    purpose: Mapped[str] = mapped_column(String(length=32), default="register")
+    template_id: Mapped[Optional[str]] = mapped_column(String(length=32), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    user: Mapped[Optional[User]] = relationship("User", backref="sms_verifications")
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     """User manager for FastAPI-Users"""

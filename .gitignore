@@ -11,6 +11,10 @@ downloads/
 eggs/
 .eggs/
 lib/
+# Allow committing the frontend i18n translations
+!frontend/lib/
+!frontend/lib/i18n/
+!frontend/lib/i18n/**
 lib64/
 parts/
 sdist/

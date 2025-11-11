@@ -13,6 +13,7 @@ This guide covers setting up the new user authentication system for the Ration A
    - Set your `JWT_SECRET` to a secure random string (at least 32 characters)
    - Ensure `DATABASE_URL` points to your PostgreSQL instance
    - For Google login, set `GOOGLE_OAUTH_CLIENT_ID` (backend) and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (frontend) so the web client can render the Google Sign-In button
+   - To enable SMS registration/login, set `IHUYI_SMS_ACCOUNT`, `IHUYI_SMS_PASSWORD`, and optionally `IHUYI_SMS_TEMPLATE_ID`, `SMS_CODE_TTL_SECONDS`, `SMS_CODE_RESEND_INTERVAL_SECONDS`, `SMS_CODE_DAILY_LIMIT`
 
 ## Setup Steps
 
@@ -70,6 +71,14 @@ npm run dev
 4. Re-run `uv sync` in `backend/` so the new Google verification dependencies are installed.
 5. Until valid credentials are provided, the backend will return HTTP 503 from `/auth/google/id-token` to signal that Google Sign-In is disabled.
 
+### 6. Configure SMS Provider (optional but required for phone flows)
+
+1. Activate the 验证码通知短信 product in the Ihuyi dashboard.
+2. Copy the APIID and APIKEY into the backend `.env` as `IHUYI_SMS_ACCOUNT` and `IHUYI_SMS_PASSWORD`.
+3. (Optional) Override `IHUYI_SMS_TEMPLATE_ID`, `SMS_CODE_TTL_SECONDS`, `SMS_CODE_RESEND_INTERVAL_SECONDS`, or `SMS_CODE_DAILY_LIMIT` to match your compliance needs.
+4. Restart the backend so the new configuration is loaded. The `/auth/sms/*` endpoints will return HTTP 503 if the provider is not configured.
+5. Users entering 11-digit mainland phone numbers without a country code are automatically normalized to the international `+86` format (other country codes are not supported).
+
 ## Testing the Authentication System
 
 1. **Access the Application**
@@ -100,6 +109,8 @@ The authentication system adds these new endpoints:
 - `POST /auth/register` - Register new user (can be disabled)
 - `GET /auth/users/me` - Get current user info
 - `POST /auth/google/id-token` - Exchange a Google ID token (generated client-side) for a session JWT
+- `POST /auth/sms/code` - Send a verification code for register/login/bind workflows
+- `POST /auth/sms/register` - Register + receive JWT using a verified phone number
 
 ### Admin Routes (Superuser only)
 - `GET /admin/users` - List all users

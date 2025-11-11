@@ -10,7 +10,7 @@ import { useAuthContext } from '@/contexts/AuthContext'
 
 interface User {
   id: string
-  email: string
+  email?: string | null
   username: string
   full_name?: string
   role: string
@@ -211,7 +211,9 @@ export default function UserManagement() {
                         <Badge variant="outline">已验证</Badge>
                       )}
                     </div>
-                    <p className="text-sm text-gray-600 mb-1">{user.email}</p>
+                    {user.email && (
+                      <p className="text-sm text-gray-600 mb-1">{user.email}</p>
+                    )}
                     {user.full_name && (
                       <p className="text-sm text-gray-600 mb-1">{user.full_name}</p>
                     )}

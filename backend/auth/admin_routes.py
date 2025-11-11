@@ -56,6 +56,7 @@ async def list_users(
             role=user.role,
             allowed_animal_types=user.allowed_animal_types,
             preferred_language=user.preferred_language,
+            phone_number=user.phone_number,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat()
         ))
@@ -73,8 +74,9 @@ async def create_user(
     try:
         # Convert AdminUserCreate to UserCreate format
         from .schemas import UserCreate
+        normalized_email = user_create.email.strip() if user_create.email else None
         user_create_data = UserCreate(
-            email=user_create.email,
+            email=normalized_email,
             username=user_create.username,
             password=user_create.password,
             full_name=user_create.full_name,
@@ -82,7 +84,8 @@ async def create_user(
             is_active=user_create.is_active,
             is_superuser=user_create.is_superuser,
             is_verified=user_create.is_verified,
-            preferred_language=user_create.preferred_language
+            preferred_language=user_create.preferred_language,
+            phone_number=user_create.phone_number
         )
         
         user = await user_manager.create(user_create_data)
@@ -97,6 +100,7 @@ async def create_user(
             full_name=user.full_name,
             role=user.role,
             preferred_language=user.preferred_language,
+            phone_number=user.phone_number,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat()
         )
@@ -143,6 +147,7 @@ async def get_user(
         full_name=user.full_name,
         role=user.role,
         preferred_language=user.preferred_language,
+        phone_number=user.phone_number,
         created_at=user.created_at.isoformat(),
         updated_at=user.updated_at.isoformat()
     )
@@ -169,7 +174,12 @@ async def update_user(
     try:
         # Convert AdminUserUpdate to UserUpdate format
         from .schemas import UserUpdate
-        update_data = UserUpdate(**user_update.dict(exclude_unset=True))
+        update_payload = user_update.dict(exclude_unset=True)
+        email_value = update_payload.get("email")
+        if email_value is not None:
+            update_payload["email"] = email_value.strip() or None
+
+        update_data = UserUpdate(**update_payload)
         
         updated_user = await user_manager.update(update_data, user)
         
@@ -183,6 +193,7 @@ async def update_user(
             full_name=updated_user.full_name,
             role=updated_user.role,
             preferred_language=updated_user.preferred_language,
+            phone_number=updated_user.phone_number,
             created_at=updated_user.created_at.isoformat(),
             updated_at=updated_user.updated_at.isoformat()
         )

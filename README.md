@@ -79,7 +79,16 @@ A sophisticated LangGraph ReAct Agent system designed for dairy cattle nutrition
    
    # Agent Configuration
    LANGGRAPH_RECURSION_LIMIT=100
+
+   # SMS Provider (required for phone registration/login flows)
+   IHUYI_SMS_ACCOUNT=your_api_id
+   IHUYI_SMS_PASSWORD=your_api_key
+   IHUYI_SMS_TEMPLATE_ID=320655
+   SMS_CODE_TTL_SECONDS=600
+   SMS_CODE_RESEND_INTERVAL_SECONDS=60
+   SMS_CODE_DAILY_LIMIT=20
    ```
+   _Note: the current SMS provider only supports mainland China (+86) phone numbers._
 
 ### Running the Application
 
@@ -191,6 +200,12 @@ docker-compose down
 
 ### Health Check
 - `GET /health` - System health status
+
+### Authentication
+- `POST /auth/sms/code` - Request a verification code for register/login/bind flows
+- `POST /auth/sms/register` - Complete registration using phone + SMS code (returns JWT)
+  - Only mainland China (+86) numbers are supported; 11-digit inputs auto-normalize to `+86`.
+- `POST /auth/login` - Password login that accepts username, email, or phone number identifiers
 
 ## 🔧 Configuration
 

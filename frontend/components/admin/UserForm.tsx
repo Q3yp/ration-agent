@@ -9,7 +9,7 @@ import { useAuthContext } from '@/contexts/AuthContext'
 
 interface User {
   id: string
-  email: string
+  email?: string | null
   username: string
   full_name?: string
   role: string
@@ -44,7 +44,7 @@ export default function UserForm({ user, onSuccess, onCancel }: UserFormProps) {
   useEffect(() => {
     if (user) {
       setFormData({
-        email: user.email,
+        email: user.email || '',
         username: user.username,
         password: '', // Don't populate password for editing
         full_name: user.full_name || '',
@@ -75,6 +75,7 @@ export default function UserForm({ user, onSuccess, onCancel }: UserFormProps) {
       
       // Don't send empty password for updates
       const payload: Record<string, unknown> = { ...formData }
+      payload.email = formData.email.trim() || null
       if (isEditing && !payload.password) {
         delete payload.password
       }
@@ -121,14 +122,13 @@ export default function UserForm({ user, onSuccess, onCancel }: UserFormProps) {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">邮箱地址</label>
+              <label className="block text-sm font-medium mb-1">账号邮箱（可选）</label>
               <Input
-                type="email"
+                type="text"
                 name="email"
                 value={formData.email}
                 onChange={handleInputChange}
                 disabled={isLoading}
-                required
               />
             </div>
 
