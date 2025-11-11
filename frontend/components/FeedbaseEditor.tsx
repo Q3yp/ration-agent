@@ -124,26 +124,27 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
     .map(([value, { label }]) => ({ value, label }))
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="space-y-4 mb-6">
-      <div className="flex justify-between items-center">
-        <div className="flex-1 flex gap-4 items-center">
-          <div className="flex-1">
+      <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6 flex-shrink-0">
+      <div className="flex flex-col sm:flex-row sm:justify-between gap-3 sm:gap-4">
+        <div className="flex-1 flex flex-col sm:flex-row gap-2 sm:gap-4 min-w-0">
+          <div className="flex-1 min-w-0">
             <Input
               value={name}
               onChange={(e) => !isSystemDefault && setName(e.target.value)}
                 placeholder={editorCopy.namePlaceholder}
                 disabled={isSystemDefault}
-                className="text-lg font-semibold border border-dashed border-muted-foreground/30 bg-transparent px-3 py-2 hover:border-muted-foreground/50 focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                className="text-base sm:text-lg font-semibold border border-dashed border-muted-foreground/30 bg-transparent px-3 py-2 hover:border-muted-foreground/50 focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
               />
             </div>
+            <div className="flex gap-2 items-center">
             {isSystemDefault && (
-              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded whitespace-nowrap">
                 {editorCopy.systemBadge}
               </span>
             )}
-            <div className="w-48">
+            <div className="flex-1 sm:flex-none sm:w-48">
               <select
                 value={animalType}
                 onChange={(e) => !isSystemDefault && setAnimalType(e.target.value)}
@@ -157,16 +158,17 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
                 ))}
               </select>
             </div>
+            </div>
           </div>
-          <div className="flex gap-2 ml-4">
-            <Button variant="outline" onClick={onCancel}>
-              <X className="h-4 w-4 mr-1" />
-              {isSystemDefault ? editorCopy.close : editorCopy.cancel}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onCancel} size="sm" className="flex-1 sm:flex-none">
+              <X className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">{isSystemDefault ? editorCopy.close : editorCopy.cancel}</span>
             </Button>
             {!isSystemDefault && (
-              <Button onClick={handleSave} disabled={saving}>
-                <Save className="h-4 w-4 mr-1" />
-                {saving ? editorCopy.saving : editorCopy.save}
+              <Button onClick={handleSave} disabled={saving} size="sm" className="flex-1 sm:flex-none">
+                <Save className="h-4 w-4 sm:mr-1" />
+                <span className="hidden sm:inline">{saving ? editorCopy.saving : editorCopy.save}</span>
               </Button>
             )}
           </div>
@@ -180,15 +182,15 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
       )}
 
       {/* Content */}
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6">
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 sm:gap-6 overflow-hidden">
         {/* Feed List */}
-        <div className="w-full lg:w-80 lg:flex-shrink-0 flex flex-col min-h-0">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 flex-shrink-0">
-            <h3 className="font-semibold text-lg">{editorCopy.feedListTitle(feedNames.length)}</h3>
+        <div className={`${editingFeed ? 'hidden lg:flex' : 'flex'} w-full lg:w-80 lg:flex-shrink-0 flex-col min-h-0 overflow-hidden`}>
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4 flex-shrink-0">
+            <h3 className="font-semibold text-base sm:text-lg">{editorCopy.feedListTitle(feedNames.length)}</h3>
             {!isSystemDefault && (
-              <Button size="sm" onClick={addNewFeed} className="flex items-center gap-2">
+              <Button size="sm" onClick={addNewFeed} className="flex items-center gap-2 w-full sm:w-auto">
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">{editorCopy.addFeed}</span>
+                <span>{editorCopy.addFeed}</span>
               </Button>
             )}
           </div>
@@ -251,11 +253,11 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
         </div>
 
         {/* Feed Editor */}
-        <div className="flex-1 min-w-0 min-h-0">
+        <div className={`${editingFeed ? 'flex' : 'hidden lg:flex'} flex-1 min-w-0 min-h-0 flex-col overflow-hidden`}>
           {editingFeed && feeds[editingFeed] ? (
-            <div className="h-full flex flex-col">
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 pb-3 border-b">
-                <h3 className="font-semibold text-lg text-foreground">{editorCopy.editHeading(editingFeed)}</h3>
+            <div className="h-full flex flex-col overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4 pb-3 border-b flex-shrink-0">
+                <h3 className="font-semibold text-base sm:text-lg text-foreground">{editorCopy.editHeading(editingFeed)}</h3>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <div className="h-full overflow-y-auto">

@@ -8,10 +8,10 @@ import {
   ChevronUp,
   ChevronDown,
   User,
-  Bot,
   File,
   CornerDownRight
 } from 'lucide-react'
+import Image from 'next/image'
 import { formatTimestamp } from '@/utils/formatTime'
 import { getRoleInfo, getToolName } from '@/utils/roleMapping'
 import MarkdownMessage from './MarkdownMessage'
@@ -99,8 +99,14 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
   const renderAgentMessage = () => (
     <div className="flex justify-start items-start gap-2">
       <Avatar className="w-8 h-8">
-        <AvatarFallback>
-          <Bot className="h-4 w-4" />
+        <AvatarFallback className="bg-transparent">
+          <Image
+            src="/agent_icon.png"
+            alt="Agent"
+            width={32}
+            height={32}
+            className="w-full h-full object-contain"
+          />
         </AvatarFallback>
       </Avatar>
       <Card className="max-w-[80%] min-w-0 overflow-hidden bg-card">
@@ -465,7 +471,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
         <div className="w-8 h-8 flex items-center justify-center">
           <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
         </div>
-        <Card className="min-w-[400px] max-w-[600px] bg-blue-50 border-blue-200">
+        <Card className="w-full sm:min-w-[300px] sm:max-w-[500px] md:min-w-[400px] md:max-w-[600px] bg-blue-50 border-blue-200">
           <CardContent className="p-3">
             {isComplete ? (
               // Completed state - same style as TypingIndicator, show expandable list
@@ -527,7 +533,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
         <div className="w-8 h-8 flex items-center justify-center">
           <div className="w-2 h-2 bg-green-400 rounded-full"></div>
         </div>
-        <Card className="min-w-[400px] max-w-[600px] bg-green-50 border-green-200">
+        <Card className="w-full sm:min-w-[300px] sm:max-w-[500px] md:min-w-[400px] md:max-w-[600px] bg-green-50 border-green-200">
           <CardContent className="p-3">
             {isComplete ? (
               // Completed state - same style as FormulationIndicator, show expandable list

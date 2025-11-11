@@ -34,7 +34,7 @@ export function LocaleToggle() {
             disabled={pending}
             onClick={() => handleSelect(loc)}
             className={[
-              'px-2 py-1 text-xs font-medium transition-colors duration-150',
+              'px-3 py-1 text-xs font-medium transition-colors duration-150 whitespace-nowrap',
               index === 0 ? 'rounded-l-md' : '',
               index === LOCALE_SEQUENCE.length - 1 ? 'rounded-r-md' : '',
               isActive

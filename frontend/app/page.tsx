@@ -12,7 +12,6 @@ export default function LandingPage() {
   const { t } = useI18n()
 
   const handleGetStarted = () => router.push('/login')
-  const handleGoToChat = () => router.push('/chat')
 
   const renderTags = (key: string, variant: 'primary' | 'secondary' = 'primary') => {
     const tags = t(key).split(',').map(tag => tag.trim())
@@ -31,20 +30,22 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Floating Language Toggle - Mobile only */}
+      <div className="sm:hidden fixed top-16 right-4 z-50">
+        <LocaleToggle />
+      </div>
+
       <nav className="border-b bg-white/80 backdrop-blur-sm fixed w-full top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+            <Sparkles className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+            <span className="text-base sm:text-xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent truncate">
               {t('common.appName')}
             </span>
           </div>
           <div className="flex gap-2 items-center">
             <LocaleToggle />
-            <Button onClick={handleGoToChat} variant="outline">
-              {t('common.buttons.goToApp')}
-            </Button>
-            <Button onClick={handleGetStarted} variant="default">
+            <Button onClick={handleGetStarted} variant="default" size="sm" className="sm:size-default">
               {t('common.buttons.login')}
             </Button>
           </div>

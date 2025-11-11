@@ -155,10 +155,10 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
   }
 
   return (
-    <div className="flex h-full max-h-full overflow-hidden gap-4">
+    <div className="flex flex-col md:flex-row h-full max-h-full overflow-hidden gap-4">
       {/* Chat Panel */}
-      <Card className={`flex flex-col overflow-hidden transition-all duration-300 ${
-        currentArtifact ? 'w-1/2' : 'w-full'
+      <Card className={`flex flex-col h-full overflow-hidden transition-all duration-300 ${
+        currentArtifact ? 'w-full md:w-1/2' : 'w-full'
       }`}>
         {/* Connection Status */}
         <div className="px-4 py-3 border-b">
@@ -211,7 +211,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
         </div>
 
         {/* Messages */}
-        <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
+        <CardContent className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 sm:space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
           <MessageList
             messages={messages}
             isTyping={isTyping || isStreaming}
@@ -237,13 +237,14 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
         )}
 
         {/* Input */}
-        <div className="border-t p-4">
+        <div className="border-t p-3 sm:p-4">
           <div className="flex space-x-2">
             <Button
               variant={showFileUpload ? "default" : "outline"}
               size="icon"
               onClick={() => setShowFileUpload(!showFileUpload)}
               disabled={!isConnected || isLoading || isTyping}
+              className="h-10 w-10 sm:h-9 sm:w-9"
             >
               <Upload className="h-4 w-4" />
             </Button>
@@ -254,13 +255,14 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
               onKeyDown={handleKeyDown}
               placeholder={t('chat.inputPlaceholder')}
               disabled={!isConnected || isTyping || isStreaming || isLoading}
-              className="flex-1"
+              className="flex-1 text-base sm:text-sm"
             />
             {isTyping || isStreaming ? (
               <Button
                 onClick={stopMessage}
                 variant="destructive"
                 size="icon"
+                className="h-10 w-10 sm:h-9 sm:w-9"
               >
                 <Square className="h-4 w-4" />
               </Button>
@@ -269,6 +271,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
                 onClick={handleSendMessage}
                 disabled={!inputValue.trim() || !isConnected || isLoading}
                 size="icon"
+                className="h-10 w-10 sm:h-9 sm:w-9"
               >
                 <Send className="h-4 w-4" />
               </Button>
@@ -284,7 +287,7 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
 
       {/* Artifact Panel */}
       {currentArtifact && (
-        <div className="w-1/2 h-full transition-all duration-300">
+        <div className="fixed inset-0 md:relative md:w-1/2 h-full transition-all duration-300 z-40 md:z-auto bg-background">
           <HtmlArtifact
             title={currentArtifact.title}
             description={currentArtifact.description}

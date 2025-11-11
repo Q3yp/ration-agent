@@ -281,30 +281,30 @@ export default function FeedbaseManager() {
   }))
 
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-6">
+    <div className="h-full flex flex-col lg:flex-row gap-3 sm:gap-6 overflow-hidden">
       {/* Sidebar - Feedbase List */}
-      <div className="w-full lg:w-80 lg:flex-shrink-0">
-        <div className="h-full flex flex-col">
-          <div className="flex flex-col gap-3 mb-4 pb-3 border-b">
-            <div className="flex sm:justify-between sm:items-center gap-3">
-              <h2 className="text-lg font-semibold text-foreground">{copy.manager.sidebarTitle}</h2>
+      <div className={`${isEditing ? 'hidden lg:flex' : 'flex'} w-full lg:w-80 lg:flex-shrink-0 flex-col overflow-hidden`}>
+        <div className="h-full flex flex-col overflow-hidden">
+          <div className="flex flex-col gap-2 sm:gap-3 mb-3 sm:mb-4 pb-3 border-b flex-shrink-0">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-3">
+              <h2 className="text-base sm:text-lg font-semibold text-foreground">{copy.manager.sidebarTitle}</h2>
               <Button
                 size="sm"
                 onClick={createNew}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 w-full sm:w-auto"
               >
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">{copy.manager.createButton}</span>
+                <span>{copy.manager.createButton}</span>
               </Button>
             </div>
 
             {/* Animal type filter */}
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-1 sm:gap-2 flex-wrap">
               {Object.entries(animalOptions).map(([type, { label }]) => (
                 <button
                   key={type}
                   onClick={() => setAnimalTypeFilter(type)}
-                  className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                  className={`px-2 sm:px-3 py-1 text-xs rounded-full transition-colors whitespace-nowrap ${
                     animalTypeFilter === type
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground hover:bg-muted/80'
@@ -316,7 +316,7 @@ export default function FeedbaseManager() {
             </div>
           </div>
 
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-hidden">
             <FeedbaseList
               feedbases={feedbaseItems}
               selectedFeedbase={selectedFeedbase?.name || null}
@@ -329,7 +329,7 @@ export default function FeedbaseManager() {
       </div>
 
       {/* Main content - Feedbase Editor */}
-      <div className="flex-1 min-w-0 min-h-0">
+      <div className={`${isEditing ? 'flex' : 'hidden lg:flex'} flex-1 min-w-0 min-h-0 flex-col overflow-hidden`}>
         {isEditing && selectedFeedbase ? (
           <FeedbaseEditor
             key={selectedFeedbase.name}
@@ -341,11 +341,11 @@ export default function FeedbaseManager() {
             }}
           />
         ) : (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center h-full p-4">
             <Card className="w-full max-w-sm">
-              <CardContent className="p-8 text-center">
-                <Plus className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">{copy.manager.emptyStateTitle}</h3>
+              <CardContent className="p-6 sm:p-8 text-center">
+                <Plus className="h-12 sm:h-16 w-12 sm:w-16 text-muted-foreground mx-auto mb-3 sm:mb-4 opacity-50" />
+                <h3 className="text-base sm:text-lg font-semibold mb-2">{copy.manager.emptyStateTitle}</h3>
                 <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
                   {copy.manager.emptyStateDescription}
                 </p>
