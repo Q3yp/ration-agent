@@ -59,7 +59,7 @@ export default function FeedbaseList({
   }
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="h-full overflow-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
       <div className="space-y-3 p-1">
         {feedbases.map((feedbase) => {
           const isSystemDefault = feedbase.name.startsWith('default_')

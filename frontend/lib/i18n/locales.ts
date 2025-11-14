@@ -23,6 +23,8 @@ export const translations: Record<Locale, TranslationTree> = {
         retry: '重试',
         confirm: '确认',
         cancel: '取消',
+        delete: '删除',
+        deleteAll: '全部删除',
       },
       statuses: {
         loading: '加载中...',
@@ -122,7 +124,7 @@ export const translations: Record<Locale, TranslationTree> = {
         free: '免费版',
         paid: '专业版',
       },
-      freeTierSessionHint: '免费版仅支持猫狗对话，且同一时间只能保留一个会话。',
+      freeTierSessionHint: '免费版仅支持猫狗对话，且同一时间只能保留一个会话，对话长度限 50,000 tokens。',
       promptLimitTitle: '已达到会话上限',
       promptLimitBody: '当前对话的上下文已超过免费版 50,000 tokens 限制。请开启新的对话或升级账户以继续使用。',
       promptLimitCTA: '了解升级方案',
@@ -194,6 +196,9 @@ export const translations: Record<Locale, TranslationTree> = {
     guide: {
       back: '返回对话',
     },
+    admin: {
+      back: '返回对话',
+    },
     protectedRoute: {
       deniedTitle: '访问被拒绝',
       deniedDescription: '您没有权限访问此页面。',
@@ -222,6 +227,8 @@ export const translations: Record<Locale, TranslationTree> = {
         retry: 'Retry',
         confirm: 'Confirm',
         cancel: 'Cancel',
+        delete: 'Delete',
+        deleteAll: 'Delete All',
       },
       statuses: {
         loading: 'Loading...',
@@ -309,7 +316,7 @@ export const translations: Record<Locale, TranslationTree> = {
     },
     chat: {
       guide: 'Guide',
-      feedbase: 'Feedbase Manager',
+      feedbase: 'Feedbase Management',
       admin: 'Admin',
       newConversation: 'New conversation',
       selectPrompt: 'Select or create a conversation',
@@ -321,7 +328,7 @@ export const translations: Record<Locale, TranslationTree> = {
         free: 'Free',
         paid: 'Pro',
       },
-      freeTierSessionHint: 'Free plan supports only cat & dog conversations and allows one active session at a time.',
+      freeTierSessionHint: 'Free plan supports only cat & dog conversations and allows one active session at a time, with a 50,000-token limit per session.',
       promptLimitTitle: 'Session limit reached',
       promptLimitBody: 'This conversation exceeded the 50,000-token limit for the free plan. Start a new chat or upgrade your plan to continue.',
       promptLimitCTA: 'Explore upgrade options',
@@ -386,11 +393,14 @@ export const translations: Record<Locale, TranslationTree> = {
       dog: 'Dog',
     },
     feedbases: {
-      title: 'Feedbase Manager',
+      title: 'Feedbase Management',
       back: 'Back to chat',
       freeTierNotice: 'Free plan can only use system feedbases. Upgrade to create and edit custom libraries.',
     },
     guide: {
+      back: 'Back to chat',
+    },
+    admin: {
       back: 'Back to chat',
     },
     protectedRoute: {

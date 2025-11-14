@@ -15,6 +15,7 @@ from langchain_community.agent_toolkits import FileManagementToolkit
 from duckduckgo_search import DDGS
 from .excel_tools import get_excel_tools
 from .formulation_tools import create_formulation_tools
+from .usda_tools import get_usda_tools
 
 try:
     import bleach
@@ -539,8 +540,7 @@ async def get_nutritionist_tools(animal_type: str = "dairy_cow"):
     """Get nutritionist-specific tools"""
     # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
     formulation_tools = create_formulation_tools(animal_type)
-
-    return formulation_tools
+    return formulation_tools + get_usda_tools()
 
 async def get_coder_tools(animal_type: str = "dairy_cow"):
     """Get all available tools for a session (code worker tools)."""
@@ -554,4 +554,6 @@ async def get_coder_tools(animal_type: str = "dairy_cow"):
     all_formulation_tools = create_formulation_tools(animal_type)
     feed_tools = [tool for tool in all_formulation_tools if tool.name in ['add_feed', 'check_feeds', 'list_feed_bases']]
 
-    return [bash_command, create_artifact] + file_tools + excel_tools + feed_tools
+    usda_tools = get_usda_tools()
+
+    return [bash_command, create_artifact] + file_tools + excel_tools + feed_tools + usda_tools

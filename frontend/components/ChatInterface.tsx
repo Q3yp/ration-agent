@@ -20,9 +20,10 @@ interface ChatInterfaceProps {
   endpoint?: string
   onTitleUpdate?: (sessionId: string, title: string) => void
   onTokenUsageUpdate?: (sessionId: string, tokenUsage: import('@/types/chat').TokenUsage) => void
+  onArtifactChange?: (isOpen: boolean) => void
 }
 
-export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTokenUsageUpdate }: ChatInterfaceProps) {
+export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTokenUsageUpdate, onArtifactChange }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState('')
   const [showFileUpload, setShowFileUpload] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<AttachedFile[]>([])
@@ -62,6 +63,11 @@ export default function ChatInterface({ sessionId, endpoint, onTitleUpdate, onTo
   useEffect(() => {
     setCurrentArtifact(null)
   }, [sessionId])
+
+  // Notify parent when artifact state changes
+  useEffect(() => {
+    onArtifactChange?.(!!currentArtifact)
+  }, [currentArtifact, onArtifactChange])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({

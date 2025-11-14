@@ -18,8 +18,27 @@ TEST_PASSWORD = "testacc"
 API_BASE_URL = "http://localhost:8000"
 
 # Test scenarios directory
-TEST_SCENARIOS_FILE = Path(__file__).parent / "scenarios" / "beef_scenarios.json"
+SCENARIOS_DIR = Path(__file__).parent / "scenarios"
+DEFAULT_SCENARIOS_FILE = SCENARIOS_DIR / "beef_scenarios.json"
+SCENARIO_FILE_MAP = {
+    "beef_cow": SCENARIOS_DIR / "beef_scenarios.json",
+    "dog": SCENARIOS_DIR / "dog_scenarios.json",
+}
 TEST_RUNS_DIR = Path(__file__).parent / "test_runs"
+
+
+def resolve_scenarios_file(animal_type: str) -> Path:
+    """Return the scenarios file path for the requested animal type."""
+    candidate = SCENARIO_FILE_MAP.get(animal_type)
+    if candidate:
+        if candidate.exists():
+            return candidate
+        print(f"⚠️  未找到 {animal_type} 对应的场景文件 {candidate}，回退至默认配置。")
+
+    if DEFAULT_SCENARIOS_FILE.exists():
+        return DEFAULT_SCENARIOS_FILE
+
+    return None
 
 
 async def login(client: httpx.AsyncClient) -> str:
@@ -278,7 +297,12 @@ async def main(
     print(f"API地址: {API_BASE_URL}")
     print("="*80)
 
-    # Load scenarios
+    scenarios_file = scenarios_file or resolve_scenarios_file(animal_type)
+    if scenarios_file:
+        print(f"场景文件: {scenarios_file}")
+    else:
+        print("场景文件: 内置默认场景（仅限肉牛示例）")
+
     scenarios = load_scenarios(scenarios_file)
 
     # Filter scenarios if specific IDs provided
@@ -459,7 +483,7 @@ if __name__ == "__main__":
         scenario_ids = [int(x) for x in sys.argv[2:]]
 
     asyncio.run(main(
-        scenarios_file=TEST_SCENARIOS_FILE,
+        scenarios_file=resolve_scenarios_file(animal_type),
         animal_type=animal_type,
         scenario_ids=scenario_ids
     ))

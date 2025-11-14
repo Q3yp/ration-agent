@@ -44,7 +44,9 @@ export default function LandingPage() {
             </span>
           </div>
           <div className="flex gap-2 items-center">
-            <LocaleToggle />
+            <div className="hidden sm:block">
+              <LocaleToggle />
+            </div>
             <Button onClick={handleGetStarted} variant="default" size="sm" className="sm:size-default">
               {t('common.buttons.login')}
             </Button>
@@ -74,7 +76,7 @@ export default function LandingPage() {
             </Button>
           </div>
 
-          <div className="mt-16 grid md:grid-cols-2 gap-6 max-w-4xl mx-auto text-left">
+          <div className="mt-16 grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto text-left">
             <div className="bg-white rounded-xl p-6 shadow-md border-2 border-primary/20">
               <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
                 <span className="text-2xl">🏢</span>

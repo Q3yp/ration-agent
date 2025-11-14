@@ -56,8 +56,8 @@ export default function TypingIndicator({ analysisState, formulationState, isTyp
         )}
       </div>
       
-      <Card className={`min-w-[400px] max-w-[600px] ${
-        isFormulating ? 'bg-green-50 border-green-200' : 
+      <Card className={`min-w-[200px] sm:min-w-[400px] max-w-[600px] ${
+        isFormulating ? 'bg-green-50 border-green-200' :
         isAnalyzing ? 'bg-blue-50 border-blue-200' : 'bg-muted'
       }`}>
         <CardContent className="p-3">

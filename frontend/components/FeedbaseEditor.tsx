@@ -26,6 +26,8 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
   const commonCopy = copy.common
   const [name, setName] = useState(feedbase.name)
   const [animalType, setAnimalType] = useState(feedbase.data.animal_type || 'dairy_cow')
+  const feedLabels = feedbase.data.feed_labels || {}
+  const localeKey = locale.toLowerCase().startsWith('zh') ? 'zh' : 'en'
   
   // Normalize feed data once using useMemo
   const initialFeeds = useMemo(() => {
@@ -58,7 +60,8 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
       setError(null)
       await onSave(feedbase.name, name.trim(), {
         animal_type: animalType,
-        feeds
+        feeds,
+        feed_labels: feedLabels
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : editorCopy.saveError)
@@ -118,6 +121,26 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
   }
 
   const feedNames = Object.keys(feeds).sort()
+
+  const getFeedDisplayName = (feedName: string) => {
+    const direct = feeds[feedName]?.display_name
+    if (direct) return direct
+
+    const labelMap = feedLabels[feedName]
+    if (labelMap) {
+      const normalizedMap = Object.fromEntries(
+        Object.entries(labelMap).map(([key, value]) => [key.toLowerCase(), value])
+      )
+      const localeVariants = [locale.toLowerCase(), localeKey, 'en']
+      for (const key of localeVariants) {
+        if (normalizedMap[key]) return normalizedMap[key]
+      }
+      const first = Object.values(normalizedMap)[0]
+      if (first) return first
+    }
+
+    return feedName
+  }
 
   const animalTypeOptions = Object.entries(commonCopy.animals)
     .filter(([value]) => value !== 'all')
@@ -195,7 +218,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
             )}
           </div>
 
-          <div className="flex-1 min-h-0 overflow-auto">
+          <div className="flex-1 min-h-0 overflow-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
             {feedNames.length === 0 ? (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center py-12">
@@ -220,9 +243,12 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
                         <button 
                           className="flex-1 min-w-0 text-left group"
                           onClick={() => selectFeed(feedName)}
-                          title={feedName}
+                          title={`${getFeedDisplayName(feedName)} (${feedName})`}
                         >
                           <div className="font-medium text-foreground group-hover:text-primary transition-colors truncate">
+                            {getFeedDisplayName(feedName)}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
                             {feedName}
                           </div>
                           <div className="text-sm text-muted-foreground mt-1">
@@ -238,7 +264,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
                               e.stopPropagation()
                               deleteFeed(feedName)
                             }}
-                            title={editorCopy.deleteFeedTooltip(feedName)}
+                            title={editorCopy.deleteFeedTooltip(getFeedDisplayName(feedName))}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -257,7 +283,7 @@ export default function FeedbaseEditor({ feedbase, onSave, onCancel }: FeedbaseE
           {editingFeed && feeds[editingFeed] ? (
             <div className="h-full flex flex-col overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4 pb-3 border-b flex-shrink-0">
-                <h3 className="font-semibold text-base sm:text-lg text-foreground">{editorCopy.editHeading(editingFeed)}</h3>
+                <h3 className="font-semibold text-base sm:text-lg text-foreground">{editorCopy.editHeading(getFeedDisplayName(editingFeed))}</h3>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <div className="h-full overflow-y-auto">

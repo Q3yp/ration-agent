@@ -388,12 +388,20 @@ class FeedData(BaseModel):
     )
     nutrients: Dict[str, float] = Field(..., description="Nutrient composition")
     cost_per_kg: float = Field(..., ge=0, description="Cost per kilogram")
+    display_name: Optional[str] = Field(
+        default=None,
+        description="Localized feed name resolved for the current user locale",
+    )
 
 
 class FeedbaseData(BaseModel):
     """Complete feedbase structure"""
     animal_type: AnimalType = AnimalType.DAIRY_COW
     feeds: Dict[str, FeedData] = Field(default_factory=dict, description="Collection of feeds")
+    feed_labels: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="Optional localized feed names keyed by locale code, e.g. {'en': 'Corn', 'zh': '玉米'}",
+    )
 
 
 class FeedbaseListResponse(BaseModel):

@@ -9,16 +9,28 @@ import FeedbaseEditor from './FeedbaseEditor'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { useI18n } from '@/contexts/I18nContext'
 import { getFeedbaseCopy } from './feedbaseCopy'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 export interface FeedData {
   dm_percent: number
   nutrients: Record<string, number>
   cost_per_kg: number
+  display_name?: string
 }
 
 export interface FeedbaseData {
   animal_type?: string
   feeds: Record<string, FeedData>
+  feed_labels?: Record<string, Record<string, string>>
 }
 
 export interface Feedbase {
@@ -39,6 +51,7 @@ export default function FeedbaseManager() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [animalTypeFilter, setAnimalTypeFilter] = useState<string>('all')
+  const [feedbaseToDelete, setFeedbaseToDelete] = useState<string | null>(null)
   const placeholderNames = useMemo(() => new Set([...PLACEHOLDER_NAMES, copy.manager.newFeedbaseName]), [copy.manager.newFeedbaseName])
   const isFreeTier = user?.tier === 'free'
 
@@ -147,29 +160,32 @@ export default function FeedbaseManager() {
 
   // Delete feedbase
   const deleteFeedbase = async (name: string) => {
-    const confirmMessage = copy.manager.confirmDelete.replace('{{name}}', name)
-    if (!confirm(confirmMessage)) {
-      return
-    }
+    setFeedbaseToDelete(name)
+  }
+
+  const confirmDeleteFeedbase = async () => {
+    if (!feedbaseToDelete) return
 
     try {
-      const response = await fetch(`/api/feedbases/${encodeURIComponent(name)}`, {
+      const response = await fetch(`/api/feedbases/${encodeURIComponent(feedbaseToDelete)}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       })
-      
+
       if (!response.ok) {
-        throw new Error(`Failed to delete feedbase: ${name}`)
+        throw new Error(`Failed to delete feedbase: ${feedbaseToDelete}`)
       }
-      
+
       // Refresh the feedbases list
       await loadFeedbases()
-      
+
       // Clear selection if we deleted the currently selected feedbase
-      if (selectedFeedbase?.name === name) {
+      if (selectedFeedbase?.name === feedbaseToDelete) {
         setSelectedFeedbase(null)
         setIsEditing(false)
       }
+
+      setFeedbaseToDelete(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     }
@@ -286,99 +302,119 @@ export default function FeedbaseManager() {
   }))
 
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-3 sm:gap-6 overflow-hidden">
-      {/* Sidebar - Feedbase List */}
-      <div className={`${isEditing ? 'hidden lg:flex' : 'flex'} w-full lg:w-80 lg:flex-shrink-0 flex-col overflow-hidden`}>
-        <div className="h-full flex flex-col overflow-hidden">
-          <div className="flex flex-col gap-2 sm:gap-3 mb-3 sm:mb-4 pb-3 border-b flex-shrink-0">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-3">
-              <h2 className="text-base sm:text-lg font-semibold text-foreground">{copy.manager.sidebarTitle}</h2>
-              <Button
-                size="sm"
-                onClick={createNew}
-                disabled={isFreeTier}
-                title={isFreeTier ? copy.manager.freeTierNotice : undefined}
-                className="flex items-center gap-2 w-full sm:w-auto"
-              >
-                <Plus className="h-4 w-4" />
-                <span>{copy.manager.createButton}</span>
-              </Button>
-            </div>
-            {isFreeTier && (
-              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 leading-relaxed">
-                {copy.manager.freeTierNotice}
-              </div>
-            )}
-
-            {/* Animal type filter */}
-            <div className="flex gap-1 sm:gap-2 flex-wrap">
-              {Object.entries(animalOptions).map(([type, { label }]) => (
-                <button
-                  key={type}
-                  onClick={() => setAnimalTypeFilter(type)}
-                  className={`px-2 sm:px-3 py-1 text-xs rounded-full transition-colors whitespace-nowrap ${
-                    animalTypeFilter === type
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  }`}
+    <>
+      <div className="h-full flex flex-col lg:flex-row gap-3 sm:gap-6 overflow-hidden">
+        {/* Sidebar - Feedbase List */}
+        <div className={`${isEditing ? 'hidden lg:flex' : 'flex'} w-full lg:w-80 lg:flex-shrink-0 flex-col overflow-hidden`}>
+          <div className="h-full flex flex-col overflow-hidden">
+            <div className="flex flex-col gap-2 sm:gap-3 mb-3 sm:mb-4 pb-3 border-b flex-shrink-0">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-3">
+                <h2 className="text-base sm:text-lg font-semibold text-foreground">{copy.manager.sidebarTitle}</h2>
+                <Button
+                  size="sm"
+                  onClick={createNew}
+                  disabled={isFreeTier}
+                  title={isFreeTier ? copy.manager.freeTierNotice : undefined}
+                  className="flex items-center gap-2 w-full sm:w-auto"
                 >
-                  {label}
-                </button>
-              ))}
+                  <Plus className="h-4 w-4" />
+                  <span>{copy.manager.createButton}</span>
+                </Button>
+              </div>
+              {isFreeTier && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 leading-relaxed">
+                  {copy.manager.freeTierNotice}
+                </div>
+              )}
+
+              {/* Animal type filter */}
+              <div className="flex gap-1 sm:gap-2 flex-wrap">
+                {Object.entries(animalOptions).map(([type, { label }]) => (
+                  <button
+                    key={type}
+                    onClick={() => setAnimalTypeFilter(type)}
+                    className={`px-2 sm:px-3 py-1 text-xs rounded-full transition-colors whitespace-nowrap ${
+                      animalTypeFilter === type
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <FeedbaseList
+                feedbases={feedbaseItems}
+                selectedFeedbase={selectedFeedbase?.name || null}
+                onSelect={loadFeedbase}
+                onDelete={deleteFeedbase}
+                onExport={exportFeedbase}
+              />
             </div>
           </div>
+        </div>
 
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <FeedbaseList
-              feedbases={feedbaseItems}
-              selectedFeedbase={selectedFeedbase?.name || null}
-              onSelect={loadFeedbase}
-              onDelete={deleteFeedbase}
-              onExport={exportFeedbase}
+        {/* Main content - Feedbase Editor */}
+        <div className={`${isEditing ? 'flex' : 'hidden lg:flex'} flex-1 min-w-0 min-h-0 flex-col overflow-hidden`}>
+          {isEditing && selectedFeedbase ? (
+            <FeedbaseEditor
+              key={selectedFeedbase.name}
+              feedbase={selectedFeedbase}
+              onSave={saveFeedbase}
+              onCancel={() => {
+                setIsEditing(false)
+                setSelectedFeedbase(null)
+              }}
             />
-          </div>
+          ) : (
+            <div className="flex items-center justify-center h-full p-4">
+              <Card className="w-full max-w-sm">
+                <CardContent className="p-6 sm:p-8 text-center">
+                  <Plus className="h-12 sm:h-16 w-12 sm:w-16 text-muted-foreground mx-auto mb-3 sm:mb-4 opacity-50" />
+                  <h3 className="text-base sm:text-lg font-semibold mb-2">{copy.manager.emptyStateTitle}</h3>
+                  <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
+                    {copy.manager.emptyStateDescription}
+                  </p>
+                  <Button
+                    onClick={createNew}
+                    className="w-full"
+                    disabled={isFreeTier}
+                    title={isFreeTier ? copy.manager.freeTierNotice : undefined}
+                  >
+                    {copy.manager.createPrimary}
+                  </Button>
+                  {isFreeTier && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-3 text-left">
+                      {copy.manager.freeTierNotice}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Main content - Feedbase Editor */}
-      <div className={`${isEditing ? 'flex' : 'hidden lg:flex'} flex-1 min-w-0 min-h-0 flex-col overflow-hidden`}>
-        {isEditing && selectedFeedbase ? (
-          <FeedbaseEditor
-            key={selectedFeedbase.name}
-            feedbase={selectedFeedbase}
-            onSave={saveFeedbase}
-            onCancel={() => {
-              setIsEditing(false)
-              setSelectedFeedbase(null)
-            }}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full p-4">
-            <Card className="w-full max-w-sm">
-              <CardContent className="p-6 sm:p-8 text-center">
-                <Plus className="h-12 sm:h-16 w-12 sm:w-16 text-muted-foreground mx-auto mb-3 sm:mb-4 opacity-50" />
-                <h3 className="text-base sm:text-lg font-semibold mb-2">{copy.manager.emptyStateTitle}</h3>
-                <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
-                  {copy.manager.emptyStateDescription}
-                </p>
-                <Button
-                  onClick={createNew}
-                  className="w-full"
-                  disabled={isFreeTier}
-                  title={isFreeTier ? copy.manager.freeTierNotice : undefined}
-                >
-                  {copy.manager.createPrimary}
-                </Button>
-                {isFreeTier && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-3 text-left">
-                    {copy.manager.freeTierNotice}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </div>
-    </div>
+      {/* Delete feedbase confirmation dialog */}
+      <AlertDialog open={!!feedbaseToDelete} onOpenChange={() => setFeedbaseToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{copy.list.delete}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {feedbaseToDelete && copy.manager.confirmDelete.replace('{{name}}', feedbaseToDelete)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{copy.editor.cancel}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteFeedbase} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {copy.list.delete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

@@ -1,14 +1,13 @@
 'use client'
 
-import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import FeedbaseManager from '@/components/FeedbaseManager'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { useAuthContext } from '@/contexts/AuthContext'
-import Link from 'next/link'
 import { useI18n } from '@/contexts/I18nContext'
 import { Badge } from '@/components/ui/badge'
+import BackToChatButton from '@/components/BackToChatButton'
 
 export default function FeedbasesPage() {
   const { user, logout } = useAuthContext()
@@ -27,12 +26,7 @@ export default function FeedbasesPage() {
           <header className="py-2 sm:py-4 px-3 sm:px-6 border-b flex-shrink-0">
             <div className="flex justify-between items-center gap-2">
               <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-                <Link href="/chat">
-                  <Button variant="outline" size="sm" className="h-8 sm:h-9">
-                    <ArrowLeft className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{t('feedbases.back')}</span>
-                  </Button>
-                </Link>
+                <BackToChatButton label={t('feedbases.back')} />
                 <h1 className="text-base sm:text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent truncate">
                   {t('feedbases.title')}
                 </h1>

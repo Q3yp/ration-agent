@@ -156,6 +156,23 @@ uv run python main.py
 uv run python start_server.py
 ```
 
+#### USDA FoodData helper
+
+Use the new CLI to experiment with USDA ingredient lookups (requires `USDA_API_KEY` in `backend/.env`).
+
+```bash
+cd ration-agent/backend
+uv run python usda_cli.py search "chicken meal" --nutrient "Protein"
+uv run python usda_cli.py details 123456 --json
+```
+
+Generate the FEDIAF-aligned companion feedbases (updates `backend/migrations/data/system_feedbases.json`).
+
+```bash
+cd ration-agent/backend
+uv run python scripts/build_companion_feedbases.py --write
+```
+
 ### Frontend Commands
 
 ```bash

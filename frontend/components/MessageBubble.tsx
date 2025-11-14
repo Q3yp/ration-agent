@@ -105,7 +105,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
             alt="Agent"
             width={32}
             height={32}
-            className="w-full h-full object-contain"
+            className="w-full h-full object-contain translate-y-[2px]"
           />
         </AvatarFallback>
       </Avatar>

@@ -12,6 +12,16 @@ import { TokenUsage } from './TokenUsage'
 import { useI18n } from '@/contexts/I18nContext'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { useAuthContext } from '@/contexts/AuthContext'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface ConversationSidebarProps {
   currentSessionId: string | null
@@ -32,6 +42,8 @@ export default function ConversationSidebar({
   const [isLoading, setIsLoading] = useState(true)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [showAnimalTypeSelector, setShowAnimalTypeSelector] = useState(false)
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
+  const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false)
   const { t, formatRelativeTime } = useI18n()
   const { user } = useAuthContext()
   const isFreeTier = user?.tier === 'free'
@@ -107,15 +119,18 @@ export default function ConversationSidebar({
       return
     }
 
-    if (!confirm(t('sidebar.deleteConfirm'))) {
-      return
-    }
+    setSessionToDelete(sessionId)
+  }
+
+  const confirmDeleteSession = async () => {
+    if (!sessionToDelete) return
 
     try {
-      await httpClient.deleteJson(`/sessions/${sessionId}`)
+      await httpClient.deleteJson(`/sessions/${sessionToDelete}`)
 
       // Remove session from local state instead of refetching all sessions
-      setSessions(prev => prev.filter(session => session.session_id !== sessionId))
+      setSessions(prev => prev.filter(session => session.session_id !== sessionToDelete))
+      setSessionToDelete(null)
     } catch (error) {
       console.error('Error deleting session:', error)
       alert(t('errors.networkRetry'))
@@ -128,15 +143,16 @@ export default function ConversationSidebar({
       return
     }
 
-    if (!confirm(t('sidebar.deleteAllConfirm'))) {
-      return
-    }
+    setShowDeleteAllDialog(true)
+  }
 
+  const confirmDeleteAllSessions = async () => {
     try {
       await httpClient.deleteJson(`/sessions/delete-all`)
 
       // Clear all sessions from local state
       setSessions([])
+      setShowDeleteAllDialog(false)
     } catch (error) {
       console.error('Error deleting all sessions:', error)
       alert(t('errors.networkRetry'))
@@ -228,7 +244,7 @@ export default function ConversationSidebar({
       </CardHeader>
 
       {/* Sessions list */}
-      <div className="flex-1 overflow-y-auto px-4">
+      <div className="flex-1 overflow-y-auto px-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
         {sessions.length === 0 ? (
           <div className="text-center py-8">
             <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
@@ -357,6 +373,42 @@ export default function ConversationSidebar({
           </Button>
         )}
       </div>
+
+      {/* Delete single session confirmation dialog */}
+      <AlertDialog open={!!sessionToDelete} onOpenChange={() => setSessionToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('sidebar.deleteConfirm')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('sidebar.deleteDescription') || 'This action cannot be undone. This will permanently delete this conversation.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.buttons.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteSession} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {t('common.buttons.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete all sessions confirmation dialog */}
+      <AlertDialog open={showDeleteAllDialog} onOpenChange={setShowDeleteAllDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('sidebar.deleteAllConfirm')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('sidebar.deleteAllDescription') || 'This action cannot be undone. This will permanently delete all your conversations.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.buttons.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteAllSessions} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {t('common.buttons.deleteAll')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

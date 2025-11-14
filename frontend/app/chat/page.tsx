@@ -20,6 +20,12 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 export default function Home() {
   const { user, logout } = useAuthContext()
@@ -30,6 +36,7 @@ export default function Home() {
   const [sessionTokenUsage, setSessionTokenUsage] = useState<Record<string, import('@/types/chat').TokenUsage>>({})
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [artifactOpen, setArtifactOpen] = useState(false)
 
   const handleSessionSelect = (newSessionId: string) => {
     setSessionId(newSessionId)
@@ -65,10 +72,12 @@ export default function Home() {
     <ProtectedRoute>
       <main className="h-screen overflow-hidden bg-gradient-to-br from-background to-muted">
         <div className="h-full flex overflow-hidden">
-          {/* Floating Language Toggle - Mobile only */}
-          <div className="sm:hidden fixed top-[74px] right-4 z-50">
-            <LocaleToggle />
-          </div>
+          {/* Floating Language Toggle - Mobile only, hidden when artifact is open */}
+          {!artifactOpen && (
+            <div className="sm:hidden fixed top-[74px] right-4 z-50">
+              <LocaleToggle />
+            </div>
+          )}
 
           {/* Sidebar */}
           <ConversationSidebar
@@ -88,46 +97,76 @@ export default function Home() {
                 </h1>
 
                 {/* Desktop Navigation - Hidden on mobile */}
-                <div className="hidden sm:flex items-center gap-1 md:gap-2">
-                  <span className="hidden md:inline text-xs md:text-sm text-muted-foreground truncate max-w-xs">
-                    {user?.username ? t('common.welcomeUser', { name: user.username }) : t('common.welcomeGeneric')}
-                  </span>
-                  {tierBadgeText && (
-                    <Badge
-                      variant={user?.tier === 'paid' ? 'default' : 'secondary'}
-                      className="text-[10px] md:text-xs tracking-wide uppercase cursor-pointer hover:opacity-80 transition-opacity"
-                      title={t('chat.tierLabel')}
-                      onClick={() => setShowUpgradeModal(true)}
-                    >
-                      {tierBadgeText}
-                    </Badge>
-                  )}
-                  <Link href="/guide">
-                    <Button variant="outline" size="sm">
-                      <BookOpen className="h-4 w-4 md:mr-1" />
-                      <span className="hidden md:inline">{t('chat.guide')}</span>
-                    </Button>
-                  </Link>
-                  <Link href="/feedbases">
-                    <Button variant="outline" size="sm">
-                      <Database className="h-4 w-4 md:mr-1" />
-                      <span className="hidden md:inline">{t('chat.feedbase')}</span>
-                    </Button>
-                  </Link>
-                  {user?.is_superuser && (
-                    <Link href="/admin">
-                      <Button variant="outline" size="sm">
-                        <User className="h-4 w-4 md:mr-1" />
-                        <span className="hidden md:inline">{t('chat.admin')}</span>
-                      </Button>
-                    </Link>
-                  )}
-                  <LocaleToggle />
-                  <Button variant="outline" size="sm" onClick={logout}>
-                    <LogOut className="h-4 w-4 md:mr-1" />
-                    <span className="hidden md:inline">{t('common.buttons.logout')}</span>
-                  </Button>
-                </div>
+                <TooltipProvider>
+                  <div className="hidden sm:flex items-center gap-1 md:gap-2">
+                    <span className="hidden md:inline text-xs md:text-sm text-muted-foreground truncate max-w-xs">
+                      {user?.username ? t('common.welcomeUser', { name: user.username }) : t('common.welcomeGeneric')}
+                    </span>
+                    {tierBadgeText && (
+                      <Badge
+                        variant={user?.tier === 'paid' ? 'default' : 'secondary'}
+                        className="text-[10px] md:text-xs tracking-wide uppercase cursor-pointer hover:opacity-80 transition-opacity"
+                        title={t('chat.tierLabel')}
+                        onClick={() => setShowUpgradeModal(true)}
+                      >
+                        {tierBadgeText}
+                      </Badge>
+                    )}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link href="/guide">
+                          <Button variant="outline" size="sm">
+                            <BookOpen className="h-4 w-4 md:mr-1" />
+                            <span className="hidden md:inline">{t('chat.guide')}</span>
+                          </Button>
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent className="md:hidden">
+                        <p>{t('chat.guide')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link href="/feedbases">
+                          <Button variant="outline" size="sm">
+                            <Database className="h-4 w-4 md:mr-1" />
+                            <span className="hidden md:inline">{t('chat.feedbase')}</span>
+                          </Button>
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent className="md:hidden">
+                        <p>{t('chat.feedbase')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    {user?.is_superuser && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Link href="/admin">
+                            <Button variant="outline" size="sm">
+                              <User className="h-4 w-4 md:mr-1" />
+                              <span className="hidden md:inline">{t('chat.admin')}</span>
+                            </Button>
+                          </Link>
+                        </TooltipTrigger>
+                        <TooltipContent className="md:hidden">
+                          <p>{t('chat.admin')}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    <LocaleToggle />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" size="sm" onClick={logout}>
+                          <LogOut className="h-4 w-4 md:mr-1" />
+                          <span className="hidden md:inline">{t('common.buttons.logout')}</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="md:hidden">
+                        <p>{t('common.buttons.logout')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </TooltipProvider>
 
                 {/* Mobile Menu - Visible only on mobile */}
                 <div className="flex sm:hidden items-center gap-2">
@@ -187,6 +226,7 @@ export default function Home() {
                   sessionId={sessionId}
                   onTitleUpdate={handleTitleUpdate}
                   onTokenUsageUpdate={handleTokenUsageUpdate}
+                  onArtifactChange={setArtifactOpen}
                 />
               </div>
             ) : (

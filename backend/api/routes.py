@@ -23,6 +23,7 @@ from utils.stop_manager import StopManager
 from auth.config import current_active_user
 from auth.models import User
 from utils.language import get_language_label, normalize_locale
+from utils.system_feedbases import list_system_feedbase_names
 
 
 router = APIRouter()
@@ -787,6 +788,45 @@ async def download_file(
 
 # Feedbase Management Endpoints
 
+def _resolve_feed_display_name(label_map: dict, preferred_language: str) -> str | None:
+    if not label_map:
+        return None
+
+    normalized_map = {str(key).lower(): value for key, value in label_map.items() if value}
+    locale = (preferred_language or "zh-CN").lower()
+
+    candidates = [locale]
+    if "-" in locale:
+        candidates.append(locale.split("-", 1)[0])
+    candidates.append(locale.replace("-", "_"))
+
+    if locale.startswith("zh"):
+        candidates.extend(["zh", "zh-cn", "zh_cn"])
+    elif locale.startswith("en"):
+        candidates.extend(["en", "en-us", "en_us"])
+
+    candidates.append("en")
+
+    for key in candidates:
+        if key in normalized_map:
+            return normalized_map[key]
+
+    # Fallback to first available translation
+    return next(iter(normalized_map.values()), None)
+
+
+def _apply_feed_display_names(feedbase_data: FeedbaseData, preferred_language: str) -> None:
+    feed_labels = getattr(feedbase_data, "feed_labels", {}) or {}
+    if not feed_labels:
+        return
+
+    for feed_name, feed_data in feedbase_data.feeds.items():
+        label_map = feed_labels.get(feed_name)
+        display_name = _resolve_feed_display_name(label_map, preferred_language)
+        if display_name:
+            feed_data.display_name = display_name
+
+
 @router.get("/feedbases/list", response_model=FeedbaseListResponse)
 async def list_feedbases(
     current_user: User = Depends(current_active_user),
@@ -829,8 +869,8 @@ async def list_feedbases(
                     if feedbase_name not in feedbase_names:
                         feedbase_names.append(feedbase_name)
 
-        # Add system default feedbases
-        system_feedbase_names = ["default_dairy_cow", "default_beef_cow", "default_cat", "default_dog"]
+        # Add system default feedbases from consolidated JSON
+        system_feedbase_names = list_system_feedbase_names()
 
         for system_name in system_feedbase_names:
             system_namespace = ("system_feedbases", system_name)
@@ -876,6 +916,8 @@ async def get_feedbase(
     try:
         from core.agent import _connection_manager
 
+        preferred_language = normalize_locale(getattr(current_user, "preferred_language", "zh-CN"))
+
         # Get shared store instance
         store = await _connection_manager.get_shared_store()
         user_id = str(current_user.id)
@@ -895,6 +937,7 @@ async def get_feedbase(
 
         # Validate and return feedbase data
         feedbase_data = FeedbaseData(**result.value)
+        _apply_feed_display_names(feedbase_data, preferred_language)
         return FeedbaseResponse(name=feedbase_name, data=feedbase_data)
 
     except HTTPException:
@@ -932,7 +975,10 @@ async def update_feedbase(
         await store.aput(namespace, "data", feedbase_dict)
 
         logger.info(f"Updated feedbase {feedbase_name} for user {current_user.id}")
-        return FeedbaseResponse(name=feedbase_name, data=request.data)
+        preferred_language = normalize_locale(getattr(current_user, "preferred_language", "zh-CN"))
+        response_data = FeedbaseData(**feedbase_dict)
+        _apply_feed_display_names(response_data, preferred_language)
+        return FeedbaseResponse(name=feedbase_name, data=response_data)
 
     except HTTPException:
         raise
