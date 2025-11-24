@@ -30,24 +30,24 @@ interface MessageBubbleProps {
 
 export default function MessageBubble({ message, onArtifactOpen, onFileDownload, sessionId }: MessageBubbleProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  
+
   // Parse file upload tags from user message content
   const parseFileUploads = (content: string) => {
     const fileUploadRegex = /\[FILE_UPLOAD\](.*?)\[\/FILE_UPLOAD\]/g
     const fileUploads: string[] = []
     let match
-    
+
     while ((match = fileUploadRegex.exec(content)) !== null) {
       fileUploads.push(match[1])
     }
-    
+
     const cleanContent = content.replace(fileUploadRegex, '').trim()
     return { fileUploads, cleanContent }
   }
 
   const renderUserMessage = () => {
     const { fileUploads, cleanContent } = parseFileUploads(message.content)
-    
+
     return (
       <div className="flex justify-end items-start gap-2">
         <div className="max-w-[80%] space-y-2">
@@ -74,7 +74,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
               </Card>
             </div>
           )}
-          
+
           {/* Message Content */}
           {cleanContent && (
             <Card className="bg-primary text-primary-foreground">
@@ -125,7 +125,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
 
   const renderToolCall = () => {
     const toolMeta = getToolMetadata(message)
-    
+
     return (
       <div className="flex justify-start items-start gap-2">
         <div className="w-8 h-8 flex items-center justify-center">
@@ -210,7 +210,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
     const roleTransitionMeta = getRoleTransitionMetadata(message)
     const roleInfo = getRoleInfo(roleTransitionMeta?.to_role || '')
     const RoleIcon = roleInfo.icon
-    
+
     return (
       <div className="flex justify-start items-start gap-2">
         <div className="w-8 h-8 flex items-center justify-center">
@@ -226,19 +226,19 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
         >
           <CardContent className="p-3">
             <div className="flex items-center gap-2">
-              <RoleIcon 
-                className={cn("h-4 w-4", !roleInfo.customStyles && roleInfo.color)} 
+              <RoleIcon
+                className={cn("h-4 w-4", !roleInfo.customStyles && roleInfo.color)}
                 style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
               />
-              <span 
+              <span
                 className={cn("font-medium", !roleInfo.customStyles && roleInfo.color)}
                 style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
               >
                 {message.content}
               </span>
             </div>
-            
-            <div 
+
+            <div
               className={cn("text-xs mt-1", !roleInfo.customStyles && roleInfo.color.replace('700', '600'))}
               style={roleInfo.customStyles ? { color: roleInfo.customStyles.color, opacity: 0.7 } : undefined}
             >
@@ -253,65 +253,65 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
   const renderArtifact = () => {
     const artifactMeta = getArtifactMetadata(message)
     if (!artifactMeta?.html_content) return null
-    
+
     const artifactData: ArtifactData = {
       title: artifactMeta.title || message.content,
       description: artifactMeta.description || '',
       html_content: artifactMeta.html_content
     }
-    
+
     return (
       <div className="flex justify-start items-start gap-2 my-4">
         <div className="w-8 h-8 flex items-center justify-center">
           <div className="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>
         </div>
-        
+
         {/* Ultra Fancy Holographic Card */}
         <div className="relative max-w-[90%] min-w-0 cursor-pointer" onClick={() => onArtifactOpen?.(artifactData)}>
           {/* Background Glow */}
           <div className="absolute -inset-1 bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 rounded-3xl opacity-50 blur-sm"></div>
-          
+
           {/* Main Glass Card */}
           <div className="relative bg-white/15 backdrop-blur-xl border border-white/30 rounded-3xl p-6">
-            
+
             {/* Holographic Overlay */}
             <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-blue-200/30 via-transparent to-purple-200/30 opacity-60"></div>
-            
+
             {/* Floating Orbs */}
             <div className="absolute top-2 right-4 w-12 h-12 bg-gradient-to-br from-blue-300/40 to-purple-300/40 rounded-full blur-xl"></div>
             <div className="absolute bottom-4 left-2 w-8 h-8 bg-gradient-to-br from-indigo-300/30 to-blue-300/30 rounded-full blur-lg"></div>
             <div className="absolute top-1/2 left-1/4 w-6 h-6 bg-gradient-to-br from-purple-300/20 to-blue-300/20 rounded-full blur-md"></div>
-            
+
             {/* Content Container */}
             <div className="relative z-10 flex items-center gap-5">
-              
+
               {/* Ultra Fancy Artifact Icon */}
               <div className="relative">
                 {/* Icon Glow Ring */}
                 <div className="absolute -inset-2 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full opacity-60 blur-sm"></div>
-                
+
                 {/* Icon Container */}
                 <div className="relative w-20 h-20 bg-gradient-to-br from-white/40 to-white/20 backdrop-blur-md border border-white/40 rounded-2xl flex items-center justify-center">
                   {/* Inner Glow */}
                   <div className="absolute inset-2 bg-gradient-to-br from-blue-100/50 to-purple-100/50 rounded-xl"></div>
-                  
+
                   {/* HTML Icon */}
                   <div className="relative z-10 text-3xl filter drop-shadow-[0_2px_8px_rgba(59,130,246,0.5)]">
                     📄
                   </div>
-                  
+
                   {/* Sparkle Effect */}
                   <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-90"></div>
                 </div>
               </div>
-              
+
               {/* Content Section */}
               <div className="flex-1 min-w-0">
                 {/* Title with Holographic Text */}
                 <div className="text-xl font-bold bg-gradient-to-r from-gray-800 via-blue-700 to-purple-700 bg-clip-text text-transparent mb-2 truncate filter drop-shadow-sm">
                   {artifactData.title}
                 </div>
-                
+
                 {/* Open Label - Floating Pill */}
                 <div className="relative inline-flex items-center">
                   <div className="absolute -inset-1 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full opacity-70 blur-sm"></div>
@@ -321,7 +321,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                     </span>
                   </div>
                 </div>
-                
+
                 {/* Description */}
                 {artifactData.description && (
                   <div className="mt-2 inline-block bg-white/20 backdrop-blur-sm border border-white/30 px-3 py-1 rounded-full text-xs font-medium text-gray-600">
@@ -329,9 +329,9 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                   </div>
                 )}
               </div>
-              
+
             </div>
-            
+
             {/* Bottom Section */}
             <div className="relative z-10 mt-4 pt-3 border-t border-white/30">
               <div className="flex items-center justify-between text-xs">
@@ -353,13 +353,13 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
   const renderFileExport = () => {
     const fileExportMeta = getFileExportMetadata(message)
     if (!fileExportMeta?.filename) return null
-    
+
     const handleDownload = () => {
       if (onFileDownload && sessionId && fileExportMeta.filename) {
         onFileDownload(fileExportMeta.filename, sessionId)
       }
     }
-    
+
     const getFileIcon = (fileType: string) => {
       switch (fileType) {
         case 'excel':
@@ -372,59 +372,59 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
           return '📁'
       }
     }
-    
+
     return (
       <div className="flex justify-start items-start gap-2 my-4">
         <div className="w-8 h-8 flex items-center justify-center">
           <div className="w-2 h-2 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.6)]"></div>
         </div>
-        
+
         {/* Ultra Fancy Holographic Card */}
         <div className="relative max-w-[90%] min-w-0 cursor-pointer" onClick={handleDownload}>
           {/* Background Glow */}
           <div className="absolute -inset-1 bg-gradient-to-r from-emerald-400 via-green-400 to-teal-400 rounded-3xl opacity-50 blur-sm"></div>
-          
+
           {/* Main Glass Card */}
           <div className="relative bg-white/15 backdrop-blur-xl border border-white/30 rounded-3xl p-6">
-            
+
             {/* Holographic Overlay */}
             <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-emerald-200/30 via-transparent to-teal-200/30 opacity-60"></div>
-            
+
             {/* Floating Orbs */}
             <div className="absolute top-2 right-4 w-12 h-12 bg-gradient-to-br from-emerald-300/40 to-teal-300/40 rounded-full blur-xl"></div>
             <div className="absolute bottom-4 left-2 w-8 h-8 bg-gradient-to-br from-green-300/30 to-emerald-300/30 rounded-full blur-lg"></div>
             <div className="absolute top-1/2 left-1/4 w-6 h-6 bg-gradient-to-br from-teal-300/20 to-emerald-300/20 rounded-full blur-md"></div>
-            
+
             {/* Content Container */}
             <div className="relative z-10 flex items-center gap-5">
-              
+
               {/* Ultra Fancy File Icon */}
               <div className="relative">
                 {/* Icon Glow Ring */}
                 <div className="absolute -inset-2 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full opacity-60 blur-sm"></div>
-                
+
                 {/* Icon Container */}
                 <div className="relative w-20 h-20 bg-gradient-to-br from-white/40 to-white/20 backdrop-blur-md border border-white/40 rounded-2xl flex items-center justify-center">
                   {/* Inner Glow */}
                   <div className="absolute inset-2 bg-gradient-to-br from-emerald-100/50 to-teal-100/50 rounded-xl"></div>
-                  
+
                   {/* File Icon */}
                   <div className="relative z-10 text-3xl filter drop-shadow-[0_2px_8px_rgba(52,211,153,0.5)]">
                     {getFileIcon(fileExportMeta.file_type || '')}
                   </div>
-                  
+
                   {/* Sparkle Effect */}
                   <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-90"></div>
                 </div>
               </div>
-              
+
               {/* Content Section */}
               <div className="flex-1 min-w-0">
                 {/* Filename with Holographic Text */}
                 <div className="text-xl font-bold bg-gradient-to-r from-gray-800 via-emerald-700 to-teal-700 bg-clip-text text-transparent mb-2 truncate filter drop-shadow-sm">
                   {fileExportMeta.filename}
                 </div>
-                
+
                 {/* Download Label - Floating Pill */}
                 <div className="relative inline-flex items-center">
                   <div className="absolute -inset-1 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full opacity-70 blur-sm"></div>
@@ -434,15 +434,42 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                     </span>
                   </div>
                 </div>
-                
+
                 {/* File Type Badge */}
                 <div className="mt-2 inline-block bg-white/20 backdrop-blur-sm border border-white/30 px-3 py-1 rounded-full text-xs font-medium text-gray-600">
                   {fileExportMeta.file_type?.toUpperCase()} 格式
                 </div>
+
+                {/* Description Button */}
+                {fileExportMeta.description && (
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (onArtifactOpen) {
+                        const htmlContent = `
+                          <div style="font-family: system-ui, -apple-system, sans-serif; padding: 24px; line-height: 1.6; color: #374151; max-width: 800px; margin: 0 auto;">
+                            <h2 style="color: #059669; margin-bottom: 20px; font-size: 24px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                              <span>💡</span> 配方建议
+                            </h2>
+                            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; white-space: pre-wrap; font-size: 15px;">${fileExportMeta.description}</div>
+                          </div>
+                        `
+                        onArtifactOpen({
+                          title: `配方建议 - ${fileExportMeta.filename}`,
+                          description: 'AI 营养师的配方分析与建议',
+                          html_content: htmlContent
+                        })
+                      }
+                    }}
+                    className="mt-3 w-full bg-white/30 hover:bg-white/40 backdrop-blur-md border border-white/40 p-2.5 rounded-xl text-sm text-emerald-900 font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:scale-[0.98]"
+                  >
+                    <span>💡 查看配方建议</span>
+                  </div>
+                )}
               </div>
-              
+
             </div>
-            
+
             {/* Bottom Section */}
             <div className="relative z-10 mt-4 pt-3 border-t border-white/30">
               <div className="flex items-center justify-between text-xs">
@@ -465,7 +492,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
     const analysisMeta = getAnalysisMetadata(message)
     const isComplete = message.type === 'analysis_complete'
     const operations = analysisMeta?.operations || []
-    
+
     return (
       <div className="flex justify-start items-start gap-2">
         <div className="w-8 h-8 flex items-center justify-center">
@@ -476,7 +503,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
             {isComplete ? (
               // Completed state - same style as TypingIndicator, show expandable list
               <div className="space-y-2">
-                <div 
+                <div
                   className="flex items-center justify-between cursor-pointer"
                   onClick={() => setIsExpanded(!isExpanded)}
                 >
@@ -492,12 +519,12 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                     </div>
                   )}
                 </div>
-                
+
                 {/* Expandable operations list */}
                 {isExpanded && operations.length > 0 && (
                   <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
                     {operations.map((operation, index) => (
-                      <div 
+                      <div
                         key={`${operation}-${index}`}
                         className="flex items-center space-x-1 text-xs text-gray-500"
                       >
@@ -527,7 +554,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
     const formulationMeta = getFormulationMetadata(message)
     const isComplete = message.type === 'formulation_complete'
     const operations = formulationMeta?.operations || []
-    
+
     return (
       <div className="flex justify-start items-start gap-2">
         <div className="w-8 h-8 flex items-center justify-center">
@@ -538,7 +565,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
             {isComplete ? (
               // Completed state - same style as FormulationIndicator, show expandable list
               <div className="space-y-2">
-                <div 
+                <div
                   className="flex items-center justify-between cursor-pointer"
                   onClick={() => setIsExpanded(!isExpanded)}
                 >
@@ -554,12 +581,12 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                     </div>
                   )}
                 </div>
-                
+
                 {/* Expandable operations list with structured data */}
                 {isExpanded && operations.length > 0 && (
                   <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
                     {operations.map((operation, index) => (
-                      <div 
+                      <div
                         key={`${operation}-${index}`}
                         className="flex items-start space-x-2 text-xs"
                       >

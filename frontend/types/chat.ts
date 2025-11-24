@@ -34,6 +34,7 @@ export interface FileExportData {
   filename: string
   file_type: string
   filepath: string
+  description?: string
 }
 
 // Simplified message interface matching backend ParsedMessage
@@ -72,6 +73,7 @@ export function getFileExportMetadata(message: Message) {
     filename?: string
     file_type?: string
     filepath?: string
+    description?: string
   } | undefined
 }
 

@@ -10,6 +10,7 @@ from auth.admin_routes import admin_router
 from api.routes import router
 from auth.routes import auth_router
 from auth.admin_routes import admin_router
+from api.feedback_routes import feedback_router
 from migrations.schema_manager import SchemaManager
 from services.session_manager import session_manager
 from core.agent import cleanup_shared_resources
@@ -88,6 +89,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(auth_router, prefix="/auth")
 app.include_router(admin_router)
+app.include_router(feedback_router)
 
 def start():
     """Entry point for uv run start command"""

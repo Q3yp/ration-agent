@@ -1277,7 +1277,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             file_info = {
                 "filepath": str(filepath),
                 "filename": filename,
-                "type": "excel"
+                "type": "excel",
+                "description": description
             }
             
             return Command(

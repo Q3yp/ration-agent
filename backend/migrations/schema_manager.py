@@ -62,7 +62,10 @@ class SchemaManager:
             # 7. Create default admin user
             await self._ensure_admin_user(conn)
             
-            # 8. Data migrations (metadata updates)
+            # 8. Ensure feedbacks table exists
+            await self._ensure_feedbacks_table(conn)
+            
+            # 9. Data migrations (metadata updates)
             await self._migrate_session_metadata(conn)
             
         await self.engine.dispose()
@@ -130,8 +133,23 @@ class SchemaManager:
                 user_id UUID REFERENCES users(id) ON DELETE SET NULL
             );
         """))
-        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sms_verifications_mobile ON sms_verifications(mobile);"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sms_verifications_expires_at ON sms_verifications(expires_at);"))
+
+    async def _ensure_feedbacks_table(self, conn):
+        """Create feedbacks table"""
+        logger.info("Checking feedbacks table...")
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS feedbacks (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                session_id VARCHAR(255) NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                status VARCHAR(50) NOT NULL DEFAULT 'pending'
+            );
+        """))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedbacks_user_id ON feedbacks(user_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedbacks_created_at ON feedbacks(created_at DESC);"))
 
     async def _update_users_table(self, conn):
         """Apply updates to users table"""

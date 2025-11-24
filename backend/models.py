@@ -235,6 +235,7 @@ def create_file_export_message(
     message_id: str,
     timestamp: float,
     preferred_language: str = "zh-CN",
+    description: str = None,
 ) -> ParsedMessage:
     """File export with download capability"""
     locale = normalize_locale(preferred_language)
@@ -256,6 +257,7 @@ def create_file_export_message(
             "filepath": filepath,
             "status_label": status_label,
             "preferred_language": locale,
+            "description": description,
         }
     )
 
@@ -442,3 +444,20 @@ class FeedbaseDeleteResponse(BaseModel):
     """Response for feedbase deletion"""
     message: str = Field(..., description="Success/error message")
     feedbase_name: str = Field(..., description="Name of deleted feedbase")
+
+
+class FeedbackCreate(BaseModel):
+    """Request model for submitting feedback"""
+    session_id: str = Field(..., description="ID of the session being feedbacked")
+    content: str = Field(..., min_length=1, max_length=5000, description="Feedback content")
+
+
+class FeedbackRead(BaseModel):
+    """Response model for reading feedback"""
+    id: uuid.UUID
+    user_id: uuid.UUID
+    session_id: str
+    content: str
+    created_at: str
+    username: Optional[str] = None
+

@@ -25,6 +25,7 @@ export const translations: Record<Locale, TranslationTree> = {
         cancel: '取消',
         delete: '删除',
         deleteAll: '全部删除',
+        submit: '提交',
       },
       statuses: {
         loading: '加载中...',
@@ -198,6 +199,17 @@ export const translations: Record<Locale, TranslationTree> = {
     },
     admin: {
       back: '返回对话',
+      userManagement: '用户管理',
+      feedbackManagement: '反馈管理',
+      feedbackTitle: '反馈管理',
+      unknownUser: '未知用户',
+      viewSession: '查看会话',
+      sessionHistory: '会话历史',
+      noFeedbacks: '暂无反馈',
+      sessionId: '会话 ID: {{id}}',
+      errorFetch: '获取反馈失败',
+      errorNetwork: '网络错误',
+      close: '关闭',
     },
     protectedRoute: {
       deniedTitle: '访问被拒绝',
@@ -210,6 +222,15 @@ export const translations: Record<Locale, TranslationTree> = {
     errors: {
       networkRetry: '多次重试失败，请检查网络连接或刷新页面',
       downloadFailed: '下载失败：HTTP {{code}}',
+    },
+    feedback: {
+      buttonLabel: '反馈',
+      dialogTitle: '提交反馈',
+      dialogDescription: '请提供您对本次对话的反馈，帮助我们改进。',
+      placeholder: '在此输入您的反馈...',
+      submit: '提交',
+      success: '反馈提交成功',
+      error: '提交反馈失败',
     },
   },
   'en-US': {
@@ -229,6 +250,7 @@ export const translations: Record<Locale, TranslationTree> = {
         cancel: 'Cancel',
         delete: 'Delete',
         deleteAll: 'Delete All',
+        submit: 'Submit',
       },
       statuses: {
         loading: 'Loading...',
@@ -402,6 +424,17 @@ export const translations: Record<Locale, TranslationTree> = {
     },
     admin: {
       back: 'Back to chat',
+      userManagement: 'User Management',
+      feedbackManagement: 'Feedback Management',
+      feedbackTitle: 'Feedback Management',
+      unknownUser: 'Unknown User',
+      viewSession: 'View Session',
+      sessionHistory: 'Session History',
+      noFeedbacks: 'No feedbacks found',
+      sessionId: 'Session ID: {{id}}',
+      errorFetch: 'Failed to fetch feedbacks',
+      errorNetwork: 'Network error fetching feedbacks',
+      close: 'Close',
     },
     protectedRoute: {
       deniedTitle: 'Access denied',
@@ -414,6 +447,15 @@ export const translations: Record<Locale, TranslationTree> = {
     errors: {
       networkRetry: 'Multiple retries failed. Check your network or refresh the page.',
       downloadFailed: 'Download failed: HTTP {{code}}',
+    },
+    feedback: {
+      buttonLabel: 'Feedback',
+      dialogTitle: 'Submit Feedback',
+      dialogDescription: 'Help us improve by providing feedback on this session.',
+      placeholder: 'Type your feedback here...',
+      submit: 'Submit',
+      success: 'Feedback submitted successfully',
+      error: 'Failed to submit feedback',
     },
   },
 }
