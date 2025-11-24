@@ -14,7 +14,7 @@ import {
   MessageProcessorState,
   ProcessedEvent
 } from '@/utils/messageProcessor'
-import { ErrorHandler } from '@/utils/ErrorHandler'
+import { ErrorHandler } from '@/utils/errorHandler'
 import { getAuthHeadersWithDefaults } from '@/utils/authHeaders'
 import { useI18n } from '@/contexts/I18nContext'
 
