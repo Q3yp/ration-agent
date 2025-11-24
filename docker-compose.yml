@@ -94,6 +94,7 @@ services:
       - NEXT_TELEMETRY_DISABLED=1
       - PORT=3000
       - HOSTNAME=0.0.0.0
+      - BACKEND_URL=http://backend:8000
     ports:
       - "3000:3000"
     depends_on:

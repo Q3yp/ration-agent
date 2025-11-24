@@ -5,7 +5,7 @@ const nextConfig = {
   // Disable React Strict Mode to prevent double requests in development
   reactStrictMode: false,
   // Enable standalone output for Docker deployment
-  //output: 'standalone',
+  output: 'standalone',
   
   webpack: (config) => {
     config.resolve.fallback = {
