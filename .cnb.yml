@@ -1,0 +1,29 @@
+main:
+  push:
+    - services:
+        - docker
+      stages:
+        - name: Set Environment Variables
+          script: echo -n $(date "+%Y%m%d")
+          exports:
+            info: CUSTOM_ENV_DATE
+
+        # --- BACKEND BUILD ---
+        - name: Build Backend Docker Image
+          script: |
+            docker build -f backend/Dockerfile -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/backend:${CUSTOM_ENV_DATE}-${CNB_COMMIT_SHORT} backend/
+        - name: Push Backend Image
+          script: |
+            docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/backend:${CUSTOM_ENV_DATE}-${CNB_COMMIT_SHORT}
+            docker tag ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/backend:${CUSTOM_ENV_DATE}-${CNB_COMMIT_SHORT} ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/backend:latest
+            docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/backend:latest
+
+        # --- FRONTEND BUILD ---
+        - name: Build Frontend Docker Image
+          script: |
+            docker build -f frontend/Dockerfile -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/frontend:${CUSTOM_ENV_DATE}-${CNB_COMMIT_SHORT} frontend/
+        - name: Push Frontend Image
+          script: |
+            docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/frontend:${CUSTOM_ENV_DATE}-${CNB_COMMIT_SHORT}
+            docker tag ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/frontend:${CUSTOM_ENV_DATE}-${CNB_COMMIT_SHORT} ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/frontend:latest
+            docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/frontend:latest
