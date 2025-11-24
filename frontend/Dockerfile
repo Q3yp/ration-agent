@@ -28,6 +28,10 @@ RUN --mount=type=cache,target=/root/.npm \
 # Copy source code
 COPY . .
 
+# Set build-time variables
+ARG BACKEND_URL
+ENV BACKEND_URL=$BACKEND_URL
+
 # Build the application
 RUN npm run build
 
@@ -48,9 +52,8 @@ WORKDIR /app
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy public folder only if it exists (conditional copy)
-# Note: This project doesn't have a public folder, so this step is optional
-# COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# Copy public folder
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Switch to non-root user
 USER nextjs

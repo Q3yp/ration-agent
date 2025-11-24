@@ -21,7 +21,7 @@ main:
         # --- FRONTEND BUILD ---
         - name: Build Frontend Docker Image
           script: |
-            docker build -f frontend/Dockerfile -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/frontend:${CUSTOM_ENV_DATE}-${CNB_COMMIT_SHORT} frontend/
+            docker build -f frontend/Dockerfile --build-arg BACKEND_URL=http://backend:8000 -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/frontend:${CUSTOM_ENV_DATE}-${CNB_COMMIT_SHORT} frontend/
         - name: Push Frontend Image
           script: |
             docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/frontend:${CUSTOM_ENV_DATE}-${CNB_COMMIT_SHORT}
