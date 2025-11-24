@@ -22,6 +22,7 @@ SCENARIOS_DIR = Path(__file__).parent / "scenarios"
 DEFAULT_SCENARIOS_FILE = SCENARIOS_DIR / "beef_scenarios.json"
 SCENARIO_FILE_MAP = {
     "beef_cow": SCENARIOS_DIR / "beef_scenarios.json",
+    "cat": SCENARIOS_DIR / "cat_scenarios.json",
     "dog": SCENARIOS_DIR / "dog_scenarios.json",
 }
 TEST_RUNS_DIR = Path(__file__).parent / "test_runs"

@@ -14,7 +14,8 @@ test_suite/
 ├── test_beef_scenarios.py         # 遗留脚本（已被 run_test_batch.py 替代）
 ├── scenarios/                     # 测试场景定义
 │   ├── beef_scenarios.json        # 肉牛场景配置
-│   └── dog_scenarios.json         # 犬类场景配置（30个场景）
+│   ├── dog_scenarios.json         # 犬类场景配置（30个场景）
+│   └── cat_scenarios.json         # 猫科场景配置（30个场景）
 └── test_runs/                     # 测试运行结果（自动生成）
     └── YYYYMMDD_HHMMSS/           # 时间戳目录
         ├── manifest.json          # 测试清单
@@ -51,9 +52,9 @@ python test_suite/run_test_batch.py cat
 python test_suite/run_test_batch.py dog
 ```
 
-> 目前仓库内置两套示例场景：`beef_scenarios.json`（肉牛）与 `dog_scenarios.json`（30 个犬类场景）。运行 `python test_suite/run_test_batch.py dog` 会自动加载犬类场景文件。
+> 目前仓库内置三套示例场景：`beef_scenarios.json`（肉牛）、`dog_scenarios.json`（30 个犬类场景）以及 `cat_scenarios.json`（30 个猫科场景）。运行 `python test_suite/run_test_batch.py dog` 或 `python test_suite/run_test_batch.py cat` 会自动加载对应的场景文件。
 
-> 为了覆盖 30 个犬类测试场景，系统默认犬类饲料库（`default_dog`）已经扩展了耐力脂肪强化、低脂肠胃罐头、低铜肝脏配方、泌尿与肾脏专用日粮、排除/昆虫蛋白底料、关节与免疫补充剂等原料，可直接被测试代理调用，无需额外配置。
+> 为了覆盖 30 个犬类测试场景，系统默认犬类饲料库（`default_dog`）已经扩展了耐力脂肪强化、低脂肠胃罐头、低铜肝脏配方、泌尿与肾脏专用日粮、排除/昆虫蛋白底料、关节与免疫补充剂等原料，可直接被测试代理调用，无需额外配置。猫科测试集同样共享增强后的系统猫粮饲料库（`default_cat`），其中加入了泌尿、肾脏、低脂、昆虫蛋白、康复与适口性增强等配料，覆盖全部 30 个猫科场景。
 
 **输出：**
 - 创建时间戳目录（例如：`test_runs/20251030_143000`）

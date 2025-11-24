@@ -213,6 +213,612 @@
           "K": 1.0,
           "Mg": 3.0
         }
+      },
+      "wheat_grain": {
+        "dm_percent": 90.9,
+        "cost_per_kg": 0.27,
+        "nutrients": {
+          "CP": 11.85,
+          "EE": 1.6,
+          "Ash": 1.95,
+          "NDF": 13.9,
+          "ADF": 3.6,
+          "Ca": 0.05,
+          "P": 0.18,
+          "ME_Mcal": 2.9,
+          "ME_MJ": 12.135,
+          "NEm_Mcal": 1.965,
+          "NEm_MJ": 8.22,
+          "NEg_Mcal": 1.291,
+          "NEg_MJ": 5.4,
+          "DCP": 9.2
+        }
+      },
+      "oats_grain": {
+        "dm_percent": 91.9,
+        "cost_per_kg": 0.3,
+        "nutrients": {
+          "CP": 11.65,
+          "EE": 6.05,
+          "Ash": 3.85,
+          "NDF": 35.5,
+          "ADF": 16.2,
+          "Ca": 0.15,
+          "P": 0.38,
+          "ME_Mcal": 2.64,
+          "ME_MJ": 11.045,
+          "NEm_Mcal": 1.695,
+          "NEm_MJ": 7.09,
+          "NEg_Mcal": 1.13,
+          "NEg_MJ": 4.73,
+          "DCP": 8.9
+        }
+      },
+      "sorghum_grain": {
+        "dm_percent": 87.15,
+        "cost_per_kg": 0.24,
+        "nutrients": {
+          "CP": 8.1,
+          "EE": 3.05,
+          "Ash": 1.95,
+          "NDF": 11.0,
+          "ADF": 4.3,
+          "Ca": 0.04,
+          "P": 0.295,
+          "ME_Mcal": 2.555,
+          "ME_MJ": 10.69,
+          "NEm_Mcal": 1.646,
+          "NEm_MJ": 6.885,
+          "NEg_Mcal": 1.099,
+          "NEg_MJ": 4.6,
+          "DCP": 4.65
+        }
+      },
+      "bypass_fat_powder": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 0.55,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 99.0,
+          "Ash": 1.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "ME_Mcal": 7.0,
+          "ME_MJ": 29.3,
+          "NEm_Mcal": 5.6,
+          "NEm_MJ": 23.4,
+          "NEg_Mcal": 4.3,
+          "NEg_MJ": 18.0,
+          "DCP": 0.0
+        }
+      },
+      "whole_soybeans": {
+        "dm_percent": 89.0,
+        "cost_per_kg": 0.5,
+        "nutrients": {
+          "CP": 37.65,
+          "EE": 16.25,
+          "Ash": 4.65,
+          "NDF": 13.2,
+          "ADF": 7.7,
+          "Ca": 0.22,
+          "P": 0.475,
+          "ME_Mcal": 3.18,
+          "ME_MJ": 13.305,
+          "NEm_Mcal": 2.36,
+          "NEm_MJ": 9.875,
+          "NEg_Mcal": 1.44,
+          "NEg_MJ": 6.025,
+          "DCP": 33.9
+        }
+      },
+      "soybean_cake": {
+        "dm_percent": 90.3,
+        "cost_per_kg": 0.42,
+        "nutrients": {
+          "CP": 42.8,
+          "EE": 5.4,
+          "Ash": 5.4,
+          "NDF": 10.5,
+          "ADF": 5.7,
+          "Ca": 0.315,
+          "P": 0.495,
+          "ME_Mcal": 2.811,
+          "ME_MJ": 11.76,
+          "NEm_Mcal": 1.864,
+          "NEm_MJ": 7.8,
+          "NEg_Mcal": 1.24,
+          "NEg_MJ": 5.19,
+          "DCP": 36.4
+        }
+      },
+      "peanut_meal": {
+        "dm_percent": 89.0,
+        "cost_per_kg": 0.38,
+        "nutrients": {
+          "CP": 45.8,
+          "EE": 5.9,
+          "Ash": 5.7,
+          "NDF": 16.7,
+          "ADF": 10.0,
+          "Ca": 0.23,
+          "P": 0.57,
+          "ME_Mcal": 2.801,
+          "ME_MJ": 11.72,
+          "NEm_Mcal": 1.881,
+          "NEm_MJ": 7.87,
+          "NEg_Mcal": 1.24,
+          "NEg_MJ": 5.19,
+          "DCP": 39.5
+        }
+      },
+      "cottonseed_meal": {
+        "dm_percent": 89.6,
+        "cost_per_kg": 0.35,
+        "nutrients": {
+          "CP": 21.7,
+          "EE": 5.7,
+          "Ash": 5.3,
+          "NDF": 27.0,
+          "ADF": 17.8,
+          "Ca": 0.27,
+          "P": 0.63,
+          "ME_Mcal": 2.139,
+          "ME_MJ": 8.95,
+          "NEm_Mcal": 1.281,
+          "NEm_MJ": 5.36,
+          "NEg_Mcal": 0.719,
+          "NEg_MJ": 3.01,
+          "DCP": 16.1
+        }
+      },
+      "canola_meal": {
+        "dm_percent": 91.1,
+        "cost_per_kg": 0.34,
+        "nutrients": {
+          "CP": 40.45,
+          "EE": 2.1,
+          "Ash": 8.6,
+          "NDF": 31.6,
+          "ADF": 20.7,
+          "Ca": 0.37,
+          "P": 0.535,
+          "ME_Mcal": 2.355,
+          "ME_MJ": 9.855,
+          "NEm_Mcal": 1.445,
+          "NEm_MJ": 6.045,
+          "NEg_Mcal": 0.925,
+          "NEg_MJ": 3.87,
+          "DCP": 34.8
+        }
+      },
+      "corn_ddgs_cn": {
+        "dm_percent": 90.0,
+        "cost_per_kg": 0.32,
+        "nutrients": {
+          "CP": 30.0,
+          "EE": 10.0,
+          "Ash": 10.0,
+          "NDF": 36.1,
+          "ADF": 10.9,
+          "Ca": 0.2,
+          "P": 0.8,
+          "ME_Mcal": 2.55,
+          "ME_MJ": 10.67,
+          "NEm_Mcal": 1.66,
+          "NEm_MJ": 6.95,
+          "NEg_Mcal": 1.1,
+          "NEg_MJ": 4.6,
+          "DCP": 26.0
+        }
+      },
+      "sunflower_meal": {
+        "dm_percent": 90.0,
+        "cost_per_kg": 0.33,
+        "nutrients": {
+          "CP": 32.0,
+          "EE": 3.0,
+          "Ash": 15.0,
+          "NDF": 45.0,
+          "ADF": 32.0,
+          "Ca": 0.3,
+          "P": 1.1,
+          "ME_Mcal": 2.05,
+          "ME_MJ": 8.58,
+          "NEm_Mcal": 1.3,
+          "NEm_MJ": 5.44,
+          "NEg_Mcal": 0.8,
+          "NEg_MJ": 3.35,
+          "DCP": 28.0
+        }
+      },
+      "wheat_bran": {
+        "dm_percent": 88.45,
+        "cost_per_kg": 0.22,
+        "nutrients": {
+          "CP": 14.05,
+          "EE": 3.9,
+          "Ash": 4.85,
+          "NDF": 45.2,
+          "ADF": 13.4,
+          "Ca": 0.115,
+          "P": 0.86,
+          "ME_Mcal": 2.271,
+          "ME_MJ": 9.5,
+          "NEm_Mcal": 1.396,
+          "NEm_MJ": 5.84,
+          "NEg_Mcal": 0.895,
+          "NEg_MJ": 3.745,
+          "DCP": 10.7
+        }
+      },
+      "sugar_beet_fresh": {
+        "dm_percent": 13.5,
+        "cost_per_kg": 0.12,
+        "nutrients": {
+          "CP": 1.4,
+          "EE": 0.4,
+          "Ash": 0.8,
+          "NDF": 16.0,
+          "ADF": 9.5,
+          "Ca": 0.03,
+          "P": 0.04,
+          "ME_Mcal": 0.33,
+          "ME_MJ": 1.38,
+          "NEm_Mcal": 0.201,
+          "NEm_MJ": 0.84,
+          "NEg_Mcal": 0.1,
+          "NEg_MJ": 0.42,
+          "DCP": 0.0
+        }
+      },
+      "alfalfa_hay": {
+        "dm_percent": 91.3,
+        "cost_per_kg": 0.27,
+        "nutrients": {
+          "CP": 17.9,
+          "EE": 1.6,
+          "Ash": 8.0,
+          "NDF": 44.8,
+          "ADF": 33.4,
+          "Ca": 1.31,
+          "P": 0.19,
+          "ME_Mcal": 1.919,
+          "ME_MJ": 8.03,
+          "NEm_Mcal": 1.13,
+          "NEm_MJ": 4.73,
+          "NEg_Mcal": 0.55,
+          "NEg_MJ": 2.3,
+          "DCP": 12.1
+        }
+      },
+      "rice_straw": {
+        "dm_percent": 89.55,
+        "cost_per_kg": 0.08,
+        "nutrients": {
+          "CP": 3.1,
+          "EE": 1.45,
+          "Ash": 13.25,
+          "NDF": 69.1,
+          "ADF": 42.4,
+          "Ca": 0.0,
+          "P": 0.02,
+          "ME_Mcal": 1.476,
+          "ME_MJ": 6.175,
+          "NEm_Mcal": 0.886,
+          "NEm_MJ": 3.705,
+          "NEg_Mcal": 0.075,
+          "NEg_MJ": 0.315,
+          "DCP": 0.2
+        }
+      },
+      "sweet_potato_vine": {
+        "dm_percent": 13.75,
+        "cost_per_kg": 0.1,
+        "nutrients": {
+          "CP": 2.15,
+          "EE": 0.9,
+          "Ash": 1.75,
+          "NDF": 42.7,
+          "ADF": 31.7,
+          "Ca": 0.235,
+          "P": 0.05,
+          "ME_Mcal": 0.315,
+          "ME_MJ": 1.32,
+          "NEm_Mcal": 0.184,
+          "NEm_MJ": 0.77,
+          "NEg_Mcal": 0.1,
+          "NEg_MJ": 0.42,
+          "DCP": 1.4
+        }
+      },
+      "wet_brewers_grain": {
+        "dm_percent": 18.5,
+        "cost_per_kg": 0.18,
+        "nutrients": {
+          "CP": 5.2,
+          "EE": 1.25,
+          "Ash": 1.05,
+          "NDF": 56.3,
+          "ADF": 21.9,
+          "Ca": 0.075,
+          "P": 0.13,
+          "ME_Mcal": 0.446,
+          "ME_MJ": 1.865,
+          "NEm_Mcal": 0.29,
+          "NEm_MJ": 1.215,
+          "NEg_Mcal": 0.165,
+          "NEg_MJ": 0.69,
+          "DCP": 3.8
+        }
+      },
+      "wet_distillers_grain": {
+        "dm_percent": 28.0,
+        "cost_per_kg": 0.2,
+        "nutrients": {
+          "CP": 5.85,
+          "EE": 2.7,
+          "Ash": 2.7,
+          "NDF": 34.2,
+          "ADF": 13.6,
+          "Ca": 0.045,
+          "P": 0.035,
+          "ME_Mcal": 0.666,
+          "ME_MJ": 2.785,
+          "NEm_Mcal": 0.43,
+          "NEm_MJ": 1.8,
+          "NEg_Mcal": 0.256,
+          "NEg_MJ": 1.07,
+          "DCP": 3.6
+        }
+      },
+      "beet_pulp_wet": {
+        "dm_percent": 91.0,
+        "cost_per_kg": 0.16,
+        "nutrients": {
+          "CP": 8.8,
+          "EE": 0.5,
+          "Ash": 5.7,
+          "NDF": 47.0,
+          "ADF": 23.7,
+          "Ca": 0.65,
+          "P": 0.1,
+          "ME_Mcal": 2.36,
+          "ME_MJ": 9.88,
+          "NEm_Mcal": 1.48,
+          "NEm_MJ": 6.19,
+          "NEg_Mcal": 0.9,
+          "NEg_MJ": 3.77,
+          "DCP": 7.9
+        }
+      },
+      "limestone_powder": {
+        "dm_percent": 98.0,
+        "cost_per_kg": 0.12,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 98.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 38.0,
+          "P": 0.0,
+          "DCP": 0.0
+        }
+      },
+      "calcium_carbonate": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 0.15,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 99.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 40.0,
+          "P": 0.0,
+          "DCP": 0.0
+        }
+      },
+      "dicalcium_phosphate": {
+        "dm_percent": 98.0,
+        "cost_per_kg": 0.65,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 98.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 23.0,
+          "P": 18.0,
+          "DCP": 0.0
+        }
+      },
+      "monocalcium_phosphate": {
+        "dm_percent": 98.0,
+        "cost_per_kg": 0.72,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 98.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 16.5,
+          "P": 22.5,
+          "DCP": 0.0
+        }
+      },
+      "salt_feed": {
+        "dm_percent": 100.0,
+        "cost_per_kg": 0.18,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 100.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0
+        }
+      },
+      "trace_mineral_premix": {
+        "dm_percent": 96.0,
+        "cost_per_kg": 1.5,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 80.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "DCP": 0.0
+        }
+      },
+      "vitamin_premix_beef": {
+        "dm_percent": 95.0,
+        "cost_per_kg": 2.0,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 40.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "DCP": 0.0
+        }
+      },
+      "sodium_bicarbonate": {
+        "dm_percent": 100.0,
+        "cost_per_kg": 0.45,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 100.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0
+        }
+      },
+      "magnesium_oxide": {
+        "dm_percent": 100.0,
+        "cost_per_kg": 0.5,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 100.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0
+        }
+      },
+      "feed_grade_urea": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 0.6,
+        "nutrients": {
+          "CP": 281.0,
+          "EE": 0.0,
+          "Ash": 0.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0
+        }
+      },
+      "copper_sulfate": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 2.5,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 99.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0,
+          "Cu_ppm": 250000.0
+        }
+      },
+      "zinc_sulfate": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 2.0,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 99.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0,
+          "Zn_ppm": 350000.0
+        }
+      },
+      "manganese_sulfate": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 1.8,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 99.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0,
+          "Mn_ppm": 310000.0
+        }
+      },
+      "sodium_selenite": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 3.0,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 99.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0,
+          "Se_ppm": 450000.0
+        }
+      },
+      "cobalt_sulfate": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 3.5,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 99.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0,
+          "Co_ppm": 210000.0
+        }
+      },
+      "potassium_iodide": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 3.2,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 99.0,
+          "NDF": 0.0,
+          "ADF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "DCP": 0.0,
+          "I_ppm": 680000.0
+        }
       }
     },
     "feed_labels": {
@@ -259,6 +865,146 @@
       "mineral_mix_beef": {
         "en": "Beef mineral mix",
         "zh": "Beef mineral mix"
+      },
+      "wheat_grain": {
+        "en": "Wheat grain (rolled)",
+        "zh": "小麦粒"
+      },
+      "oats_grain": {
+        "en": "Oat grain (whole)",
+        "zh": "燕麦粒"
+      },
+      "sorghum_grain": {
+        "en": "Sorghum grain",
+        "zh": "高粱粒"
+      },
+      "bypass_fat_powder": {
+        "en": "Bypass fat powder",
+        "zh": "脂肪粉"
+      },
+      "whole_soybeans": {
+        "en": "Whole soybeans (roasted)",
+        "zh": "全脂大豆"
+      },
+      "soybean_cake": {
+        "en": "Soybean cake",
+        "zh": "豆饼"
+      },
+      "peanut_meal": {
+        "en": "Peanut meal",
+        "zh": "花生粕"
+      },
+      "cottonseed_meal": {
+        "en": "Cottonseed meal",
+        "zh": "棉籽粕"
+      },
+      "canola_meal": {
+        "en": "Canola meal",
+        "zh": "菜籽粕"
+      },
+      "corn_ddgs_cn": {
+        "en": "Corn DDGS (China)",
+        "zh": "玉米DDGS"
+      },
+      "sunflower_meal": {
+        "en": "Sunflower meal",
+        "zh": "葵花籽粕"
+      },
+      "wheat_bran": {
+        "en": "Wheat bran",
+        "zh": "小麦麸"
+      },
+      "sugar_beet_fresh": {
+        "en": "Sugar beet (fresh)",
+        "zh": "甜菜"
+      },
+      "alfalfa_hay": {
+        "en": "Alfalfa hay (mid bloom)",
+        "zh": "苜蓿干草"
+      },
+      "rice_straw": {
+        "en": "Rice straw",
+        "zh": "稻草"
+      },
+      "sweet_potato_vine": {
+        "en": "Sweet potato vine",
+        "zh": "甘薯藤"
+      },
+      "wet_brewers_grain": {
+        "en": "Wet brewers grains",
+        "zh": "湿啤酒糟"
+      },
+      "wet_distillers_grain": {
+        "en": "Wet distillers grains",
+        "zh": "湿酒糟"
+      },
+      "beet_pulp_wet": {
+        "en": "Beet pulp (wet)",
+        "zh": "湿甜菜粕"
+      },
+      "limestone_powder": {
+        "en": "Ground limestone",
+        "zh": "石粉"
+      },
+      "calcium_carbonate": {
+        "en": "Feed-grade calcium carbonate",
+        "zh": "饲用碳酸钙"
+      },
+      "dicalcium_phosphate": {
+        "en": "Dicalcium phosphate",
+        "zh": "磷酸氢钙"
+      },
+      "monocalcium_phosphate": {
+        "en": "Monocalcium phosphate",
+        "zh": "磷酸二氢钙"
+      },
+      "salt_feed": {
+        "en": "Feed salt (NaCl)",
+        "zh": "饲用食盐"
+      },
+      "trace_mineral_premix": {
+        "en": "Trace mineral premix",
+        "zh": "微量元素预混料"
+      },
+      "vitamin_premix_beef": {
+        "en": "Vitamin premix (beef)",
+        "zh": "维生素预混料"
+      },
+      "sodium_bicarbonate": {
+        "en": "Sodium bicarbonate",
+        "zh": "碳酸氢钠"
+      },
+      "magnesium_oxide": {
+        "en": "Magnesium oxide",
+        "zh": "氧化镁"
+      },
+      "feed_grade_urea": {
+        "en": "Feed-grade urea",
+        "zh": "饲用尿素"
+      },
+      "copper_sulfate": {
+        "en": "Copper sulfate",
+        "zh": "硫酸铜"
+      },
+      "zinc_sulfate": {
+        "en": "Zinc sulfate",
+        "zh": "硫酸锌"
+      },
+      "manganese_sulfate": {
+        "en": "Manganese sulfate",
+        "zh": "硫酸锰"
+      },
+      "sodium_selenite": {
+        "en": "Sodium selenite",
+        "zh": "亚硒酸钠"
+      },
+      "cobalt_sulfate": {
+        "en": "Cobalt sulfate",
+        "zh": "硫酸钴"
+      },
+      "potassium_iodide": {
+        "en": "Potassium iodide",
+        "zh": "碘化钾"
       }
     }
   },
@@ -873,6 +1619,553 @@
           "VitB6_mg_per_kg": 3.06,
           "VitD_IU_per_kg_DM": 2111.3
         }
+      },
+      "kitten_growth_kibble": {
+        "dm_percent": 92.0,
+        "cost_per_kg": 7.6,
+        "nutrients": {
+          "CP": 44.0,
+          "EE": 22.0,
+          "Ash": 9.0,
+          "CF": 2.5,
+          "Ca": 1.35,
+          "P": 1.15,
+          "NFE": 22.5,
+          "Mg_mg_per_kg": 1200.0,
+          "K_mg_per_kg": 8500.0,
+          "Na_mg_per_kg": 2500.0,
+          "Taurine_mg_per_kg": 2800.0,
+          "Choline_mg_per_kg": 3500.0,
+          "DHA_percent": 0.3,
+          "EPA_percent": 0.15,
+          "VitA_IU_per_kg_DM": 22000.0,
+          "VitD_IU_per_kg_DM": 1500.0,
+          "VitE_mg_per_kg": 600.0,
+          "VitB_complex_mg_per_kg": 1200.0,
+          "ME_kcal_per_kg_DM": 4600.0,
+          "ME_MJ_per_kg_DM": 19.26
+        }
+      },
+      "weight_management_fiber_kibble": {
+        "dm_percent": 90.0,
+        "cost_per_kg": 6.1,
+        "nutrients": {
+          "CP": 38.0,
+          "EE": 12.0,
+          "Ash": 8.0,
+          "CF": 14.0,
+          "Ca": 0.9,
+          "P": 0.7,
+          "NFE": 28.0,
+          "Soluble_fiber_percent": 6.0,
+          "Insoluble_fiber_percent": 8.0,
+          "L_carnitine_mg_per_kg": 900.0,
+          "Taurine_mg_per_kg": 2000.0,
+          "ME_kcal_per_kg_DM": 3400.0,
+          "ME_MJ_per_kg_DM": 14.23
+        }
+      },
+      "renal_support_canned_pate": {
+        "dm_percent": 32.0,
+        "cost_per_kg": 8.2,
+        "nutrients": {
+          "CP": 24.0,
+          "EE": 26.0,
+          "Ash": 5.0,
+          "CF": 2.5,
+          "Ca": 0.35,
+          "P": 0.25,
+          "Na": 0.18,
+          "K": 0.7,
+          "Omega3_percent": 1.4,
+          "B_complex_mg_per_kg": 1100.0,
+          "Taurine_mg_per_kg": 2800.0,
+          "ME_kcal_per_kg_DM": 4200.0,
+          "ME_MJ_per_kg_DM": 17.56
+        }
+      },
+      "urinary_soothing_stew": {
+        "dm_percent": 30.0,
+        "cost_per_kg": 7.0,
+        "nutrients": {
+          "CP": 32.0,
+          "EE": 18.0,
+          "Ash": 6.0,
+          "CF": 2.5,
+          "Ca": 0.28,
+          "P": 0.22,
+          "Na": 0.35,
+          "K": 0.75,
+          "Mg_mg_per_kg": 600.0,
+          "DL_Methionine_mg_per_kg": 4000.0,
+          "Cranberry_extract_mg_per_kg": 8000.0,
+          "ME_kcal_per_kg_DM": 3900.0,
+          "ME_MJ_per_kg_DM": 16.33
+        }
+      },
+      "diabetic_low_carb_pate": {
+        "dm_percent": 35.0,
+        "cost_per_kg": 7.4,
+        "nutrients": {
+          "CP": 45.0,
+          "EE": 28.0,
+          "Ash": 7.0,
+          "CF": 1.8,
+          "Ca": 0.32,
+          "P": 0.27,
+          "NFE": 18.0,
+          "Chromium_mg_per_kg": 25.0,
+          "Taurine_mg_per_kg": 3200.0,
+          "ME_kcal_per_kg_DM": 4500.0,
+          "ME_MJ_per_kg_DM": 18.82
+        }
+      },
+      "hairball_control_fiber_gel": {
+        "dm_percent": 70.0,
+        "cost_per_kg": 5.5,
+        "nutrients": {
+          "CP": 12.0,
+          "EE": 8.0,
+          "Ash": 4.0,
+          "CF": 20.0,
+          "Ca": 0.2,
+          "P": 0.1,
+          "Soluble_fiber_percent": 12.0,
+          "Insoluble_fiber_percent": 8.0,
+          "Psyllium_mg_per_kg": 40000.0,
+          "ME_kcal_per_kg_DM": 2200.0,
+          "ME_MJ_per_kg_DM": 9.21
+        }
+      },
+      "winter_energy_fat_broth": {
+        "dm_percent": 45.0,
+        "cost_per_kg": 6.8,
+        "nutrients": {
+          "CP": 40.0,
+          "EE": 35.0,
+          "Ash": 6.0,
+          "CF": 1.5,
+          "Ca": 0.4,
+          "P": 0.35,
+          "Electrolyte_mix_mg_per_kg": 12000.0,
+          "VitE_mg_per_kg": 500.0,
+          "ME_kcal_per_kg_DM": 5200.0,
+          "ME_MJ_per_kg_DM": 21.75
+        }
+      },
+      "lactation_energy_gruel": {
+        "dm_percent": 40.0,
+        "cost_per_kg": 7.9,
+        "nutrients": {
+          "CP": 44.0,
+          "EE": 30.0,
+          "Ash": 7.0,
+          "CF": 2.0,
+          "Ca": 1.1,
+          "P": 0.9,
+          "Choline_mg_per_kg": 4500.0,
+          "DHA_percent": 0.4,
+          "ME_kcal_per_kg_DM": 4800.0,
+          "ME_MJ_per_kg_DM": 20.08
+        }
+      },
+      "recovery_high_protein_mousse_cat": {
+        "dm_percent": 33.0,
+        "cost_per_kg": 9.5,
+        "nutrients": {
+          "CP": 55.0,
+          "EE": 20.0,
+          "Ash": 5.5,
+          "CF": 1.2,
+          "Ca": 0.6,
+          "P": 0.5,
+          "Glutamine_mg_per_kg": 15000.0,
+          "Arginine_mg_per_kg": 25000.0,
+          "ME_kcal_per_kg_DM": 4300.0,
+          "ME_MJ_per_kg_DM": 18.0
+        }
+      },
+      "hydrolyzed_whitefish_kibble": {
+        "dm_percent": 94.0,
+        "cost_per_kg": 10.5,
+        "nutrients": {
+          "CP": 40.0,
+          "EE": 16.0,
+          "Ash": 8.0,
+          "CF": 4.0,
+          "Ca": 0.9,
+          "P": 0.7,
+          "Molecular_weight_Da": 10000.0,
+          "Omega3_percent": 1.0,
+          "ME_kcal_per_kg_DM": 4100.0,
+          "ME_MJ_per_kg_DM": 17.16
+        }
+      },
+      "limited_ingredient_duck_loaf": {
+        "dm_percent": 36.0,
+        "cost_per_kg": 8.8,
+        "nutrients": {
+          "CP": 40.0,
+          "EE": 28.0,
+          "Ash": 6.0,
+          "CF": 2.0,
+          "Ca": 0.6,
+          "P": 0.45,
+          "NFE": 24.0,
+          "Single_protein": 1.0,
+          "ME_kcal_per_kg_DM": 4450.0,
+          "ME_MJ_per_kg_DM": 18.61
+        }
+      },
+      "joint_support_powder_cat": {
+        "dm_percent": 95.0,
+        "cost_per_kg": 22.0,
+        "nutrients": {
+          "CP": 60.0,
+          "EE": 0.0,
+          "Ash": 12.0,
+          "CF": 0.0,
+          "Ca": 1.2,
+          "P": 0.5,
+          "Glucosamine_mg_per_kg": 70000.0,
+          "Chondroitin_mg_per_kg": 30000.0,
+          "MSM_mg_per_kg": 140000.0,
+          "Green_lipped_mussel_mg_per_kg": 80000.0,
+          "VitC_mg_per_kg": 50000.0,
+          "ME_kcal_per_kg_DM": 2500.0,
+          "ME_MJ_per_kg_DM": 10.46
+        }
+      },
+      "taurine_boost_powder": {
+        "dm_percent": 99.0,
+        "cost_per_kg": 15.0,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 0.0,
+          "Ash": 0.0,
+          "CF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "Taurine_mg_per_kg": 800000.0,
+          "VitB6_mg_per_kg": 1500.0,
+          "ME_kcal_per_kg_DM": 100.0,
+          "ME_MJ_per_kg_DM": 0.418
+        }
+      },
+      "hepatic_support_liquid": {
+        "dm_percent": 18.0,
+        "cost_per_kg": 11.0,
+        "nutrients": {
+          "CP": 30.0,
+          "EE": 25.0,
+          "Ash": 4.0,
+          "CF": 0.5,
+          "Ca": 0.3,
+          "P": 0.25,
+          "Choline_mg_per_kg": 8500.0,
+          "VitE_mg_per_kg": 600.0,
+          "Milk_thistle_mg_per_kg": 12000.0,
+          "L_carnitine_mg_per_kg": 2000.0,
+          "ME_kcal_per_kg_DM": 3800.0,
+          "ME_MJ_per_kg_DM": 15.9
+        }
+      },
+      "cooling_electrolyte_broth": {
+        "dm_percent": 12.0,
+        "cost_per_kg": 4.0,
+        "nutrients": {
+          "CP": 12.0,
+          "EE": 4.0,
+          "Ash": 6.0,
+          "CF": 0.5,
+          "Ca": 0.15,
+          "P": 0.12,
+          "Na": 0.35,
+          "K": 0.6,
+          "Mg_mg_per_kg": 500.0,
+          "VitC_mg_per_kg": 900.0,
+          "VitB_complex_mg_per_kg": 700.0,
+          "Taurine_mg_per_kg": 1200.0,
+          "ME_kcal_per_kg_DM": 2000.0,
+          "ME_MJ_per_kg_DM": 8.37
+        }
+      },
+      "dental_care_crunch_bites": {
+        "dm_percent": 92.0,
+        "cost_per_kg": 6.8,
+        "nutrients": {
+          "CP": 36.0,
+          "EE": 16.0,
+          "Ash": 9.0,
+          "CF": 7.0,
+          "Ca": 1.1,
+          "P": 0.9,
+          "Sodium_hexametaphosphate_percent": 0.6,
+          "VitC_mg_per_kg": 2000.0,
+          "Zn_mg_per_kg": 180.0,
+          "ME_kcal_per_kg_DM": 3700.0,
+          "ME_MJ_per_kg_DM": 15.48
+        }
+      },
+      "palatability_frozen_topper_cat": {
+        "dm_percent": 32.0,
+        "cost_per_kg": 10.0,
+        "nutrients": {
+          "CP": 55.0,
+          "EE": 35.0,
+          "Ash": 6.0,
+          "CF": 1.0,
+          "Ca": 0.45,
+          "P": 0.4,
+          "Bone_broth_percent": 20.0,
+          "Yeast_extract_mg_per_kg": 15000.0,
+          "VitB_complex_mg_per_kg": 900.0,
+          "ME_kcal_per_kg_DM": 5200.0,
+          "ME_MJ_per_kg_DM": 21.75
+        }
+      },
+      "travel_ready_portion_pack": {
+        "dm_percent": 88.0,
+        "cost_per_kg": 7.2,
+        "nutrients": {
+          "CP": 42.0,
+          "EE": 22.0,
+          "Ash": 8.0,
+          "CF": 3.0,
+          "Ca": 0.9,
+          "P": 0.75,
+          "Electrolyte_mix_mg_per_kg": 8000.0,
+          "Tryptophan_mg_per_kg": 3500.0,
+          "Probiotic_CFU_per_kg": 1200000000.0,
+          "ME_kcal_per_kg_DM": 4200.0,
+          "ME_MJ_per_kg_DM": 17.56
+        }
+      },
+      "shelter_complete_stew_cat": {
+        "dm_percent": 24.0,
+        "cost_per_kg": 3.5,
+        "nutrients": {
+          "CP": 32.0,
+          "EE": 18.0,
+          "Ash": 5.0,
+          "CF": 2.0,
+          "Ca": 0.7,
+          "P": 0.5,
+          "NFE": 43.0,
+          "VitPremix_mg_per_kg": 600.0,
+          "ME_kcal_per_kg_DM": 3600.0,
+          "ME_MJ_per_kg_DM": 15.06
+        }
+      },
+      "senior_cognitive_support_kibble": {
+        "dm_percent": 92.0,
+        "cost_per_kg": 7.0,
+        "nutrients": {
+          "CP": 40.0,
+          "EE": 18.0,
+          "Ash": 8.0,
+          "CF": 4.0,
+          "Ca": 1.0,
+          "P": 0.8,
+          "MCT_percent": 5.0,
+          "DHA_percent": 0.35,
+          "VitE_mg_per_kg": 550.0,
+          "Lutein_mg_per_kg": 60.0,
+          "ME_kcal_per_kg_DM": 4100.0,
+          "ME_MJ_per_kg_DM": 17.16
+        }
+      },
+      "insect_protein_loaf_cat": {
+        "dm_percent": 38.0,
+        "cost_per_kg": 9.2,
+        "nutrients": {
+          "CP": 45.0,
+          "EE": 28.0,
+          "Ash": 6.0,
+          "CF": 4.0,
+          "Ca": 0.5,
+          "P": 0.4,
+          "Black_soldier_fly_percent": 60.0,
+          "Taurine_mg_per_kg": 3000.0,
+          "ME_kcal_per_kg_DM": 4300.0,
+          "ME_MJ_per_kg_DM": 18.0
+        }
+      },
+      "balanced_raw_premix": {
+        "dm_percent": 96.0,
+        "cost_per_kg": 12.0,
+        "nutrients": {
+          "CP": 25.0,
+          "EE": 8.0,
+          "Ash": 40.0,
+          "CF": 5.0,
+          "Ca": 9.0,
+          "P": 5.0,
+          "Trace_mineral_mg_per_kg": 12000.0,
+          "VitA_IU_per_kg_DM": 350000.0,
+          "VitD_IU_per_kg_DM": 35000.0,
+          "Taurine_mg_per_kg": 20000.0,
+          "ME_kcal_per_kg_DM": 3200.0,
+          "ME_MJ_per_kg_DM": 13.39
+        }
+      },
+      "duck_pea_elimination_kibble": {
+        "dm_percent": 93.0,
+        "cost_per_kg": 8.4,
+        "nutrients": {
+          "CP": 42.0,
+          "EE": 18.0,
+          "Ash": 8.0,
+          "CF": 4.0,
+          "Ca": 0.85,
+          "P": 0.65,
+          "NFE": 28.0,
+          "Omega6_percent": 3.0,
+          "Omega3_percent": 1.1,
+          "ME_kcal_per_kg_DM": 4000.0,
+          "ME_MJ_per_kg_DM": 16.74
+        }
+      },
+      "muscle_boost_shreds": {
+        "dm_percent": 45.0,
+        "cost_per_kg": 11.5,
+        "nutrients": {
+          "CP": 60.0,
+          "EE": 25.0,
+          "Ash": 5.0,
+          "CF": 1.0,
+          "Ca": 0.5,
+          "P": 0.4,
+          "BCAA_percent": 20.0,
+          "Biotin_mg_per_kg": 4.5,
+          "Cu_mg_per_kg": 18.0,
+          "ME_kcal_per_kg_DM": 4500.0,
+          "ME_MJ_per_kg_DM": 18.82
+        }
+      },
+      "iron_b12_hematinic_paste": {
+        "dm_percent": 80.0,
+        "cost_per_kg": 14.0,
+        "nutrients": {
+          "CP": 12.0,
+          "EE": 6.0,
+          "Ash": 6.0,
+          "CF": 0.0,
+          "Ca": 0.2,
+          "P": 0.1,
+          "Fe_mg_per_kg": 4500.0,
+          "VitB12_mg_per_kg": 35.0,
+          "Folate_mg_per_kg": 55.0,
+          "Cu_mg_per_kg": 60.0,
+          "VitC_mg_per_kg": 5000.0,
+          "ME_kcal_per_kg_DM": 2600.0,
+          "ME_MJ_per_kg_DM": 10.88
+        }
+      },
+      "postpartum_recovery_soup": {
+        "dm_percent": 22.0,
+        "cost_per_kg": 6.0,
+        "nutrients": {
+          "CP": 38.0,
+          "EE": 20.0,
+          "Ash": 4.0,
+          "CF": 1.0,
+          "Ca": 0.7,
+          "P": 0.55,
+          "Electrolyte_mix_mg_per_kg": 10000.0,
+          "Lysine_mg_per_kg": 28000.0,
+          "ME_kcal_per_kg_DM": 4000.0,
+          "ME_MJ_per_kg_DM": 16.74
+        }
+      },
+      "ultra_low_fat_pancreas_stew": {
+        "dm_percent": 32.0,
+        "cost_per_kg": 8.8,
+        "nutrients": {
+          "CP": 48.0,
+          "EE": 12.0,
+          "Ash": 6.0,
+          "CF": 2.0,
+          "Ca": 0.4,
+          "P": 0.35,
+          "Omega3_percent": 1.4,
+          "Soluble_fiber_percent": 4.0,
+          "ME_kcal_per_kg_DM": 3600.0,
+          "ME_MJ_per_kg_DM": 15.06
+        }
+      },
+      "agility_power_crumble": {
+        "dm_percent": 91.0,
+        "cost_per_kg": 8.6,
+        "nutrients": {
+          "CP": 48.0,
+          "EE": 24.0,
+          "Ash": 8.0,
+          "CF": 3.0,
+          "Ca": 1.05,
+          "P": 0.85,
+          "BCAA_percent": 22.0,
+          "Joint_support_mg_per_kg": 18000.0,
+          "ME_kcal_per_kg_DM": 4400.0,
+          "ME_MJ_per_kg_DM": 18.41
+        }
+      },
+      "urinary_weight_dual_control": {
+        "dm_percent": 86.0,
+        "cost_per_kg": 7.8,
+        "nutrients": {
+          "CP": 40.0,
+          "EE": 14.0,
+          "Ash": 8.0,
+          "CF": 10.0,
+          "Ca": 0.8,
+          "P": 0.6,
+          "Na": 0.35,
+          "K": 0.75,
+          "Mg_mg_per_kg": 800.0,
+          "DL_Methionine_mg_per_kg": 3500.0,
+          "L_carnitine_mg_per_kg": 800.0,
+          "ME_kcal_per_kg_DM": 3300.0,
+          "ME_MJ_per_kg_DM": 13.81
+        }
+      },
+      "omega3_anchovy_oil": {
+        "dm_percent": 100.0,
+        "cost_per_kg": 12.5,
+        "nutrients": {
+          "CP": 0.0,
+          "EE": 100.0,
+          "Ash": 0.0,
+          "CF": 0.0,
+          "Ca": 0.0,
+          "P": 0.0,
+          "EPA_percent": 18.0,
+          "DHA_percent": 12.0,
+          "VitE_mg_per_kg": 200.0,
+          "ME_kcal_per_kg_DM": 9000.0,
+          "ME_MJ_per_kg_DM": 37.66
+        }
+      },
+      "vision_guard_powder": {
+        "dm_percent": 98.0,
+        "cost_per_kg": 16.0,
+        "nutrients": {
+          "CP": 10.0,
+          "EE": 5.0,
+          "Ash": 15.0,
+          "CF": 0.0,
+          "Ca": 0.1,
+          "P": 0.05,
+          "Taurine_mg_per_kg": 200000.0,
+          "Lutein_mg_per_kg": 500.0,
+          "Zeaxanthin_mg_per_kg": 250.0,
+          "Anthocyanin_mg_per_kg": 1500.0,
+          "VitA_IU_per_kg_DM": 70000.0,
+          "VitE_mg_per_kg": 3000.0,
+          "VitC_mg_per_kg": 12000.0,
+          "ME_kcal_per_kg_DM": 1500.0,
+          "ME_MJ_per_kg_DM": 6.28
+        }
       }
     },
     "feed_labels": {
@@ -947,6 +2240,130 @@
       "goat_milk_raw": {
         "en": "Goat milk (raw)",
         "zh": "山羊奶（生）"
+      },
+      "kitten_growth_kibble": {
+        "en": "Kitten growth kibble",
+        "zh": "幼猫成长配方粮"
+      },
+      "weight_management_fiber_kibble": {
+        "en": "Weight management high fiber kibble",
+        "zh": "绝育体重管理高纤粮"
+      },
+      "renal_support_canned_pate": {
+        "en": "Renal support canned pate",
+        "zh": "肾脏支持罐头泥"
+      },
+      "urinary_soothing_stew": {
+        "en": "Urinary soothing stew",
+        "zh": "泌尿舒缓炖汤"
+      },
+      "diabetic_low_carb_pate": {
+        "en": "Diabetic low-carb pate",
+        "zh": "糖尿病低碳配方泥"
+      },
+      "hairball_control_fiber_gel": {
+        "en": "Hairball control fiber gel",
+        "zh": "毛球纤维凝胶"
+      },
+      "winter_energy_fat_broth": {
+        "en": "Winter energy fat broth",
+        "zh": "冬季高能脂肪汤"
+      },
+      "lactation_energy_gruel": {
+        "en": "Lactation energy gruel",
+        "zh": "泌乳高能奶糊"
+      },
+      "recovery_high_protein_mousse_cat": {
+        "en": "Recovery high-protein mousse",
+        "zh": "术后恢复高蛋白慕斯"
+      },
+      "hydrolyzed_whitefish_kibble": {
+        "en": "Hydrolyzed whitefish kibble",
+        "zh": "水解白鱼低敏粮"
+      },
+      "limited_ingredient_duck_loaf": {
+        "en": "Limited-ingredient duck loaf",
+        "zh": "单一原料鸭肉罐"
+      },
+      "joint_support_powder_cat": {
+        "en": "Joint support powder (cat)",
+        "zh": "猫用关节营养粉"
+      },
+      "taurine_boost_powder": {
+        "en": "Taurine boost powder",
+        "zh": "牛磺酸强化粉"
+      },
+      "hepatic_support_liquid": {
+        "en": "Hepatic support liquid",
+        "zh": "肝脏支持营养液"
+      },
+      "cooling_electrolyte_broth": {
+        "en": "Cooling electrolyte broth",
+        "zh": "清凉电解质汤"
+      },
+      "dental_care_crunch_bites": {
+        "en": "Dental care crunch bites",
+        "zh": "口腔护理脆粒"
+      },
+      "palatability_frozen_topper_cat": {
+        "en": "Palatability frozen topper",
+        "zh": "猫用冻干适口性拌料"
+      },
+      "travel_ready_portion_pack": {
+        "en": "Travel-ready portion pack",
+        "zh": "旅途便携营养包"
+      },
+      "shelter_complete_stew_cat": {
+        "en": "Shelter complete stew",
+        "zh": "收容所经济全价炖"
+      },
+      "senior_cognitive_support_kibble": {
+        "en": "Senior cognitive support kibble",
+        "zh": "高龄认知支持粮"
+      },
+      "insect_protein_loaf_cat": {
+        "en": "Insect protein loaf",
+        "zh": "昆虫蛋白主食罐"
+      },
+      "balanced_raw_premix": {
+        "en": "Balanced raw premix",
+        "zh": "平衡生食营养预混"
+      },
+      "duck_pea_elimination_kibble": {
+        "en": "Duck & pea elimination kibble",
+        "zh": "鸭肉豌豆排除粮"
+      },
+      "muscle_boost_shreds": {
+        "en": "Muscle boost shreds",
+        "zh": "肌肉塑形肉丝"
+      },
+      "iron_b12_hematinic_paste": {
+        "en": "Iron & B12 hematinic paste",
+        "zh": "高铁B12造血膏"
+      },
+      "postpartum_recovery_soup": {
+        "en": "Postpartum recovery soup",
+        "zh": "产后恢复营养汤"
+      },
+      "ultra_low_fat_pancreas_stew": {
+        "en": "Ultra low-fat pancreas stew",
+        "zh": "超低脂胰腺呵护炖"
+      },
+      "agility_power_crumble": {
+        "en": "Agility power crumble",
+        "zh": "敏捷训练动力碎粮"
+      },
+      "urinary_weight_dual_control": {
+        "en": "Urinary + weight dual control diet",
+        "zh": "泌尿与体重双控粮"
+      },
+      "omega3_anchovy_oil": {
+        "en": "Omega-3 anchovy oil",
+        "zh": "鳀鱼 Omega-3 油"
+      },
+      "vision_guard_powder": {
+        "en": "Vision guard antioxidant powder",
+        "zh": "视网膜护眼粉"
       }
     }
   },

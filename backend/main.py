@@ -7,7 +7,10 @@ import tiktoken
 from api.routes import router
 from auth.routes import auth_router
 from auth.admin_routes import admin_router
-from auth.database import create_db_and_tables
+from api.routes import router
+from auth.routes import auth_router
+from auth.admin_routes import admin_router
+from migrations.schema_manager import SchemaManager
 from services.session_manager import session_manager
 from core.agent import cleanup_shared_resources
 
@@ -34,11 +37,13 @@ TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
     
-    # Initialize database and create tables
+    # Initialize database, update schema, and seed data
     try:
-        await create_db_and_tables()
+        schema_manager = SchemaManager()
+        await schema_manager.update_schema()
+        await schema_manager.seed_feedbases()
     except Exception as e:
-        print(f"Failed to initialize database: {e}")
+        print(f"Failed to initialize database/schema: {e}")
         raise
 
     # Initialize SessionManager with database connection

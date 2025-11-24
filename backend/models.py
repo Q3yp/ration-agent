@@ -119,6 +119,24 @@ class ParsedMessage(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 # Message constructors
+def _normalize_tool_content(content: str) -> str:
+    """
+    Replace common escaped control sequences with their actual characters so the
+    frontend renders Markdown/line breaks instead of literal `\n` text.
+    """
+    if not isinstance(content, str):
+        return str(content)
+
+    replacements = {
+        r"\n": "\n",
+        r"\r": "\r",
+        r"\t": "\t",
+    }
+    for escaped, actual in replacements.items():
+        content = content.replace(escaped, actual)
+    return content
+
+
 def create_user_message(content: str, message_id: str, timestamp: float) -> ParsedMessage:
     """User input message"""
     return ParsedMessage(
@@ -169,7 +187,7 @@ def create_tool_result_message(content: str, tool_name: str, tool_id: str, times
     return ParsedMessage(
         id=f"{tool_id}_result",
         type="tool_result", 
-        content=content,
+        content=_normalize_tool_content(content),
         timestamp=timestamp,
         metadata={"tool_name": tool_name}
     )
