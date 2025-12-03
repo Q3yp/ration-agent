@@ -105,6 +105,7 @@ export function getCalculationMetadata(message: Message) {
     expression?: string
     result?: string
     preferred_language?: string
+    all_results?: string[]
   } | undefined
 }
 

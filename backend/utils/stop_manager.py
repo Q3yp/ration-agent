@@ -285,7 +285,13 @@ class StopManager:
                 self.stream_tasks[session_id] = current_task
 
             # Delegate to unified replay+tail logic
-            async for sse_event in self.replay_and_tail_cache(session_id, title_queue, preferred_language=preferred_language):
+            # skip_history=True because this is a NEW stream request, we only want new events
+            async for sse_event in self.replay_and_tail_cache(
+                session_id, 
+                title_queue, 
+                preferred_language=preferred_language,
+                skip_history=True
+            ):
                 yield sse_event
 
         except asyncio.CancelledError:
@@ -377,6 +383,7 @@ class StopManager:
         session_id: str,
         title_queue: Optional[asyncio.Queue] = None,
         preferred_language: str = "zh-CN",
+        skip_history: bool = False,
     ) -> AsyncIterator[str]:
         """
         Unified cache-based streaming: replay cached events then tail new ones.
@@ -399,7 +406,8 @@ class StopManager:
             artifact_loading_sent = False
 
             # Replay all cached events
-            cursor = 0
+            # If skip_history is True (new stream), start at end of current cache
+            cursor = len(self.active_sessions.get(session_id, [])) if skip_history else 0
             idle_heartbeats = 0
 
             while True:

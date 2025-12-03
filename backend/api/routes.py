@@ -139,14 +139,18 @@ async def create_session(
                     detail=f"User does not have permission for animal type '{request.animal_type}'"
                 )
 
-        # Enforce free tier session limit
+        # Enforce free tier session limit (pro accounts have unlimited sessions)
+        logger.info(f"Session creation: user={current_user.username}, tier={current_user.tier}, is_free_tier={is_free_tier(current_user)}")
         if is_free_tier(current_user):
             user_sessions = await session_manager.list_user_sessions(str(current_user.id))
+            logger.info(f"Free tier user has {len(user_sessions)} sessions")
             if len(user_sessions) >= FREE_TIER_MAX_SESSIONS:
                 raise HTTPException(
                     status_code=403,
                     detail="Free tier accounts can only keep one active session. Please delete an existing session or upgrade your plan."
                 )
+        else:
+            logger.info(f"Paid tier user - no session limit")
 
         # Generate session_id on backend (UUID)
         import uuid
@@ -350,59 +354,9 @@ async def get_session_history(
         stop_manager = StopManager.get_instance()
         logger.info(f"HISTORY_SSE: Active stream detected for session {session_id}, tailing cache")
 
-        # Use StopManager's unified replay logic (skip anti-buffer padding and connected event - already sent)
-        cursor = 0
-        idle_heartbeats = 0
-        while True:
-            if session_id not in stop_manager.active_sessions:
-                break
-
-            events = stop_manager.active_sessions.get(session_id, [])
-            if cursor < len(events):
-                for ev in events[cursor:]:
-                    try:
-                        # Handle token events
-                        if isinstance(ev, dict) and ev.get("_event_type") == "token_usage":
-                            token_data = {
-                                "type": "token_usage_update",
-                                "session_id": ev["session_id"],
-                                "token_usage": ev["token_usage"],
-                                "timestamp": ev["timestamp"]
-                            }
-                            yield f"event: token_usage\ndata: {json.dumps(token_data, ensure_ascii=False)}\n\n"
-                            continue
-
-                        # Handle error events
-                        if isinstance(ev, dict) and ev.get("_event_type") == "error":
-                            error_data = {
-                                "type": "error",
-                                "session_id": ev["session_id"],
-                                "error": ev["error"],
-                                "timestamp": ev["timestamp"]
-                            }
-                            yield f"event: error\ndata: {json.dumps(error_data, ensure_ascii=False)}\n\n"
-                            continue
-
-                        # Regular LangGraph events
-                        for msg in session_parser.parse_streaming_event(ev):
-                            yield f"event: message\ndata: {json.dumps(msg.dict(), ensure_ascii=False)}\n\n"
-                    except Exception as e:
-                        logger.error(f"HISTORY_SSE: Error processing cached event: {e}")
-                        continue
-                cursor = len(events)
-                idle_heartbeats = 0
-            else:
-                idle_heartbeats += 1
-                if idle_heartbeats % 10 == 0:
-                    yield ": keep-alive\n\n"
-                await asyncio.sleep(0.2)
-
-        completion_data = {
-            "type": "agent_complete",
-            "message_id": current_message_id,
-            "timestamp": time.time(),
-        }
-        yield f"event: complete\ndata: {json.dumps(completion_data, ensure_ascii=False)}\n\n"
+        # Use StopManager's unified replay logic
+        async for sse_event in stop_manager.replay_and_tail_cache(session_id, preferred_language=preferred_language):
+            yield sse_event
 
     return StreamingResponse(
         generate_history_stream(),
@@ -513,15 +467,16 @@ async def stream_chat(
     if not session_context:
         raise HTTPException(status_code=404, detail="Session not found. Create session first.")
 
-    # Universal prompt token limit per session - stream back plan limit event instead of HTTP error
-    if await session_manager.has_reached_prompt_limit(session_id):
+    # Token limit per session - paid users get 2x the limit
+    user_token_limit = MAX_SESSION_PROMPT_TOKENS * 2 if not is_free_tier(current_user) else MAX_SESSION_PROMPT_TOKENS
+    if await session_manager.has_reached_prompt_limit(session_id, max_prompt_tokens=user_token_limit):
         usage = await session_manager.get_session_token_usage(session_id)
 
         async def limit_event_stream():
             payload = {
                 "type": "prompt_limit",
                 "session_id": session_id,
-                "limit": MAX_SESSION_PROMPT_TOKENS,
+                "limit": user_token_limit,
                 "tier": getattr(current_user, "tier", FREE_TIER),
                 "prompt_tokens": usage.get("prompt_tokens", 0),
             }

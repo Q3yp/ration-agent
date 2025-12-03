@@ -14,8 +14,103 @@ from langgraph.types import Command
 from langgraph.config import get_store
 
 from formulation.optimizer import create_optimizer
+from utils.language import normalize_locale
 
 logger = logging.getLogger(__name__)
+
+# Translation dictionary for export
+EXPORT_TRANSLATIONS = {
+    "zh-CN": {
+        "sheet_results": "配方结果",
+        "sheet_notes": "配方说明",
+        "sheet_constraints": "约束条件",
+        "date": "导出日期",
+        "status": "优化状态",
+        "total_cost": "总成本",
+        "cost_unit": "元/公斤干物质",
+        "dmi": "日干物质采食量",
+        "ingredients": "饲料配方明细",
+        "feed_name": "饲料名称",
+        "amount": "日饲喂量 (kg/day)",
+        "dm_percent": "干物质比例 (%)",
+        "nutrients_header": "原料含量 (% DM)",
+        "nutrition_profile": "整体营养成分分析",
+        "nutrient": "营养成分",
+        "content": "含量 (% DM)",
+        "notes_none": "暂无配方说明",
+        "constraint_validation": "营养约束验证",
+        "constraint_type": "约束类型",
+        "condition": "约束条件",
+        "actual": "实际值",
+        "unit": "单位",
+        "satisfaction": "满足情况",
+        "feed_constraints": "饲料用量约束",
+        "min_percent": "最小比例 (%)",
+        "max_percent": "最大比例 (%)",
+        "no_feed_constraints": "无饲料用量约束",
+        "chart_title": "营养成分组成图",
+        "satisfied": "✓ 满足",
+        "unsatisfied": "✗ 不满足",
+        "con_concentration": "浓度约束",
+        "con_dmi": "干物质采食量约束",
+        "con_daily": "日摄入约束",
+        "con_ratio": "比例约束",
+        "target": "目标",
+        "range": "范围内",
+        "daily_intake_needed": "需要日采食量",
+        "cannot_calculate": "无法计算",
+        "denom_zero": "分母为零",
+        "error_no_formulation": "未找到成功的配方。请先运行配方优化。",
+        "error_no_db": "未找到饲料数据库。导出可能不包含完整的饲料信息。",
+        "export_success": "✅ 成功导出 {filename}。",
+        "export_fail": "导出配方时出错: {error}"
+    },
+    "en-US": {
+        "sheet_results": "Formulation Results",
+        "sheet_notes": "Formulation Notes",
+        "sheet_constraints": "Constraints",
+        "date": "Date",
+        "status": "Status",
+        "total_cost": "Total Cost",
+        "cost_unit": "CNY/kg DM",
+        "dmi": "DMI",
+        "ingredients": "Ingredients",
+        "feed_name": "Feed Name",
+        "amount": "Amount (kg/day)",
+        "dm_percent": "DM %",
+        "nutrients_header": "Nutrients (% DM)",
+        "nutrition_profile": "Nutrition Profile",
+        "nutrient": "Nutrient",
+        "content": "Content (% DM)",
+        "notes_none": "No notes available",
+        "constraint_validation": "Nutrient Constraints Validation",
+        "constraint_type": "Type",
+        "condition": "Condition",
+        "actual": "Actual",
+        "unit": "Unit",
+        "satisfaction": "Status",
+        "feed_constraints": "Feed Constraints",
+        "min_percent": "Min %",
+        "max_percent": "Max %",
+        "no_feed_constraints": "No feed constraints",
+        "chart_title": "Nutrition Composition",
+        "satisfied": "✓ Pass",
+        "unsatisfied": "✗ Fail",
+        "con_concentration": "Concentration",
+        "con_dmi": "DMI Constraint",
+        "con_daily": "Daily Intake",
+        "con_ratio": "Ratio",
+        "target": "Target",
+        "range": "In range",
+        "daily_intake_needed": "Daily intake needed",
+        "cannot_calculate": "Cannot calculate",
+        "denom_zero": "Denominator zero",
+        "error_no_formulation": "No successful formulation found. Please run optimization first.",
+        "error_no_db": "Feed database not found. Export may not include complete feed information.",
+        "export_success": "✅ Successfully exported {filename}.",
+        "export_fail": "Error exporting formulation: {error}"
+    }
+}
 
 
 def sanitize_feed_name(name: str) -> str:
@@ -91,7 +186,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         Add or update feed ingredient in a specific feedbase.
 
         Args:
-            feed_base_name: Name of the feedbase to add the feed to
+            feed_base_name: Name of the feedbase to add the feed to(will create if not exists)
             name: Feed name (will replace if exists)
             dm_percent: Dry matter percentage (0-100)
             nutrients: Nutrient composition on dry matter basis (e.g., {"CP": 18.5, "NEL": 1.65})
@@ -138,59 +233,35 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 dm_percent = dry_matter_percent
             if dm_percent is None:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: dm_percent (dry matter %) is required", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: dm_percent (dry matter %) is required", tool_call_id=tool_call_id)]}
                 )
             if not 0 < dm_percent <= 100:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: Dry matter percentage must be between 0 and 100", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: Dry matter percentage must be between 0 and 100", tool_call_id=tool_call_id)]}
                 )
             
             if not isinstance(nutrients, dict) or not nutrients:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: Nutrients must be a non-empty dictionary", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: Nutrients must be a non-empty dictionary", tool_call_id=tool_call_id)]}
                 )
             
             if cost_per_kg < 0:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: Cost per kg must be non-negative", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: Cost per kg must be non-negative", tool_call_id=tool_call_id)]}
                 )
             
             # Validate nutrient values
             for nutrient, value in nutrients.items():
                 if not isinstance(value, (int, float)) or value < 0:
                     return Command(
-                        update={
-                            "messages": [
-                                ToolMessage(f"Error: Nutrient '{nutrient}' must have a non-negative numeric value", tool_call_id=tool_call_id)
-                            ]
-                        }
+                        update={"messages": [ToolMessage(f"Error: Nutrient '{nutrient}' must have a non-negative numeric value", tool_call_id=tool_call_id)]}
                     )
             
             # Get user_id from config and access store
             user_id = config["configurable"].get("user_id")
             if not user_id:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)]}
                 )
             
             store = get_store()
@@ -216,28 +287,20 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             
             # Add feed to feedbase
             sanitized_name = sanitize_feed_name(name)
-            feedbase_data["feeds"][sanitized_name] = feed_data
+            feedbase_data["feeds"].update({sanitized_name: feed_data})
             
             # Store updated feedbase
             await store.aput(namespace, "data", feedbase_data)
             
             # Return success message
             return Command(
-                update={
-                    "messages": [
-                        ToolMessage(f"Successfully added feed '{sanitized_name}' to feedbase '{feed_base_name}'", tool_call_id=tool_call_id)
-                    ]
-                }
+                update={"messages": [ToolMessage(f"Successfully added feed '{sanitized_name}' to feedbase '{feed_base_name}'", tool_call_id=tool_call_id)]}
             )
             
         except Exception as e:
             logger.error(f"Add feed error: {e}")
             return Command(
-                update={
-                    "messages": [
-                        ToolMessage(f"Error adding feed: {str(e)}", tool_call_id=tool_call_id)
-                    ]
-                }
+                update={"messages": [ToolMessage(f"Error adding feed: {str(e)}", tool_call_id=tool_call_id)]}
             )
     
     @tool
@@ -258,11 +321,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             user_id = config["configurable"].get("user_id")
             if not user_id:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)]}
                 )
 
             free_tier = _is_free_tier(config)
@@ -275,14 +334,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
                 if not system_feedbase:
                     return Command(
-                        update={
-                            "messages": [
-                                ToolMessage(
-                                    f"No system feedbase found for animal type '{animal_type}'. Please contact support.",
-                                    tool_call_id=tool_call_id,
-                                )
-                            ]
-                        }
+                        update={"messages": [ToolMessage(f"No system feedbase found for animal type '{animal_type}'. Please contact support.", tool_call_id=tool_call_id)]}
                     )
 
                 feed_count = len(system_feedbase.value.get("feeds", {}))
@@ -294,11 +346,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                     "Upgrade your plan to create and manage custom feedbases."
                 ]
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("\n".join(message_lines), tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("\n".join(message_lines), tool_call_id=tool_call_id)]}
                 )
 
             # Search for user feedbases
@@ -347,29 +395,17 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
             if total_count == 0:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage(f"No feedbases found for animal type '{animal_type}'.", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage(f"No feedbases found for animal type '{animal_type}'.", tool_call_id=tool_call_id)]}
                 )
 
             return Command(
-                update={
-                    "messages": [
-                        ToolMessage("\n".join(feedbase_info), tool_call_id=tool_call_id)
-                    ]
-                }
+                update={"messages": [ToolMessage("\n".join(feedbase_info), tool_call_id=tool_call_id)]}
             )
 
         except Exception as e:
             logger.error(f"List feedbases error: {e}")
             return Command(
-                update={
-                    "messages": [
-                        ToolMessage(f"Error listing feedbases: {str(e)}", tool_call_id=tool_call_id)
-                    ]
-                }
+                update={"messages": [ToolMessage(f"Error listing feedbases: {str(e)}", tool_call_id=tool_call_id)]}
             )
     
     @tool
@@ -413,11 +449,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             # Validate inputs
             if not isinstance(feed_base_name, str) or not feed_base_name.strip():
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: Feedbase name must be a non-empty string", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: Feedbase name must be a non-empty string", tool_call_id=tool_call_id)]}
                 )
             
             if _is_free_tier(config) and not feed_base_name.startswith("default_"):
@@ -425,79 +457,47 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 
             if not isinstance(nutritional_constraints, list):
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: nutritional_constraints must be a list", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: nutritional_constraints must be a list", tool_call_id=tool_call_id)]}
                 )
             
             if not isinstance(selected_feeds, list) or not selected_feeds:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: selected_feeds must be a non-empty list", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: selected_feeds must be a non-empty list", tool_call_id=tool_call_id)]}
                 )
             
             # Validate constraint format
             for i, constraint in enumerate(nutritional_constraints):
                 if not isinstance(constraint, dict):
                     return Command(
-                        update={
-                            "messages": [
-                                ToolMessage(f"Error: Constraint {i} must be a dictionary", tool_call_id=tool_call_id)
-                            ]
-                        }
+                        update={"messages": [ToolMessage(f"Error: Constraint {i} must be a dictionary", tool_call_id=tool_call_id)]}
                     )
                 
                 constraint_type = constraint.get("type", "")
                 if constraint_type not in ["concentration", "daily_total", "ratio"]:
                     return Command(
-                        update={
-                            "messages": [
-                                ToolMessage(f"Error: Invalid constraint type '{constraint_type}' in constraint {i}. Must be 'concentration', 'daily_total', or 'ratio'", tool_call_id=tool_call_id)
-                            ]
-                        }
+                        update={"messages": [ToolMessage(f"Error: Invalid constraint type '{constraint_type}' in constraint {i}. Must be 'concentration', 'daily_total', or 'ratio'", tool_call_id=tool_call_id)]}
                     )
                 
                 # Validate specific constraint requirements
                 if constraint_type == "concentration" and "nutrient" not in constraint:
                     return Command(
-                        update={
-                            "messages": [
-                                ToolMessage(f"Error: Concentration constraint {i} missing 'nutrient' field", tool_call_id=tool_call_id)
-                            ]
-                        }
+                        update={"messages": [ToolMessage(f"Error: Concentration constraint {i} missing 'nutrient' field", tool_call_id=tool_call_id)]}
                     )
                 elif constraint_type == "daily_total":
                     if "attribute" not in constraint:
                         return Command(
-                            update={
-                                "messages": [
-                                    ToolMessage(f"Error: Daily total constraint {i} missing 'attribute' field", tool_call_id=tool_call_id)
-                                ]
-                            }
+                            update={"messages": [ToolMessage(f"Error: Daily total constraint {i} missing 'attribute' field", tool_call_id=tool_call_id)]}
                         )
                     if "target" not in constraint:
                         return Command(
-                            update={
-                                "messages": [
-                                    ToolMessage(f"Error: Daily total constraint {i} missing 'target' field", tool_call_id=tool_call_id)
-                                ]
-                            }
+                            update={"messages": [ToolMessage(f"Error: Daily total constraint {i} missing 'target' field", tool_call_id=tool_call_id)]}
                         )
             
             # Get user_id from config and access store
             user_id = config["configurable"].get("user_id")
             if not user_id:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)]}
                 )
 
             store = get_store()
@@ -513,33 +513,21 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
             if not feedbase_entry:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage(f"Error: Feedbase '{feed_base_name}' not found. Please create it first using add_feed tool or use the system 'default' feedbase.", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage(f"Error: Feedbase '{feed_base_name}' not found. Please create it first using add_feed tool or use the system 'default' feedbase.", tool_call_id=tool_call_id)]}
                 )
 
             feedbase_data = feedbase_entry.value
             feed_database = feedbase_data.get("feeds", {})
             if not feed_database:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage(f"Error: Feedbase '{feed_base_name}' is empty. Please add feeds first using add_feed tool.", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage(f"Error: Feedbase '{feed_base_name}' is empty. Please add feeds first using add_feed tool.", tool_call_id=tool_call_id)]}
                 )
             
             # Check if selected feeds exist
             missing_feeds = [f for f in selected_feeds if f not in feed_database]
             if missing_feeds:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage(f"Error: The following feeds are not in the database: {', '.join(missing_feeds)}. Available feeds: {', '.join(feed_database.keys())}", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage(f"Error: The following feeds are not in the database: {', '.join(missing_feeds)}. Available feeds: {', '.join(feed_database.keys())}", tool_call_id=tool_call_id)]}
                 )
             
             # Extract daily intake if provided in constraints
@@ -603,11 +591,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         except Exception as e:
             logger.error(f"Formulation error: {e}")
             return Command(
-                update={
-                    "messages": [
-                        ToolMessage(f"Error formulating ration: {str(e)}", tool_call_id=tool_call_id)
-                    ]
-                }
+                update={"messages": [ToolMessage(f"Error formulating ration: {str(e)}", tool_call_id=tool_call_id)]}
             )
     
     @tool
@@ -630,11 +614,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             # Validate feedbase name
             if not isinstance(feed_base_name, str) or not feed_base_name.strip():
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: Feedbase name must be a non-empty string", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: Feedbase name must be a non-empty string", tool_call_id=tool_call_id)]}
                 )
             
             if _is_free_tier(config) and not feed_base_name.startswith("default_"):
@@ -644,11 +624,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             user_id = config["configurable"].get("user_id")
             if not user_id:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage("Error: User ID not found in configuration", tool_call_id=tool_call_id)]}
                 )
 
             store = get_store()
@@ -666,11 +642,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
             if not feedbase_entry:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage(f"Feedbase '{feed_base_name}' not found.", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage(f"Feedbase '{feed_base_name}' not found.", tool_call_id=tool_call_id)]}
                 )
 
             feedbase_data = feedbase_entry.value
@@ -679,11 +651,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
             if not feed_database:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage(f"Feedbase '{feed_base_name}' is empty.", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage(f"Feedbase '{feed_base_name}' is empty.", tool_call_id=tool_call_id)]}
                 )
 
             # Format feed information for all feeds
@@ -704,21 +672,13 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 feed_info.append("")
             
             return Command(
-                update={
-                    "messages": [
-                        ToolMessage("\n".join(feed_info), tool_call_id=tool_call_id)
-                    ]
-                }
+                update={"messages": [ToolMessage("\n".join(feed_info), tool_call_id=tool_call_id)]}
             )
             
         except Exception as e:
             logger.error(f"Check feeds error: {e}")
             return Command(
-                update={
-                    "messages": [
-                        ToolMessage(f"Error retrieving feed information: {str(e)}", tool_call_id=tool_call_id)
-                    ]
-                }
+                update={"messages": [ToolMessage(f"Error retrieving feed information: {str(e)}", tool_call_id=tool_call_id)]}
             )
     
     
@@ -734,16 +694,16 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         Export current formulation to Excel with 3-tab layout for better organization.
 
         Creates Excel with 3 sheets:
-        1. 配方结果 (Formulation Results)
+        1. Formulation Results
            - Top: Ingredient table (Name | Amount kg/day | Key Nutrients)
            - Middle: Final nutrition profile summary
            - Bottom: Nutrition profile chart (bar chart)
 
-        2. 配方说明 (LLM Suggestions)
+        2. Formulation Notes
            - Formatted description text from the LLM
            - Formulation rationale and recommendations
 
-        3. 约束条件 (Constraints Used)
+        3. Constraints Used
            - Constraint validation table (pass/fail indicators)
            - Feed constraints table (min/max percentages)
 
@@ -755,6 +715,11 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             Excel file with 3-tab layout focusing on practical feeding information
         """
         try:
+            # Get preferred language and texts
+            preferred_language = config.get("configurable", {}).get("preferred_language", "zh-CN")
+            locale = normalize_locale(preferred_language)
+            texts = EXPORT_TRANSLATIONS.get(locale, EXPORT_TRANSLATIONS["zh-CN"])
+
             # Get all required data from state
             current_formulation = state.get("current_formulation", {})
             formulation_constraints = state.get("formulation_constraints", [])
@@ -766,11 +731,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
             if not current_formulation or current_formulation.get("status") != "success":
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("未找到成功的配方。请先运行配方优化。", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage(texts["error_no_formulation"], tool_call_id=tool_call_id)]}
                 )
 
             # Get feed database from store using state references
@@ -796,11 +757,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
             if not feed_database:
                 return Command(
-                    update={
-                        "messages": [
-                            ToolMessage("未找到饲料数据库。导出可能不包含完整的饲料信息。", tool_call_id=tool_call_id)
-                        ]
-                    }
+                    update={"messages": [ToolMessage(texts["error_no_db"], tool_call_id=tool_call_id)]}
                 )
 
             # Get session workspace path from config
@@ -839,12 +796,12 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 for constraint in formulation_constraints:
                     constraint_type = constraint.get("type", "")
                     result = {
-                        "约束类型": "",
-                        "营养成分": "",
-                        "约束条件": "",
-                        "实际值": "",
-                        "单位": "",
-                        "满足情况": ""
+                        "type": "",
+                        "nutrient": "",
+                        "condition": "",
+                        "actual": "",
+                        "unit": "",
+                        "satisfaction": ""
                     }
                     
                     if constraint_type == "concentration":
@@ -853,24 +810,24 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         max_val = constraint.get("max")
                         achieved = nutrient_analysis.get(nutrient, 0.0)
                         
-                        result["约束类型"] = "浓度约束"
-                        result["营养成分"] = nutrient
-                        result["实际值"] = achieved
-                        result["单位"] = "% DM"
+                        result["type"] = texts["con_concentration"]
+                        result["nutrient"] = nutrient
+                        result["actual"] = achieved
+                        result["unit"] = "% DM"
                         
                         if min_val is not None and max_val is not None:
-                            result["约束条件"] = f"{min_val} - {max_val}"
+                            result["condition"] = f"{min_val} - {max_val}"
                             satisfied = min_val <= achieved <= max_val
                         elif min_val is not None:
-                            result["约束条件"] = f"≥ {min_val}"
+                            result["condition"] = f"≥ {min_val}"
                             satisfied = achieved >= min_val
                         elif max_val is not None:
-                            result["约束条件"] = f"≤ {max_val}"
+                            result["condition"] = f"≤ {max_val}"
                             satisfied = achieved <= max_val
                         else:
                             satisfied = True
                             
-                        result["满足情况"] = "✓ 满足" if satisfied else "✗ 不满足"
+                        result["satisfaction"] = texts["satisfied"] if satisfied else texts["unsatisfied"]
                     
                     elif constraint_type == "daily_total":
                         attribute = constraint.get("attribute")
@@ -878,34 +835,34 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         tolerance_percent = constraint.get("tolerance_percent", 10.0)
                         
                         if attribute == "dmi":
-                            result["约束类型"] = "干物质采食量约束"
-                            result["营养成分"] = "DMI"
-                            result["单位"] = "kg/day"
-                            result["约束条件"] = f"目标: {target} ± {tolerance_percent}%"
-                            result["实际值"] = f"{target} (范围内)"
-                            result["满足情况"] = "✓ 满足"
+                            result["type"] = texts["con_dmi"]
+                            result["nutrient"] = "DMI"
+                            result["unit"] = "kg/day"
+                            result["condition"] = f"{texts['target']}: {target} ± {tolerance_percent}%"
+                            result["actual"] = f"{target} ({texts['range']})"
+                            result["satisfaction"] = texts["satisfied"]
                         else:
                             # Nutrient daily total constraint
-                            result["约束类型"] = "日摄入约束"
-                            result["营养成分"] = attribute
-                            result["单位"] = "日摄入量"
+                            result["type"] = texts["con_daily"]
+                            result["nutrient"] = attribute
+                            result["unit"] = texts["con_daily"] # Daily Intake
                             
                             if daily_intake_kg:
                                 nutrient_percent = nutrient_analysis.get(attribute, 0.0)
                                 achieved = (nutrient_percent / 100) * daily_intake_kg
-                                result["实际值"] = round(achieved, 2)
+                                result["actual"] = round(achieved, 2)
                                 
                                 tolerance_factor = tolerance_percent / 100.0
                                 target_min = target * (1 - tolerance_factor)
                                 target_max = target * (1 + tolerance_factor)
-                                result["约束条件"] = f"目标: {target} ± {tolerance_percent}% ({target_min:.2f} - {target_max:.2f})"
+                                result["condition"] = f"{texts['target']}: {target} ± {tolerance_percent}% ({target_min:.2f} - {target_max:.2f})"
                                 satisfied = target_min <= achieved <= target_max
                             else:
-                                result["实际值"] = "需要日采食量"
-                                result["约束条件"] = "无法计算"
+                                result["actual"] = texts["daily_intake_needed"]
+                                result["condition"] = texts["cannot_calculate"]
                                 satisfied = False
                                 
-                            result["满足情况"] = "✓ 满足" if satisfied else "✗ 不满足"
+                            result["satisfaction"] = texts["satisfied"] if satisfied else texts["unsatisfied"]
                     
                     elif constraint_type == "ratio":
                         numerator = constraint["numerator"]
@@ -913,23 +870,23 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         min_ratio = constraint.get("min")
                         max_ratio = constraint.get("max")
                         
-                        result["约束类型"] = "比例约束"
-                        result["营养成分"] = f"{numerator}:{denominator}"
-                        result["单位"] = "比值"
+                        result["type"] = texts["con_ratio"]
+                        result["nutrient"] = f"{numerator}:{denominator}"
+                        result["unit"] = texts["con_ratio"] # Ratio
                         
                         num_content = nutrient_analysis.get(numerator, 0.0)
                         denom_content = nutrient_analysis.get(denominator, 0.0)
                         
                         if denom_content > 0:
                             achieved = num_content / denom_content
-                            result["实际值"] = round(achieved, 2)
+                            result["actual"] = round(achieved, 2)
                             
                             conditions = []
                             if min_ratio is not None:
                                 conditions.append(f"≥ {min_ratio}")
                             if max_ratio is not None:
                                 conditions.append(f"≤ {max_ratio}")
-                            result["约束条件"] = " & ".join(conditions)
+                            result["condition"] = " & ".join(conditions)
                             
                             satisfied = True
                             if min_ratio is not None and achieved < min_ratio:
@@ -937,11 +894,11 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                             if max_ratio is not None and achieved > max_ratio:
                                 satisfied = False
                         else:
-                            result["实际值"] = "分母为零"
-                            result["约束条件"] = "无法计算"
+                            result["actual"] = texts["denom_zero"]
+                            result["condition"] = texts["cannot_calculate"]
                             satisfied = False
                         
-                        result["满足情况"] = "✓ 满足" if satisfied else "✗ 不满足"
+                        result["satisfaction"] = texts["satisfied"] if satisfied else texts["unsatisfied"]
                     
                     constraint_results.append(result)
                 
@@ -957,20 +914,19 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 tab1_data = []
 
                 # Header
-                tab1_data.append(['配方结果'])
-                tab1_data.append(['导出日期:', datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
-                tab1_data.append(['优化状态:', current_formulation.get('status', 'Unknown')])
-                tab1_data.append(['总成本:', f"{current_formulation.get('cost_per_kg_dm', 'N/A')} 元/公斤干物质"])
+                tab1_data.append([texts["sheet_results"]])
+                tab1_data.append([f"{texts['date']}:", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+                tab1_data.append([f"{texts['status']}:", current_formulation.get('status', 'Unknown')])
+                tab1_data.append([f"{texts['total_cost']}:", f"{current_formulation.get('cost_per_kg_dm', 'N/A')} {texts['cost_unit']}"])
                 if daily_intake_kg:
-                    tab1_data.append(['日干物质采食量:', f"{daily_intake_kg} kg/day"])
+                    tab1_data.append([f"{texts['dmi']}:", f"{daily_intake_kg} kg/day"])
                 tab1_data.append([])
 
                 # Section 1: Ingredient Table with Nutritional Facts
-                tab1_data.append(['饲料配方明细'])
+                tab1_data.append([texts["ingredients"]])
                 tab1_data.append([])  # Empty row for spacing
 
                 # Build header dynamically based on available nutrients
-                ingredient_header = ['饲料名称', '日饲喂量 (kg/day)', '干物质比例 (%)']
                 # Get all unique nutrients from used feeds
                 all_nutrients = set()
                 for feed_name in formulation_feeds.keys():
@@ -979,9 +935,9 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
 
                 # Create two-row header
                 # Row 1: Column names with merged "原料含量 (% DM)" header
-                header_row1 = ['饲料名称', '日饲喂量 (kg/day)', '干物质比例 (%)']
+                header_row1 = [texts["feed_name"], texts["amount"], texts["dm_percent"]]
                 if len(all_nutrients) > 0:
-                    header_row1.append('原料含量 (% DM)')
+                    header_row1.append(texts["nutrients_header"])
                     header_row1.extend([''] * (len(all_nutrients) - 1))
                 tab1_data.append(header_row1)
 
@@ -1011,20 +967,20 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 tab1_data.append([])
 
                 # Section 2: Final Nutrition Profile
-                tab1_data.append(['整体营养成分分析'])
-                tab1_data.append(['营养成分', '含量 (% DM)'])
+                tab1_data.append([texts["nutrition_profile"]])
+                tab1_data.append([texts["nutrient"], texts["content"]])
 
                 for nutrient, value in nutrient_analysis.items():
                     tab1_data.append([nutrient, value])
 
                 # Write Tab 1
                 tab1_df = pd.DataFrame(tab1_data)
-                tab1_df.to_excel(writer, sheet_name='配方结果', index=False, header=False)
+                tab1_df.to_excel(writer, sheet_name=texts["sheet_results"], index=False, header=False)
 
-                # ==================== TAB 2: 配方说明 (LLM Suggestions) ====================
+                # ==================== TAB 2: 配方说明 (Formulation Notes) ====================
                 tab2_data = []
 
-                tab2_data.append(['配方说明'])
+                tab2_data.append([texts["sheet_notes"]])
                 tab2_data.append([])
 
                 # Add description text
@@ -1033,49 +989,49 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                     for line in description.split('\n'):
                         tab2_data.append([line])
                 else:
-                    tab2_data.append(['暂无配方说明'])
+                    tab2_data.append([texts["notes_none"]])
 
                 # Write Tab 2
                 tab2_df = pd.DataFrame(tab2_data)
-                tab2_df.to_excel(writer, sheet_name='配方说明', index=False, header=False)
+                tab2_df.to_excel(writer, sheet_name=texts["sheet_notes"], index=False, header=False)
 
-                # ==================== TAB 3: 约束条件 (Constraints Used) ====================
+                # ==================== TAB 3: 约束条件 (Constraints) ====================
                 tab3_data = []
 
-                tab3_data.append(['约束条件'])
+                tab3_data.append([texts["sheet_constraints"]])
                 tab3_data.append([])
 
                 # Section 1: Nutritional Constraints Validation
-                tab3_data.append(['营养约束验证'])
-                tab3_data.append(['约束类型', '营养成分', '约束条件', '实际值', '单位', '满足情况'])
+                tab3_data.append([texts["constraint_validation"]])
+                tab3_data.append([texts["constraint_type"], texts["nutrient"], texts["condition"], texts["actual"], texts["unit"], texts["satisfaction"]])
 
                 for result in constraint_results:
                     tab3_data.append([
-                        result["约束类型"],
-                        result["营养成分"],
-                        result["约束条件"],
-                        result["实际值"],
-                        result["单位"],
-                        result["满足情况"]
+                        result["type"],
+                        result["nutrient"],
+                        result["condition"],
+                        result["actual"],
+                        result["unit"],
+                        result["satisfaction"]
                     ])
 
                 tab3_data.append([])
 
                 # Section 2: Feed Constraints
-                tab3_data.append(['饲料用量约束'])
+                tab3_data.append([texts["feed_constraints"]])
                 if feed_constraints:
-                    tab3_data.append(['饲料名称', '最小比例 (%)', '最大比例 (%)'])
+                    tab3_data.append([texts["feed_name"], texts["min_percent"], texts["max_percent"]])
                     for feed_name, constraints in feed_constraints.items():
                         sanitized_name = sanitize_feed_name(feed_name)
                         min_val = constraints.get('min', '')
                         max_val = constraints.get('max', '')
                         tab3_data.append([sanitized_name, min_val, max_val])
                 else:
-                    tab3_data.append(['无饲料用量约束'])
+                    tab3_data.append([texts["no_feed_constraints"]])
 
                 # Write Tab 3
                 tab3_df = pd.DataFrame(tab3_data)
-                tab3_df.to_excel(writer, sheet_name='约束条件', index=False, header=False)
+                tab3_df.to_excel(writer, sheet_name=texts["sheet_constraints"], index=False, header=False)
                 
                 # Apply formatting
                 workbook = writer.book
@@ -1095,8 +1051,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 table_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
 
                 # ==================== FORMAT TAB 1: 配方结果 ====================
-                if '配方结果' in workbook.sheetnames:
-                    ws_tab1 = workbook['配方结果']
+                if texts["sheet_results"] in workbook.sheetnames:
+                    ws_tab1 = workbook[texts["sheet_results"]]
 
                     # Auto-adjust column widths
                     for column in ws_tab1.columns:
@@ -1121,19 +1077,19 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         fourth_cell_value = str(ws_tab1.cell(row=row_num, column=4).value or "")
 
                         # Title row
-                        if first_value == "配方结果":
+                        if first_value == texts["sheet_results"]:
                             first_cell.font = title_font
                             first_cell.fill = title_fill
                             ws_tab1.merge_cells(f'A{row_num}:C{row_num}')
 
                         # Section headers
-                        elif first_value in ["饲料配方明细", "整体营养成分分析"]:
+                        elif first_value in [texts["ingredients"], texts["nutrition_profile"]]:
                             first_cell.font = section_font
                             first_cell.fill = section_fill
                             ws_tab1.merge_cells(f'A{row_num}:C{row_num}')
 
                         # Two-row ingredient table header
-                        elif first_value == "饲料名称":
+                        elif first_value == texts["feed_name"]:
                             ingredient_header_row = row_num
                             # Format first row of header (with "原料含量 (% DM)")
                             for col in range(1, 4):  # First 3 columns
@@ -1164,7 +1120,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                                         cell.alignment = Alignment(horizontal="center", wrap_text=True, vertical="center")
 
                         # Regular nutrient analysis table header
-                        elif first_value == "营养成分":
+                        elif first_value == texts["nutrient"]:
                             for col in range(1, ws_tab1.max_column + 1):
                                 cell = ws_tab1.cell(row=row_num, column=col)
                                 if cell.value:
@@ -1179,12 +1135,12 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                     # Add pie chart for nutrition profile (if nutrients exist)
                     if len(nutrient_analysis) > 0:
                         chart = PieChart()
-                        chart.title = "营养成分组成图"
+                        chart.title = texts["chart_title"]
 
                         # Find the nutrition analysis section
                         nutrition_start_row = None
                         for row_num in range(1, ws_tab1.max_row + 1):
-                            if str(ws_tab1.cell(row=row_num, column=1).value) == "整体营养成分分析":
+                            if str(ws_tab1.cell(row=row_num, column=1).value) == texts["nutrition_profile"]:
                                 nutrition_start_row = row_num + 2  # Skip header row
                                 break
 
@@ -1203,8 +1159,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                             ws_tab1.add_chart(chart, chart_position)
 
                 # ==================== FORMAT TAB 2: 配方说明 ====================
-                if '配方说明' in workbook.sheetnames:
-                    ws_tab2 = workbook['配方说明']
+                if texts["sheet_notes"] in workbook.sheetnames:
+                    ws_tab2 = workbook[texts["sheet_notes"]]
 
                     # Set column A to wide for description text
                     ws_tab2.column_dimensions['A'].width = 100
@@ -1221,8 +1177,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                                 cell.alignment = Alignment(wrap_text=True, vertical="top")
 
                 # ==================== FORMAT TAB 3: 约束条件 ====================
-                if '约束条件' in workbook.sheetnames:
-                    ws_tab3 = workbook['约束条件']
+                if texts["sheet_constraints"] in workbook.sheetnames:
+                    ws_tab3 = workbook[texts["sheet_constraints"]]
 
                     # Auto-adjust column widths
                     for column in ws_tab3.columns:
@@ -1243,19 +1199,19 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         first_value = str(first_cell.value or "")
 
                         # Title row
-                        if first_value == "约束条件":
+                        if first_value == texts["sheet_constraints"]:
                             first_cell.font = title_font
                             first_cell.fill = title_fill
                             ws_tab3.merge_cells(f'A{row_num}:C{row_num}')
 
                         # Section headers
-                        elif first_value in ["营养约束验证", "饲料用量约束"]:
+                        elif first_value in [texts["constraint_validation"], texts["feed_constraints"]]:
                             first_cell.font = section_font
                             first_cell.fill = section_fill
                             ws_tab3.merge_cells(f'A{row_num}:C{row_num}')
 
                         # Table headers
-                        elif first_value in ["约束类型", "饲料名称"]:
+                        elif first_value in [texts["constraint_type"], texts["feed_name"]]:
                             for col in range(1, ws_tab3.max_column + 1):
                                 cell = ws_tab3.cell(row=row_num, column=col)
                                 if cell.value:
@@ -1263,42 +1219,37 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                                     cell.fill = header_fill
                                     cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
-                        # Add green/red fill for pass/fail in 满足情况 column
+                        # Add green/red fill for pass/fail in satisfaction column
                         if row_num > 1:
                             for col in range(1, ws_tab3.max_column + 1):
                                 cell = ws_tab3.cell(row=row_num, column=col)
                                 if cell.value:
-                                    if "✓ 满足" in str(cell.value):
+                                    if texts["satisfied"] in str(cell.value):
                                         cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
                                         cell.font = Font(color="006100")
-                                    elif "✗ 不满足" in str(cell.value):
+                                    elif texts["unsatisfied"] in str(cell.value):
                                         cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
                                         cell.font = Font(color="9C0006")
             
             # Format file info for backend parsing
+            # Convert literal \n from LLM to actual newlines
+            normalized_description = description.replace('\\n', '\n') if description else None
+
             file_info = {
                 "filepath": str(filepath),
                 "filename": filename,
                 "type": "excel",
-                "description": description
+                "description": normalized_description
             }
-            
+
             return Command(
-                update={
-                    "messages": [
-                        ToolMessage(f"✅ successfully exported {filename}. [FILE_EXPORT]{json.dumps(file_info, ensure_ascii=False)}[/FILE_EXPORT]", tool_call_id=tool_call_id)
-                    ]
-                }
+                update={"messages": [ToolMessage(texts["export_success"].format(filename=filename) + f" [FILE_EXPORT]{json.dumps(file_info, ensure_ascii=False)}[/FILE_EXPORT]", tool_call_id=tool_call_id)]}
             )
             
         except Exception as e:
             logger.error(f"Export formulation error: {e}")
             return Command(
-                update={
-                    "messages": [
-                        ToolMessage(f"Error exporting formulation: {str(e)}", tool_call_id=tool_call_id)
-                    ]
-                }
+                update={"messages": [ToolMessage(texts["export_fail"].format(error=str(e)), tool_call_id=tool_call_id)]}
             )
 
     return [add_feed, formulate_ration, check_feeds, list_feed_bases, export_formulation]

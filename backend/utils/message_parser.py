@@ -52,7 +52,7 @@ class UnifiedMessageParser:
         # Tool analysis tracking
         self.excel_tools = {"excel_metadata", "excel_query", "read_excel"}
         self.file_tools = {"write_file", "list_directory", "read_file"}
-        self.bash_tools = {"bash_command_for_session"}
+        self.bash_tools = {"bash_command"}
         self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation", "list_feed_bases"}
         self.active_analysis = None  # {"message_id": str, "operations": [], "start_time": float}
         self.active_formulation = None  # {"message_id": str, "operations": [], "start_time": float, "results": {}}
@@ -175,10 +175,68 @@ class UnifiedMessageParser:
 
     def _extract_calculation_result(self, content: str) -> Optional[str]:
         """Extract calculation result from calculator tool output"""
-        # Calculator tool returns "Result: <value>" format
+        # Handle multi-line output with steps (new format)
+        if "\nResult: " in content:
+            # Extract just the final result line for display
+            lines = content.split('\n')
+            for line in reversed(lines):
+                if line.startswith("Result: "):
+                    return line[8:].strip()
+
+        # Handle simple single-line format (legacy)
         if content.startswith("Result: "):
-            return content[8:].strip()  # Remove "Result: " prefix
+            return content[8:].strip()
+
         return None
+
+    def _extract_all_results(self, content: str) -> List[str]:
+        """Extract all results (variables + intermediate + final) from calculator tool output"""
+        all_results = []
+        lines = content.split('\n')
+
+        # Extract from "Calculation Steps:" section (variable assignments with results)
+        in_steps_section = False
+        for line in lines:
+            if line.strip() == "Calculation Steps:":
+                in_steps_section = True
+                continue
+            elif line.strip() in ["", "Variables:", "Intermediate Results:", "Result:"] or line.startswith("Result: "):
+                in_steps_section = False
+
+            if in_steps_section and "=" in line:
+                # Format: "  var_name = value"
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                    all_results.append(parts[1].strip())
+
+        # Extract from "Intermediate Results:" section
+        in_intermediate_section = False
+        for line in lines:
+            if line.strip() == "Intermediate Results:":
+                in_intermediate_section = True
+                continue
+            elif line.strip() == "":
+                # Empty line ends the intermediate section
+                in_intermediate_section = False
+                continue
+            elif line.startswith("Result: "):
+                # Don't process "Result:" line as intermediate result
+                in_intermediate_section = False
+                break
+
+            if in_intermediate_section and line.strip().startswith("["):
+                # Format: "  [1] 150"
+                parts = line.split("] ", 1)
+                if len(parts) == 2:
+                    all_results.append(parts[1].strip())
+
+        # Extract final result
+        for line in reversed(lines):
+            if line.startswith("Result: "):
+                all_results.append(line[8:].strip())
+                break
+
+        return all_results
     
     
     def _get_delegation_role(self, tool_name: str) -> Optional[str]:
@@ -319,7 +377,7 @@ class UnifiedMessageParser:
             )
             
         # Bash tools
-        elif tool_name == "bash_command_for_session":
+        elif tool_name == "bash_command":
             command = tool_args.get("command", "命令")
             # Extract first part of command for description
             cmd_parts = command.strip().split()
@@ -526,16 +584,17 @@ class UnifiedMessageParser:
             # Check if this is a calculator tool result
             if tool_id in self.pending_calculations:
                 expression, call_timestamp = self.pending_calculations.pop(tool_id)
-                result_value = self._extract_calculation_result(message.content)
+                all_results = self._extract_all_results(message.content)
 
-                if result_value:
-                    # Create calculation message
+                if all_results:
+                    # Create calculation message with all results
                     return [create_calculation_message(
                         expression=expression,
-                        result=result_value,
+                        result=all_results[-1],  # Keep for backward compatibility
                         message_id=f"{tool_id}_calc",
                         timestamp=timestamp,
                         preferred_language=self.preferred_language,
+                        all_results=all_results,
                     )]
 
             # First, extract any special data and create events
@@ -814,13 +873,30 @@ class UnifiedMessageParser:
                         timestamp=timestamp
                     ))
                 
+                # Check for calculator tool results BEFORE skipping
+                if tool_id in self.pending_calculations:
+                    expression, call_timestamp = self.pending_calculations.pop(tool_id)
+                    all_results = self._extract_all_results(msg.content)
+
+                    if all_results:
+                        # Create calculation message with all results
+                        result.append(create_calculation_message(
+                            expression=expression,
+                            result=all_results[-1],  # Keep for backward compatibility
+                            message_id=f"{tool_id}_calc",
+                            timestamp=timestamp,
+                            preferred_language=self.preferred_language,
+                            all_results=all_results,
+                        ))
+                    continue
+
                 # Skip tool results for grouped tools completely, but add any extracted events
                 if (self._is_analysis_tool(tool_name) and self.active_analysis) or \
                    (self._is_formulation_tool(tool_name) and self.active_formulation) or \
-                   tool_name in ["create_artifact", "calculate"]:
+                   tool_name in ["create_artifact"]:
                     result.extend(result_for_this_tool)  # Add any file export/artifact events
                     continue  # Skip processing this ToolMessage entirely
-                
+
                 # Check for delegation tool results and handle role transitions
                 if tool_id in self.pending_delegations:
                     tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
@@ -834,22 +910,6 @@ class UnifiedMessageParser:
                     ))
                     continue
 
-                # Check for calculator tool results
-                if tool_id in self.pending_calculations:
-                    expression, call_timestamp = self.pending_calculations.pop(tool_id)
-                    result_value = self._extract_calculation_result(msg.content)
-
-                    if result_value:
-                        # Create calculation message
-                        result.append(create_calculation_message(
-                            expression=expression,
-                            result=result_value,
-                            message_id=f"{tool_id}_calc",
-                            timestamp=timestamp,
-                            preferred_language=self.preferred_language,
-                        ))
-                    continue
-                
                 # Regular tool result - add any extracted events first, then the tool result
                 result.extend(result_for_this_tool)
                 result.append(create_tool_result_message(
@@ -1143,7 +1203,13 @@ class UnifiedMessageParser:
             # Tool call completed
             tool_name = event.get("name", "")
             tool_id = event.get("run_id", f"tool_{int(timestamp * 1000000)}")
-            result_content = str(event["data"].get("output", ""))
+
+            # Extract content from output (handle both ToolMessage objects and strings)
+            output = event["data"].get("output", "")
+            if hasattr(output, 'content'):
+                result_content = str(output.content)
+            else:
+                result_content = str(output)
             
             
             # Check if this is a delegation tool result
@@ -1162,16 +1228,17 @@ class UnifiedMessageParser:
             # Check if this is a calculator tool result
             if tool_id in self.pending_calculations:
                 expression, call_timestamp = self.pending_calculations.pop(tool_id)
-                result_value = self._extract_calculation_result(result_content)
+                all_results = self._extract_all_results(result_content)
 
-                if result_value:
-                    # Create calculation message
+                if all_results:
+                    # Create calculation message with all results
                     return [create_calculation_message(
                         expression=expression,
-                        result=result_value,
+                        result=all_results[-1],  # Keep for backward compatibility
                         message_id=f"{tool_id}_calc",
                         timestamp=timestamp,
                         preferred_language=self.preferred_language,
+                        all_results=all_results,
                     )]
 
             # First, extract any special data and create events

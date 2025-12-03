@@ -17,7 +17,6 @@ import { formatTimestamp } from '@/utils/formatTime'
 import { getRoleInfo, getToolName } from '@/utils/roleMapping'
 import MarkdownMessage from './MarkdownMessage'
 import { useState } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -450,36 +449,21 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                     onClick={(e) => {
                       e.stopPropagation()
                       if (onArtifactOpen) {
-                        // Render markdown to HTML string
-                        const renderedDesc = renderToStaticMarkup(
-                          <MarkdownMessage content={fileExportMeta.description || ''} />
-                        )
+                        // Escape HTML to prevent XSS, but preserve formatting
+                        const escapedDescription = (fileExportMeta.description || '')
+                          .replace(/&/g, '&amp;')
+                          .replace(/</g, '&lt;')
+                          .replace(/>/g, '&gt;')
+                          .replace(/"/g, '&quot;')
+                          .replace(/'/g, '&#039;')
 
                         const htmlContent = `
                           <div style="font-family: system-ui, -apple-system, sans-serif; padding: 24px; line-height: 1.6; color: #374151; max-width: 800px; margin: 0 auto;">
-                            <style>
-                              .markdown-body p { margin-bottom: 1em; }
-                              .markdown-body ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1em; }
-                              .markdown-body ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 1em; }
-                              .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; color: #111827; }
-                              .markdown-body h1 { font-size: 1.5em; }
-                              .markdown-body h2 { font-size: 1.25em; }
-                              .markdown-body strong { font-weight: 600; }
-                              .markdown-body code { background: #f3f4f6; padding: 0.2em 0.4em; border-radius: 0.25em; font-family: monospace; font-size: 0.9em; color: #ef4444; }
-                              .markdown-body pre { background: #f3f4f6; padding: 1em; border-radius: 0.5em; overflow-x: auto; margin-bottom: 1em; }
-                              .markdown-body pre code { background: transparent; padding: 0; color: inherit; }
-                              .markdown-body blockquote { border-left: 4px solid #e5e7eb; padding-left: 1em; color: #6b7280; font-style: italic; margin-bottom: 1em; }
-                              .markdown-body table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
-                              .markdown-body th, .markdown-body td { border: 1px solid #e5e7eb; padding: 0.5em; text-align: left; }
-                              .markdown-body th { background-color: #f9fafb; font-weight: 600; }
-                            </style>
                             <h2 style="color: #059669; margin-bottom: 20px; font-size: 24px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
                               <span>💡</span> ${t('fileExport.recipeSuggestion')}
                             </h2>
                             <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; font-size: 15px;">
-                              <div class="markdown-body">
-                                ${renderedDesc}
-                              </div>
+                              <pre style="white-space: pre-wrap; font-family: inherit; margin: 0; line-height: 1.6;">${escapedDescription}</pre>
                             </div>
                           </div>
                         `
@@ -652,10 +636,20 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
   const renderCalculation = () => {
     const calcMeta = getCalculationMetadata(message)
     const expression = calcMeta?.expression || ''
-    const result = calcMeta?.result || ''
+    const allResults = calcMeta?.all_results || []
     const locale = calcMeta?.preferred_language || 'zh-CN'
     const isEnglish = locale === 'en-US'
     const label = isEnglish ? 'Calculate' : '计算'
+
+    const expressions = expression.split('\n').filter(e => e.trim())
+
+    // Debug: log what we received
+    console.log('Calculation debug:', { expressions, allResults })
+
+    // Only render if we have matching results for all expressions
+    if (allResults.length !== expressions.length) {
+      return null
+    }
 
     return (
       <div className="flex justify-start items-start gap-2">
@@ -665,10 +659,17 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
         <Card className="max-w-[80%] min-w-0 overflow-hidden bg-blue-50 border-blue-200">
           <CardContent className="p-2">
             <div className="font-mono text-sm">
-              <div className="text-gray-600 text-xs mb-1">{label}: {expression}</div>
-              <div className="flex items-center gap-1.5">
-                <CornerDownRight className="h-3 w-3 text-blue-600 flex-shrink-0" />
-                <span className="font-semibold text-blue-900">{result}</span>
+              <div className="text-gray-600 text-xs mb-2">{label}:</div>
+              <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                {expressions.map((expr, idx) => (
+                  <div key={idx} className="flex items-start justify-between gap-3 text-xs">
+                    <span className="text-gray-700 font-mono text-left">{expr}</span>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <span className="text-blue-500">→</span>
+                      <span className="font-semibold text-blue-900 font-mono">{allResults[idx]}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </CardContent>

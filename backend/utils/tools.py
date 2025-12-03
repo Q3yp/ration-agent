@@ -317,26 +317,30 @@ async def create_artifact(
 @tool
 def calculate(expression: str) -> str:
     """
-    Safely evaluate mathematical expressions and perform calculations.
+    Evaluate mathematical expressions safely. Supports single expressions and multi-line chained equations with variables.
 
-    This tool can handle:
-    - Basic arithmetic operations: +, -, *, /, ** (power), % (modulo), // (floor division)
-    - Mathematical functions: sqrt, sin, cos, tan, asin, acos, atan, log, log10, exp, abs, round, ceil, floor
-    - Constants: pi, e
-    - Statistical functions: sum, min, max
-    - Multi-line calculations with variable assignments
+    Supported operations: +, -, *, /, ** (power), % (modulo), // (floor division)
+    Functions: sqrt, sin, cos, tan, log, log10, exp, abs, round, ceil, floor, sum, min, max
+    Constants: pi, e
 
-    Examples:
-    - Simple calculation: "2 + 2 * 3"
-    - With functions: "sqrt(16) + log(100)"
-    - Multi-line with variables: "x = 5\\ny = 10\\nresult = x * y\\nresult"
-    - Percentage calculations: "(45 / 100) * 250"
-    - Statistical: "sum([1, 2, 3, 4, 5])"
+    Single expression:
+    "2 + 2 * 3"
+    "sqrt(16) + log(100)"
 
-    Returns:
-    - The calculated result as a string, or an error message if evaluation fails
+    Multiple standalone expressions (use \\n for line breaks, NO comments):
+    "100 + 50\\n100 - 50\\n100 * 2"
+    Shows intermediate results [1], [2], ... and final result
 
-    Note: This tool uses safe evaluation via AST parsing and does not execute arbitrary code.
+    Chained equations with variables (use \\n for line breaks, NO comments):
+    "x = 5\\ny = 10\\nx * y"
+    "price = 100\\ntax_rate = 0.08\\ntax = price * tax_rate\\nprice + tax"
+
+    IMPORTANT:
+    - NO comments allowed in expressions (do not use # or //)
+    - Variables persist across lines within the same calculation
+    - Multiple expressions show all intermediate results
+    - Final result is always the last line evaluated
+    - Full output with all steps shown in tool result
     """
     try:
         # Define allowed operations for safe evaluation
@@ -440,12 +444,27 @@ def calculate(expression: str) -> str:
             def generic_visit(self, node):
                 raise ValueError(f"Node type {type(node).__name__} not allowed")
 
+        # Helper function to format numbers
+        def format_number(value):
+            """Format a number for display"""
+            if isinstance(value, float):
+                if abs(value) < 1e-10:
+                    return "0"
+                elif abs(value) > 1e10 or abs(value) < 1e-4:
+                    return f"{value:.6e}"
+                else:
+                    return f"{value:.6f}".rstrip('0').rstrip('.')
+            else:
+                return str(value)
+
         # Handle multi-line expressions with assignments
         lines = expression.strip().split('\n')
         variables = {}
         result = None
+        steps = []  # Track intermediate steps
+        results = []  # Track all expression results (non-assignments)
 
-        for line in lines:
+        for line_num, line in enumerate(lines, 1):
             line = line.strip()
             if not line:
                 continue
@@ -458,42 +477,71 @@ def calculate(expression: str) -> str:
 
                 # Validate variable name
                 if not var_name.isidentifier():
-                    return f"Error: Invalid variable name '{var_name}'"
+                    return f"Error: Invalid variable name '{var_name}' on line {line_num}"
 
                 # Parse and evaluate the expression
                 tree = ast.parse(expr, mode='eval')
                 calculator = SafeCalculator(variables)
                 result = calculator.visit(tree)
                 variables[var_name] = result
+
+                # Track step
+                formatted_value = format_number(result) if isinstance(result, (int, float)) else str(result)
+                steps.append(f"{var_name} = {formatted_value}")
             else:
-                # Regular expression
+                # Regular expression (not an assignment)
                 tree = ast.parse(line, mode='eval')
                 calculator = SafeCalculator(variables)
                 result = calculator.visit(tree)
+                results.append(result)
 
-        # Format the result
-        if result is None:
+        # Format the output
+        output_lines = []
+
+        # Show intermediate variable assignments if there are any
+        if steps:
+            output_lines.append("Calculation Steps:")
+            for step in steps:
+                output_lines.append(f"  {step}")
+            output_lines.append("")
+
+        # Show all variable values if there are variables
+        if variables:
+            output_lines.append("Variables:")
+            for var_name, var_value in variables.items():
+                formatted_value = format_number(var_value) if isinstance(var_value, (int, float)) else str(var_value)
+                output_lines.append(f"  {var_name} = {formatted_value}")
+            output_lines.append("")
+
+        # Show intermediate expression results if there are multiple
+        if len(results) > 1:
+            output_lines.append("Intermediate Results:")
+            for i, res in enumerate(results[:-1], 1):  # All except last
+                formatted = format_number(res) if isinstance(res, (int, float)) else str(res)
+                output_lines.append(f"  [{i}] {formatted}")
+            output_lines.append("")
+
+        # Determine final result
+        # Priority: last non-assignment result > last variable value > last assignment
+        if results:
+            # Use the last expression result
+            final_result = results[-1]
+        elif result is not None:
+            # Use the last computed value
+            final_result = result
+        else:
             return "Error: No result to return"
 
-        # Handle different result types
-        if isinstance(result, (int, float)):
-            # Format numbers nicely
-            if isinstance(result, float):
-                # Round to reasonable precision
-                if abs(result) < 1e-10:
-                    formatted_result = "0"
-                elif abs(result) > 1e10 or abs(result) < 1e-4:
-                    formatted_result = f"{result:.6e}"
-                else:
-                    formatted_result = f"{result:.6f}".rstrip('0').rstrip('.')
-            else:
-                formatted_result = str(result)
-
-            return f"Result: {formatted_result}"
-        elif isinstance(result, (list, tuple)):
-            return f"Result: {result}"
+        # Format final result
+        if isinstance(final_result, (int, float)):
+            formatted_result = format_number(final_result)
+            output_lines.append(f"Result: {formatted_result}")
+        elif isinstance(final_result, (list, tuple)):
+            output_lines.append(f"Result: {final_result}")
         else:
-            return f"Result: {result}"
+            output_lines.append(f"Result: {final_result}")
+
+        return "\n".join(output_lines)
 
     except SyntaxError as e:
         return f"Syntax Error: Invalid expression - {str(e)}"

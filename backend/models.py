@@ -405,6 +405,7 @@ def create_calculation_message(
     message_id: str,
     timestamp: float,
     preferred_language: str = "zh-CN",
+    all_results: Optional[List[str]] = None,
 ) -> ParsedMessage:
     """Calculator tool result (formula -> result)"""
     locale = normalize_locale(preferred_language)
@@ -413,16 +414,21 @@ def create_calculation_message(
     else:
         content = f"计算: {expression}"
 
+    metadata = {
+        "expression": expression,
+        "result": result,  # Keep for backward compatibility
+        "preferred_language": locale,
+    }
+
+    if all_results:
+        metadata["all_results"] = all_results
+
     return ParsedMessage(
         id=message_id,
         type="calculation",
         content=content,
         timestamp=timestamp,
-        metadata={
-            "expression": expression,
-            "result": result,
-            "preferred_language": locale,
-        }
+        metadata=metadata
     )
 
 
