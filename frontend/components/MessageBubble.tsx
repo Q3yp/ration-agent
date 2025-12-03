@@ -1,6 +1,6 @@
 'use client'
 
-import { Message, ArtifactData, getArtifactMetadata, getRoleTransitionMetadata, getToolMetadata, getFileExportMetadata, getAnalysisMetadata, getFormulationMetadata } from '@/types/chat'
+import { Message, ArtifactData, getArtifactMetadata, getRoleTransitionMetadata, getToolMetadata, getFileExportMetadata, getAnalysisMetadata, getFormulationMetadata, getCalculationMetadata } from '@/types/chat'
 import {
   Settings,
   CheckCircle,
@@ -9,17 +9,20 @@ import {
   ChevronDown,
   User,
   File,
-  CornerDownRight
+  CornerDownRight,
+  Calculator
 } from 'lucide-react'
 import Image from 'next/image'
 import { formatTimestamp } from '@/utils/formatTime'
 import { getRoleInfo, getToolName } from '@/utils/roleMapping'
 import MarkdownMessage from './MarkdownMessage'
 import { useState } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/contexts/I18nContext'
 
 interface MessageBubbleProps {
   message: Message
@@ -30,6 +33,7 @@ interface MessageBubbleProps {
 
 export default function MessageBubble({ message, onArtifactOpen, onFileDownload, sessionId }: MessageBubbleProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const { t } = useI18n()
 
   // Parse file upload tags from user message content
   const parseFileUploads = (content: string) => {
@@ -59,7 +63,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                   <div className="flex items-center gap-2 mb-2">
                     <File className="h-4 w-4 text-blue-600" />
                     <span className="text-sm font-medium text-blue-600">
-                      文件上传 ({fileUploads.length} 个)
+                      {t('fileUpload.fileUploaded')} ({t('fileUpload.filesCount', { count: fileUploads.length })})
                     </span>
                   </div>
                   <div className="space-y-1">
@@ -317,7 +321,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                   <div className="absolute -inset-1 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full opacity-70 blur-sm"></div>
                   <div className="relative bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg">
                     <span className="flex items-center gap-2">
-                      ✨ 查看动态内容
+                      {t('artifact.viewDynamicContent')}
                     </span>
                   </div>
                 </div>
@@ -337,7 +341,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2 text-gray-500">
                   <div className="w-2 h-2 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full"></div>
-                  HTML 动态内容
+                  {t('artifact.htmlDynamicContent')}
                 </div>
                 <div className="text-gray-400 bg-white/20 px-2 py-1 rounded-full backdrop-blur-sm border border-white/20">
                   {formatTimestamp(message.timestamp)}
@@ -430,14 +434,14 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                   <div className="absolute -inset-1 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full opacity-70 blur-sm"></div>
                   <div className="relative bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg">
                     <span className="flex items-center gap-2">
-                      ✨ 下载配方报告
+                      {t('fileExport.downloadRecipe')}
                     </span>
                   </div>
                 </div>
 
                 {/* File Type Badge */}
                 <div className="mt-2 inline-block bg-white/20 backdrop-blur-sm border border-white/30 px-3 py-1 rounded-full text-xs font-medium text-gray-600">
-                  {fileExportMeta.file_type?.toUpperCase()} 格式
+                  {t('fileExport.format', { type: fileExportMeta.file_type?.toUpperCase() || '' })}
                 </div>
 
                 {/* Description Button */}
@@ -446,24 +450,49 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                     onClick={(e) => {
                       e.stopPropagation()
                       if (onArtifactOpen) {
+                        // Render markdown to HTML string
+                        const renderedDesc = renderToStaticMarkup(
+                          <MarkdownMessage content={fileExportMeta.description || ''} />
+                        )
+
                         const htmlContent = `
                           <div style="font-family: system-ui, -apple-system, sans-serif; padding: 24px; line-height: 1.6; color: #374151; max-width: 800px; margin: 0 auto;">
+                            <style>
+                              .markdown-body p { margin-bottom: 1em; }
+                              .markdown-body ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1em; }
+                              .markdown-body ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 1em; }
+                              .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; color: #111827; }
+                              .markdown-body h1 { font-size: 1.5em; }
+                              .markdown-body h2 { font-size: 1.25em; }
+                              .markdown-body strong { font-weight: 600; }
+                              .markdown-body code { background: #f3f4f6; padding: 0.2em 0.4em; border-radius: 0.25em; font-family: monospace; font-size: 0.9em; color: #ef4444; }
+                              .markdown-body pre { background: #f3f4f6; padding: 1em; border-radius: 0.5em; overflow-x: auto; margin-bottom: 1em; }
+                              .markdown-body pre code { background: transparent; padding: 0; color: inherit; }
+                              .markdown-body blockquote { border-left: 4px solid #e5e7eb; padding-left: 1em; color: #6b7280; font-style: italic; margin-bottom: 1em; }
+                              .markdown-body table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
+                              .markdown-body th, .markdown-body td { border: 1px solid #e5e7eb; padding: 0.5em; text-align: left; }
+                              .markdown-body th { background-color: #f9fafb; font-weight: 600; }
+                            </style>
                             <h2 style="color: #059669; margin-bottom: 20px; font-size: 24px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                              <span>💡</span> 配方建议
+                              <span>💡</span> ${t('fileExport.recipeSuggestion')}
                             </h2>
-                            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; white-space: pre-wrap; font-size: 15px;">${fileExportMeta.description}</div>
+                            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; font-size: 15px;">
+                              <div class="markdown-body">
+                                ${renderedDesc}
+                              </div>
+                            </div>
                           </div>
                         `
                         onArtifactOpen({
-                          title: `配方建议 - ${fileExportMeta.filename}`,
-                          description: 'AI 营养师的配方分析与建议',
+                          title: `${t('artifact.recipeSuggestionPrefix')}${fileExportMeta.filename}`,
+                          description: t('artifact.recipeAnalysisTitle'),
                           html_content: htmlContent
                         })
                       }
                     }}
                     className="mt-3 w-full bg-white/30 hover:bg-white/40 backdrop-blur-md border border-white/40 p-2.5 rounded-xl text-sm text-emerald-900 font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:scale-[0.98]"
                   >
-                    <span>💡 查看配方建议</span>
+                    <span>{t('artifact.viewSuggestion')}</span>
                   </div>
                 )}
               </div>
@@ -475,7 +504,7 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2 text-gray-500">
                   <div className="w-2 h-2 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full"></div>
-                  准备下载
+                  {t('fileExport.readyDownload')}
                 </div>
                 <div className="text-gray-400 bg-white/20 px-2 py-1 rounded-full backdrop-blur-sm border border-white/20">
                   {formatTimestamp(message.timestamp)}
@@ -620,6 +649,34 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
     )
   }
 
+  const renderCalculation = () => {
+    const calcMeta = getCalculationMetadata(message)
+    const expression = calcMeta?.expression || ''
+    const result = calcMeta?.result || ''
+    const locale = calcMeta?.preferred_language || 'zh-CN'
+    const isEnglish = locale === 'en-US'
+    const label = isEnglish ? 'Calculate' : '计算'
+
+    return (
+      <div className="flex justify-start items-start gap-2">
+        <div className="w-8 h-8 flex items-center justify-center">
+          <Calculator className="h-4 w-4 text-blue-600" />
+        </div>
+        <Card className="max-w-[80%] min-w-0 overflow-hidden bg-blue-50 border-blue-200">
+          <CardContent className="p-2">
+            <div className="font-mono text-sm">
+              <div className="text-gray-600 text-xs mb-1">{label}: {expression}</div>
+              <div className="flex items-center gap-1.5">
+                <CornerDownRight className="h-3 w-3 text-blue-600 flex-shrink-0" />
+                <span className="font-semibold text-blue-900">{result}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   // Route to appropriate renderer based on message type
   switch (message.type) {
     case 'user':
@@ -644,6 +701,8 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
     case 'formulation_update':
     case 'formulation_complete':
       return renderFormulation()
+    case 'calculation':
+      return renderCalculation()
     default:
       // Unknown message type fallback
       return (

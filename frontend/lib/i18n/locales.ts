@@ -186,6 +186,9 @@ export const translations: Record<Locale, TranslationTree> = {
       uploading: '上传中...',
       attachFile: '附加文件',
       removeFile: '移除文件',
+      fileUploaded: '文件上传',
+      filesCount: '{{count}} 个',
+      fileTypesHint: '.txt, .py, .js, .json, .csv, .md, .html, .css, .xml, .yaml, .xlsx (最大 10MB)',
     },
     animalTypes: {
       selectTitle: '选择动物类型',
@@ -239,10 +242,25 @@ export const translations: Record<Locale, TranslationTree> = {
       success: '反馈提交成功',
       error: '提交反馈失败',
     },
+    artifact: {
+      viewDynamicContent: '✨ 查看动态内容',
+      htmlDynamicContent: 'HTML 动态内容',
+      viewSuggestion: '💡 查看建议',
+      defaultTitle: 'HTML 内容',
+      recipeSuggestionPrefix: '建议 - ',
+      recipeAnalysisTitle: 'AI 营养师分析与建议',
+      suggestionTitle: '💡 配方建议',
+    },
+    fileExport: {
+      downloadRecipe: '✨ 下载报告',
+      format: '{{type}} 格式',
+      readyDownload: '准备下载',
+      recipeSuggestion: '配方建议',
+    },
   },
   'en-US': {
     common: {
-      appName: 'Huitu Nutrition Copilot',
+      appName: 'Wuitu Nutrition Copilot',
       welcomeGeneric: 'Welcome',
       welcomeUser: 'Welcome, {{name}}',
       buttons: {
@@ -418,6 +436,9 @@ export const translations: Record<Locale, TranslationTree> = {
       uploading: 'Uploading...',
       attachFile: 'Attach File',
       removeFile: 'Remove File',
+      fileUploaded: 'File Upload',
+      filesCount: '{{count}} file(s)',
+      fileTypesHint: '.txt, .py, .js, .json, .csv, .md, .html, .css, .xml, .yaml, .xlsx (Max 10MB)',
     },
     animalTypes: {
       selectTitle: 'Choose animal type',
@@ -470,6 +491,21 @@ export const translations: Record<Locale, TranslationTree> = {
       submit: 'Submit',
       success: 'Feedback submitted successfully',
       error: 'Failed to submit feedback',
+    },
+    artifact: {
+      viewDynamicContent: '✨ View Dynamic Content',
+      htmlDynamicContent: 'HTML Dynamic Content',
+      viewSuggestion: '💡 View Suggestion',
+      defaultTitle: 'HTML Artifact',
+      recipeSuggestionPrefix: 'Suggestion - ',
+      recipeAnalysisTitle: 'AI Nutritionist Analysis & Suggestion',
+      suggestionTitle: '💡 Recipe Suggestion',
+    },
+    fileExport: {
+      downloadRecipe: '✨ Download Report',
+      format: '{{type}} Format',
+      readyDownload: 'Ready to Download',
+      recipeSuggestion: 'Recipe Suggestion',
     },
   },
 }

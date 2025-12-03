@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
+import { useI18n } from '@/contexts/I18nContext';
 
 interface HtmlArtifactProps {
   title?: string;
@@ -12,9 +13,12 @@ interface HtmlArtifactProps {
   onClose?: () => void;
 }
 
-export default function HtmlArtifact({ title = "HTML Artifact", description, htmlContent, onClose }: HtmlArtifactProps) {
+export default function HtmlArtifact({ title, description, htmlContent, onClose }: HtmlArtifactProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const { t } = useI18n();
+
+  const displayTitle = title || t('artifact.defaultTitle');
 
   useEffect(() => {
     if (iframeRef.current && htmlContent) {
@@ -41,7 +45,7 @@ export default function HtmlArtifact({ title = "HTML Artifact", description, htm
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <CardTitle className="text-lg font-semibold text-gray-900">
-              {title}
+              {displayTitle}
             </CardTitle>
             {description && (
               <p className="text-sm text-gray-600 mt-1">{description}</p>
@@ -85,7 +89,7 @@ export default function HtmlArtifact({ title = "HTML Artifact", description, htm
             ref={iframeRef}
             className="w-full h-full border-0"
             sandbox="allow-scripts allow-same-origin allow-forms"
-            title={title}
+            title={displayTitle}
           />
         </div>
       </CardContent>

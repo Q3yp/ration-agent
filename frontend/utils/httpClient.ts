@@ -22,7 +22,7 @@ class HttpClient {
 
   constructor(options: HttpClientOptions = {}) {
     this.baseUrl = options.baseUrl || ''
-    this.timeout = options.timeout || 30000
+    this.timeout = options.timeout || 300000
     this.onUnauthorized = options.onUnauthorized || this.defaultUnauthorizedHandler
   }
 

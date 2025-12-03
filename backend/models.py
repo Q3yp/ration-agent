@@ -104,7 +104,8 @@ MessageType = Literal[
     "analysis_complete", # Final Excel analysis summary
     "formulation_start", # Start of feed formulation block
     "formulation_update", # Live update to feed formulation
-    "formulation_complete" # Final feed formulation summary
+    "formulation_complete", # Final feed formulation summary
+    "calculation"     # Calculator tool result (formula -> result)
 ]
 
 class ParsedMessage(BaseModel):
@@ -394,6 +395,32 @@ def create_formulation_complete_message(
             "operations": operations or [],
             "formulation_results": formulation_results or {},
             "completed": True,
+            "preferred_language": locale,
+        }
+    )
+
+def create_calculation_message(
+    expression: str,
+    result: str,
+    message_id: str,
+    timestamp: float,
+    preferred_language: str = "zh-CN",
+) -> ParsedMessage:
+    """Calculator tool result (formula -> result)"""
+    locale = normalize_locale(preferred_language)
+    if locale == "en-US":
+        content = f"Calculate: {expression}"
+    else:
+        content = f"计算: {expression}"
+
+    return ParsedMessage(
+        id=message_id,
+        type="calculation",
+        content=content,
+        timestamp=timestamp,
+        metadata={
+            "expression": expression,
+            "result": result,
             "preferred_language": locale,
         }
     )

@@ -3,6 +3,9 @@ import subprocess
 import uuid
 import json
 import shlex
+import ast
+import operator
+import math
 from pathlib import Path
 from typing import Optional, List, Annotated
 from datetime import datetime
@@ -311,6 +314,196 @@ async def create_artifact(
         return f"❌ Error creating HTML artifact: {str(e)}"
 
 
+@tool
+def calculate(expression: str) -> str:
+    """
+    Safely evaluate mathematical expressions and perform calculations.
+
+    This tool can handle:
+    - Basic arithmetic operations: +, -, *, /, ** (power), % (modulo), // (floor division)
+    - Mathematical functions: sqrt, sin, cos, tan, asin, acos, atan, log, log10, exp, abs, round, ceil, floor
+    - Constants: pi, e
+    - Statistical functions: sum, min, max
+    - Multi-line calculations with variable assignments
+
+    Examples:
+    - Simple calculation: "2 + 2 * 3"
+    - With functions: "sqrt(16) + log(100)"
+    - Multi-line with variables: "x = 5\\ny = 10\\nresult = x * y\\nresult"
+    - Percentage calculations: "(45 / 100) * 250"
+    - Statistical: "sum([1, 2, 3, 4, 5])"
+
+    Returns:
+    - The calculated result as a string, or an error message if evaluation fails
+
+    Note: This tool uses safe evaluation via AST parsing and does not execute arbitrary code.
+    """
+    try:
+        # Define allowed operations for safe evaluation
+        allowed_operators = {
+            ast.Add: operator.add,
+            ast.Sub: operator.sub,
+            ast.Mult: operator.mul,
+            ast.Div: operator.truediv,
+            ast.FloorDiv: operator.floordiv,
+            ast.Mod: operator.mod,
+            ast.Pow: operator.pow,
+            ast.USub: operator.neg,
+            ast.UAdd: operator.pos,
+        }
+
+        # Define allowed functions
+        allowed_functions = {
+            'sqrt': math.sqrt,
+            'sin': math.sin,
+            'cos': math.cos,
+            'tan': math.tan,
+            'asin': math.asin,
+            'acos': math.acos,
+            'atan': math.atan,
+            'log': math.log,
+            'log10': math.log10,
+            'exp': math.exp,
+            'abs': abs,
+            'round': round,
+            'ceil': math.ceil,
+            'floor': math.floor,
+            'sum': sum,
+            'min': min,
+            'max': max,
+            'len': len,
+        }
+
+        # Define allowed constants
+        allowed_names = {
+            'pi': math.pi,
+            'e': math.e,
+        }
+
+        class SafeCalculator(ast.NodeVisitor):
+            """AST visitor for safe mathematical expression evaluation"""
+
+            def __init__(self, variables=None):
+                self.variables = variables or {}
+
+            def visit_Expression(self, node):
+                return self.visit(node.body)
+
+            def visit_Constant(self, node):
+                return node.value
+
+            def visit_Num(self, node):  # For Python < 3.8 compatibility
+                return node.n
+
+            def visit_BinOp(self, node):
+                left = self.visit(node.left)
+                right = self.visit(node.right)
+                op_type = type(node.op)
+                if op_type not in allowed_operators:
+                    raise ValueError(f"Operator {op_type.__name__} not allowed")
+                return allowed_operators[op_type](left, right)
+
+            def visit_UnaryOp(self, node):
+                operand = self.visit(node.operand)
+                op_type = type(node.op)
+                if op_type not in allowed_operators:
+                    raise ValueError(f"Unary operator {op_type.__name__} not allowed")
+                return allowed_operators[op_type](operand)
+
+            def visit_Call(self, node):
+                if not isinstance(node.func, ast.Name):
+                    raise ValueError("Only simple function calls are allowed")
+
+                func_name = node.func.id
+                if func_name not in allowed_functions:
+                    raise ValueError(f"Function '{func_name}' not allowed")
+
+                args = [self.visit(arg) for arg in node.args]
+                return allowed_functions[func_name](*args)
+
+            def visit_Name(self, node):
+                name = node.id
+                # Check variables first, then allowed constants
+                if name in self.variables:
+                    return self.variables[name]
+                elif name in allowed_names:
+                    return allowed_names[name]
+                else:
+                    raise ValueError(f"Name '{name}' is not defined")
+
+            def visit_List(self, node):
+                return [self.visit(item) for item in node.elts]
+
+            def visit_Tuple(self, node):
+                return tuple(self.visit(item) for item in node.elts)
+
+            def generic_visit(self, node):
+                raise ValueError(f"Node type {type(node).__name__} not allowed")
+
+        # Handle multi-line expressions with assignments
+        lines = expression.strip().split('\n')
+        variables = {}
+        result = None
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Check if this is an assignment
+            if '=' in line and not any(op in line.split('=')[0] for op in ['==', '!=', '<=', '>=']):
+                parts = line.split('=', 1)
+                var_name = parts[0].strip()
+                expr = parts[1].strip()
+
+                # Validate variable name
+                if not var_name.isidentifier():
+                    return f"Error: Invalid variable name '{var_name}'"
+
+                # Parse and evaluate the expression
+                tree = ast.parse(expr, mode='eval')
+                calculator = SafeCalculator(variables)
+                result = calculator.visit(tree)
+                variables[var_name] = result
+            else:
+                # Regular expression
+                tree = ast.parse(line, mode='eval')
+                calculator = SafeCalculator(variables)
+                result = calculator.visit(tree)
+
+        # Format the result
+        if result is None:
+            return "Error: No result to return"
+
+        # Handle different result types
+        if isinstance(result, (int, float)):
+            # Format numbers nicely
+            if isinstance(result, float):
+                # Round to reasonable precision
+                if abs(result) < 1e-10:
+                    formatted_result = "0"
+                elif abs(result) > 1e10 or abs(result) < 1e-4:
+                    formatted_result = f"{result:.6e}"
+                else:
+                    formatted_result = f"{result:.6f}".rstrip('0').rstrip('.')
+            else:
+                formatted_result = str(result)
+
+            return f"Result: {formatted_result}"
+        elif isinstance(result, (list, tuple)):
+            return f"Result: {result}"
+        else:
+            return f"Result: {result}"
+
+    except SyntaxError as e:
+        return f"Syntax Error: Invalid expression - {str(e)}"
+    except ValueError as e:
+        return f"Error: {str(e)}"
+    except ZeroDivisionError:
+        return "Error: Division by zero"
+    except Exception as e:
+        logger.error(f"Calculator error: {e}")
+        return f"Calculation Error: {str(e)}"
 
 
 def get_file_management_tools():
@@ -540,7 +733,7 @@ async def get_nutritionist_tools(animal_type: str = "dairy_cow"):
     """Get nutritionist-specific tools"""
     # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
     formulation_tools = create_formulation_tools(animal_type)
-    return formulation_tools + get_usda_tools()
+    return formulation_tools + get_usda_tools() + [calculate]
 
 async def get_coder_tools(animal_type: str = "dairy_cow"):
     """Get all available tools for a session (code worker tools)."""

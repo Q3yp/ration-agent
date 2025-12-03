@@ -9,9 +9,9 @@ import json
 from typing import List, Dict, Any, Optional, Tuple
 from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, ToolMessage, SystemMessage
 from models import (
-    ParsedMessage, 
+    ParsedMessage,
     create_user_message,
-    create_agent_message, 
+    create_agent_message,
     create_tool_call_message,
     create_tool_result_message,
     create_role_transition_message,
@@ -22,7 +22,8 @@ from models import (
     create_analysis_complete_message,
     create_formulation_start_message,
     create_formulation_update_message,
-    create_formulation_complete_message
+    create_formulation_complete_message,
+    create_calculation_message
 )
 from utils.language import normalize_locale
 
@@ -44,6 +45,7 @@ class UnifiedMessageParser:
             "transfer_back_to_nutritionist"
         }
         self.pending_delegations = {}  # tool_id -> (tool_name, tool_args, timestamp)
+        self.pending_calculations = {}  # tool_id -> (expression, timestamp)
         self.agent_message_counter = 0
         self.current_agent_message_id = None
 
@@ -68,6 +70,7 @@ class UnifiedMessageParser:
     def reset_state(self):
         """Reset parser state - call this before parsing history to avoid state carryover"""
         self.pending_delegations = {}
+        self.pending_calculations = {}
         self.agent_message_counter = 0
         self.current_agent_message_id = None
         self.active_analysis = None
@@ -138,25 +141,25 @@ class UnifiedMessageParser:
         # Simple string extraction instead of regex
         start_tag = '[FILE_EXPORT]'
         end_tag = '[/FILE_EXPORT]'
-        
+
         start_idx = content.find(start_tag)
         if start_idx == -1:
             return None
-            
+
         end_idx = content.find(end_tag)
         if end_idx == -1:
             return None
-        
+
         # Extract JSON content between tags
         json_start = start_idx + len(start_tag)
         file_json = content[json_start:end_idx].strip()
-        
+
         if not file_json:
             return None
-        
+
         try:
             file_data = json.loads(file_json)
-            
+
             if file_data.get('filepath') and file_data.get('filename'):
                 return {
                     'filepath': file_data['filepath'],
@@ -164,10 +167,17 @@ class UnifiedMessageParser:
                     'file_type': file_data.get('type', 'unknown'),
                     'description': file_data.get('description')
                 }
-                
+
         except (json.JSONDecodeError, AttributeError):
             pass
-        
+
+        return None
+
+    def _extract_calculation_result(self, content: str) -> Optional[str]:
+        """Extract calculation result from calculator tool output"""
+        # Calculator tool returns "Result: <value>" format
+        if content.startswith("Result: "):
+            return content[8:].strip()  # Remove "Result: " prefix
         return None
     
     
@@ -472,6 +482,10 @@ class UnifiedMessageParser:
                     if tool_name in self.delegation_tools:
                         # Store delegation for later combination with result
                         self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
+                    elif tool_name == "calculate":
+                        # Store calculator expression for later combination with result
+                        expression = tool_args.get('expression', '')
+                        self.pending_calculations[tool_id] = (expression, timestamp)
                     elif tool_name == "create_artifact":
                         # Create artifact message directly from tool args
                         result.append(create_artifact_message(
@@ -495,12 +509,12 @@ class UnifiedMessageParser:
         
         elif isinstance(message, ToolMessage):
             tool_id = getattr(message, 'tool_call_id', msg_id)
-            
+
             # Check if this is a delegation tool result
             if tool_id in self.pending_delegations:
                 tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
                 to_role = self._get_delegation_role(tool_name)
-                
+
                 # Create single role transition bubble
                 return [create_role_transition_message(
                     to_role=to_role,
@@ -508,7 +522,22 @@ class UnifiedMessageParser:
                     timestamp=timestamp,
                     preferred_language=self.preferred_language,
                 )]
-            
+
+            # Check if this is a calculator tool result
+            if tool_id in self.pending_calculations:
+                expression, call_timestamp = self.pending_calculations.pop(tool_id)
+                result_value = self._extract_calculation_result(message.content)
+
+                if result_value:
+                    # Create calculation message
+                    return [create_calculation_message(
+                        expression=expression,
+                        result=result_value,
+                        message_id=f"{tool_id}_calc",
+                        timestamp=timestamp,
+                        preferred_language=self.preferred_language,
+                    )]
+
             # First, extract any special data and create events
             result = []
             tool_name = getattr(message, 'name', message.additional_kwargs.get('tool_name', 'unknown'))
@@ -537,9 +566,9 @@ class UnifiedMessageParser:
                     timestamp=timestamp
                 ))
             
-            # Then decide whether to include the raw tool result message  
-            if tool_name in ["create_artifact"]:
-                # Don't include raw tool result for artifact tools (already handled above)
+            # Then decide whether to include the raw tool result message
+            if tool_name in ["create_artifact", "calculate"]:
+                # Don't include raw tool result for these tools (already handled above as special messages)
                 return result
             else:
                 # Include the tool result message for other tools
@@ -622,9 +651,23 @@ class UnifiedMessageParser:
                             ))
                             self.active_analysis = None
                         
-                        # Check if we should end current formulation (non-formulation tool starting) 
-                        if self._is_formulation_tool(tool_name):
-                            # Continue formulation - don't end it
+                        # Check if we should end current formulation (non-formulation tool starting)
+                        # export_formulation is the final step, so it should end the formulation
+                        if tool_name == "export_formulation" and self.active_formulation:
+                            # End formulation when export starts
+                            summary = self._create_formulation_summary()
+                            result.append(create_formulation_complete_message(
+                                summary=summary,
+                                message_id=self.active_formulation["message_id"],
+                                timestamp=timestamp,
+                                operations_count=len(self.active_formulation["operations"]),
+                                operations=self.active_formulation["operations"],
+                                formulation_results=self.active_formulation.get("results", {}),
+                                preferred_language=self.preferred_language,
+                            ))
+                            self.active_formulation = None
+                        elif self._is_formulation_tool(tool_name):
+                            # Continue formulation for other formulation tools
                             pass
                         elif self.active_formulation:
                             # End formulation when switching to non-formulation tool
@@ -679,6 +722,11 @@ class UnifiedMessageParser:
                         # Handle delegation tools (store for later combination)
                         if tool_name in self.delegation_tools:
                             self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
+                            continue
+                        elif tool_name == "calculate":
+                            # Store calculator expression for later combination with result
+                            expression = tool_args.get('expression', '')
+                            self.pending_calculations[tool_id] = (expression, timestamp)
                             continue
                         elif tool_name == "create_artifact":
                             # Create artifact message directly
@@ -769,7 +817,7 @@ class UnifiedMessageParser:
                 # Skip tool results for grouped tools completely, but add any extracted events
                 if (self._is_analysis_tool(tool_name) and self.active_analysis) or \
                    (self._is_formulation_tool(tool_name) and self.active_formulation) or \
-                   tool_name in ["create_artifact"]:
+                   tool_name in ["create_artifact", "calculate"]:
                     result.extend(result_for_this_tool)  # Add any file export/artifact events
                     continue  # Skip processing this ToolMessage entirely
                 
@@ -777,13 +825,29 @@ class UnifiedMessageParser:
                 if tool_id in self.pending_delegations:
                     tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
                     to_role = self._get_delegation_role(tool_name)
-                    
+
                     result.append(create_role_transition_message(
                         to_role=to_role,
                         message_id=f"{tool_id}_transition",
                         timestamp=timestamp,
                         preferred_language=self.preferred_language,
                     ))
+                    continue
+
+                # Check for calculator tool results
+                if tool_id in self.pending_calculations:
+                    expression, call_timestamp = self.pending_calculations.pop(tool_id)
+                    result_value = self._extract_calculation_result(msg.content)
+
+                    if result_value:
+                        # Create calculation message
+                        result.append(create_calculation_message(
+                            expression=expression,
+                            result=result_value,
+                            message_id=f"{tool_id}_calc",
+                            timestamp=timestamp,
+                            preferred_language=self.preferred_language,
+                        ))
                     continue
                 
                 # Regular tool result - add any extracted events first, then the tool result
@@ -949,8 +1013,22 @@ class UnifiedMessageParser:
                 self.active_analysis = None
                 
             # Check if we should end current formulation (non-formulation tool starting)
-            if self._is_formulation_tool(tool_name):
-                # Continue formulation - don't end it
+            # export_formulation is the final step, so it should end the formulation
+            if tool_name == "export_formulation" and self.active_formulation:
+                # End formulation when export starts
+                summary = self._create_formulation_summary()
+                result.append(create_formulation_complete_message(
+                    summary=summary,
+                    message_id=self.active_formulation["message_id"],
+                    timestamp=timestamp,
+                    operations_count=len(self.active_formulation["operations"]),
+                    operations=self.active_formulation["operations"],
+                    formulation_results=self.active_formulation.get("results", {}),
+                    preferred_language=self.preferred_language,
+                ))
+                self.active_formulation = None
+            elif self._is_formulation_tool(tool_name):
+                # Continue formulation for other formulation tools
                 pass
             elif self.active_formulation:
                 # End formulation when switching to non-formulation tool
@@ -1032,6 +1110,11 @@ class UnifiedMessageParser:
                 # Store delegation for later combination
                 self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
                 return result  # Return any analysis events but don't add tool call
+            elif tool_name == "calculate":
+                # Store calculator expression for later combination with result
+                expression = tool_args.get('expression', '')
+                self.pending_calculations[tool_id] = (expression, timestamp)
+                return result  # Don't send tool call event
             elif tool_name == "create_artifact":
                 # Create artifact message directly from tool args
                 result.append(create_artifact_message(
@@ -1067,7 +1150,7 @@ class UnifiedMessageParser:
             if tool_id in self.pending_delegations:
                 tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
                 to_role = self._get_delegation_role(tool_name)
-                
+
                 # Create single role transition bubble
                 return [create_role_transition_message(
                     to_role=to_role,
@@ -1075,7 +1158,22 @@ class UnifiedMessageParser:
                     timestamp=timestamp,
                     preferred_language=self.preferred_language,
                 )]
-            
+
+            # Check if this is a calculator tool result
+            if tool_id in self.pending_calculations:
+                expression, call_timestamp = self.pending_calculations.pop(tool_id)
+                result_value = self._extract_calculation_result(result_content)
+
+                if result_value:
+                    # Create calculation message
+                    return [create_calculation_message(
+                        expression=expression,
+                        result=result_value,
+                        message_id=f"{tool_id}_calc",
+                        timestamp=timestamp,
+                        preferred_language=self.preferred_language,
+                    )]
+
             # First, extract any special data and create events
             result = []
             
@@ -1106,8 +1204,8 @@ class UnifiedMessageParser:
             # Then decide whether to include the raw tool result message
             current_tool_type = self._is_analysis_tool(tool_name)
             is_formulation_tool = self._is_formulation_tool(tool_name)
-            if tool_name in ["create_artifact", "export_formulation"] or current_tool_type or is_formulation_tool:
-                # Don't include raw tool result for these tools (handled by analysis/formulation updates)
+            if tool_name in ["create_artifact", "export_formulation", "calculate"] or current_tool_type or is_formulation_tool:
+                # Don't include raw tool result for these tools (handled by analysis/formulation/calculation updates)
                 return result
             else:
                 # Include the tool result message for other tools

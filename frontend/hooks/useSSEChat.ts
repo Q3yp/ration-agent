@@ -287,29 +287,40 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
       // Create EventSource-like reader for the stream
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
+      
+      let buffer = ''
+      let currentEventType = 'message'
+      let currentEventData = ''
 
       try {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
 
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n')
-
-          let eventType = 'message'
-          let eventData = ''
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          
+          // Keep the last line in the buffer as it might be incomplete
+          buffer = lines.pop() || ''
 
           for (const line of lines) {
-            if (line.startsWith('event:')) {
-              eventType = line.slice(6).trim()
-            } else if (line.startsWith('data:')) {
-              eventData = line.slice(5).trim()
-            } else if (line === '' && eventData) {
-              // End of event, process it
-              const mockEvent = { data: eventData } as MessageEvent
-              handleSSEMessage(mockEvent, eventType)
-              eventType = 'message'
-              eventData = ''
+            const trimmedLine = line.trim()
+            
+            if (trimmedLine.startsWith('event:')) {
+              currentEventType = trimmedLine.slice(6).trim()
+            } else if (trimmedLine.startsWith('data:')) {
+              // Handle multi-line data if needed, though typically it's one line in this app
+              // Standard SSE concatenates multiple data lines with \n
+              const dataContent = trimmedLine.slice(5).trim()
+              currentEventData = currentEventData ? `${currentEventData}\n${dataContent}` : dataContent
+            } else if (trimmedLine === '' && currentEventData) {
+              // End of event (empty line), process it
+              const mockEvent = { data: currentEventData } as MessageEvent
+              handleSSEMessage(mockEvent, currentEventType)
+              
+              // Reset state for next event
+              currentEventType = 'message'
+              currentEventData = ''
             }
           }
         }

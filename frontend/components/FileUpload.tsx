@@ -190,7 +190,7 @@ export default function FileUpload({ sessionId, endpoint = '/api', onFileUploade
         />
         
         <div className="text-xs text-muted-foreground">
-          .txt, .py, .js, .json, .csv, .md, .html, .css, .xml, .yaml, .xlsx (最大 10MB)
+          {t('fileUpload.fileTypesHint')}
         </div>
       </div>
 

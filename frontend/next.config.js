@@ -7,6 +7,10 @@ const nextConfig = {
   // Enable standalone output for Docker deployment
   output: 'standalone',
   
+  experimental: {
+    proxyTimeout: 300000,
+  },
+
   webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,

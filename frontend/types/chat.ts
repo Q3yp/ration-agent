@@ -1,4 +1,4 @@
-export type MessageType = 
+export type MessageType =
   | 'user'           // User input message
   | 'agent'          // Agent response content (streamable)
   | 'tool_call'      // Tool execution indicator
@@ -12,6 +12,7 @@ export type MessageType =
   | 'formulation_start' // Start of feed formulation block
   | 'formulation_update' // Live update to feed formulation
   | 'formulation_complete' // Final feed formulation summary
+  | 'calculation'    // Calculator tool result (formula -> result)
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -96,6 +97,14 @@ export function getFormulationMetadata(message: Message) {
     operations?: string[]
     formulation_results?: any
     completed?: boolean
+  } | undefined
+}
+
+export function getCalculationMetadata(message: Message) {
+  return message.metadata as {
+    expression?: string
+    result?: string
+    preferred_language?: string
   } | undefined
 }
 
