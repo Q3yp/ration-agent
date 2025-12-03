@@ -380,7 +380,7 @@ export default function ConversationSidebar({
           <AlertDialogHeader>
             <AlertDialogTitle>{t('sidebar.deleteConfirm')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('sidebar.deleteDescription') || 'This action cannot be undone. This will permanently delete this conversation.'}
+              {t('sidebar.deleteDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -398,7 +398,7 @@ export default function ConversationSidebar({
           <AlertDialogHeader>
             <AlertDialogTitle>{t('sidebar.deleteAllConfirm')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('sidebar.deleteAllDescription') || 'This action cannot be undone. This will permanently delete all your conversations.'}
+              {t('sidebar.deleteAllDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

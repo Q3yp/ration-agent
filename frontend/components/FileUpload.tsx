@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { X, File, Loader2, Paperclip, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getAuthHeaders } from '@/utils/authHeaders'
+import { useI18n } from '@/contexts/I18nContext'
 
 interface FileUploadProps {
   sessionId: string
@@ -23,6 +24,7 @@ export default function FileUpload({ sessionId, endpoint = '/api', onFileUploade
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { t } = useI18n()
 
   // Notify parent component when files change
   useEffect(() => {
@@ -173,7 +175,7 @@ export default function FileUpload({ sessionId, endpoint = '/api', onFileUploade
           className="flex items-center gap-2"
         >
           <Paperclip className="h-4 w-4" />
-          {uploading ? '上传中...' : '附加文件'}
+          {uploading ? t('fileUpload.uploading') : t('fileUpload.attachFile')}
           {uploading && <Loader2 className="h-3 w-3 animate-spin" />}
         </Button>
         
@@ -218,7 +220,7 @@ export default function FileUpload({ sessionId, endpoint = '/api', onFileUploade
                 size="sm"
                 onClick={() => removeFile(file.name)}
                 className="h-4 w-4 p-0 hover:bg-destructive/20 rounded-full"
-                title="移除文件"
+                title={t('fileUpload.removeFile')}
               >
                 <X className="h-3 w-3" />
               </Button>

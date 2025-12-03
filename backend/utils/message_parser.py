@@ -1089,6 +1089,7 @@ class UnifiedMessageParser:
                     message_id=f"{tool_id}_export",
                     timestamp=timestamp,
                     preferred_language=self.preferred_language,
+                    description=file_export_data.get('description'),
                 ))
             
             # Check for legacy artifact data and create artifact event

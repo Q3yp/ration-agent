@@ -1081,6 +1081,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 workbook = writer.book
                 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
                 from openpyxl.chart import PieChart, Reference
+                from openpyxl.utils import get_column_letter
 
                 # Define common styles
                 title_font = Font(bold=True, size=16, color="FFFFFF")
@@ -1147,7 +1148,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                                 nutrient_names_row = row_num + 1
                                 # Merge "原料含量 (% DM)" across all nutrient columns
                                 if ws_tab1.max_column > 3:
-                                    ws_tab1.merge_cells(f'D{row_num}:{chr(64 + ws_tab1.max_column)}{row_num}')
+                                    last_col_letter = get_column_letter(ws_tab1.max_column)
+                                    ws_tab1.merge_cells(f'D{row_num}:{last_col_letter}{row_num}')
                                     merged_cell = ws_tab1.cell(row=row_num, column=4)
                                     merged_cell.font = header_font
                                     merged_cell.fill = header_fill

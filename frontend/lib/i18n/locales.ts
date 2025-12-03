@@ -178,7 +178,14 @@ export const translations: Record<Locale, TranslationTree> = {
       newChat: '新建对话',
       deleteAll: '清空',
       deleteConfirm: '您确定要删除这个对话吗？',
+      deleteDescription: '此操作无法撤销，将永久删除此对话。',
       deleteAllConfirm: '您确定要删除所有对话吗？这个操作不可恢复。',
+      deleteAllDescription: '此操作无法撤销，将永久删除您的所有对话。',
+    },
+    fileUpload: {
+      uploading: '上传中...',
+      attachFile: '附加文件',
+      removeFile: '移除文件',
     },
     animalTypes: {
       selectTitle: '选择动物类型',
@@ -403,7 +410,14 @@ export const translations: Record<Locale, TranslationTree> = {
       newChat: 'New chat',
       deleteAll: 'Clear',
       deleteConfirm: 'Delete this conversation?',
+      deleteDescription: 'This action cannot be undone. This will permanently delete this conversation.',
       deleteAllConfirm: 'Delete all conversations? This cannot be undone.',
+      deleteAllDescription: 'This action cannot be undone. This will permanently delete all your conversations.',
+    },
+    fileUpload: {
+      uploading: 'Uploading...',
+      attachFile: 'Attach File',
+      removeFile: 'Remove File',
     },
     animalTypes: {
       selectTitle: 'Choose animal type',
