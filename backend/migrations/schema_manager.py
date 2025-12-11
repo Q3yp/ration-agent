@@ -68,6 +68,11 @@ class SchemaManager:
             # 9. Data migrations (metadata updates)
             await self._migrate_session_metadata(conn)
             
+            # 10. Ensure LangGraph tables exist (checkpointer + store)
+            # Doing this manually avoids potential hangs in LangGraph's setup() method
+            await self._ensure_langgraph_checkpointer_tables(conn)
+            await self._ensure_langgraph_store_tables(conn)
+            
         await self.engine.dispose()
         logger.info("Schema update completed successfully.")
 
@@ -98,6 +103,12 @@ class SchemaManager:
     async def _ensure_user_sessions_table(self, conn):
         """Create user_sessions table if it doesn't exist"""
         logger.info("Checking user_sessions table...")
+        
+        # Check if users table exists first (FK dependency)
+        if not await self._table_exists(conn, 'users'):
+            logger.warning("users table does not exist yet, cannot create user_sessions (FK dependency)")
+            return
+        
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS user_sessions (
                 session_id VARCHAR(255) PRIMARY KEY,
@@ -119,6 +130,12 @@ class SchemaManager:
     async def _ensure_sms_verifications_table(self, conn):
         """Create sms_verifications table"""
         logger.info("Checking sms_verifications table...")
+        
+        # Check if users table exists first (FK dependency)
+        if not await self._table_exists(conn, 'users'):
+            logger.warning("users table does not exist yet, cannot create sms_verifications (FK dependency)")
+            return
+        
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS sms_verifications (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -138,6 +155,12 @@ class SchemaManager:
     async def _ensure_feedbacks_table(self, conn):
         """Create feedbacks table"""
         logger.info("Checking feedbacks table...")
+        
+        # Check if users table exists first (FK dependency)
+        if not await self._table_exists(conn, 'users'):
+            logger.warning("users table does not exist yet, cannot create feedbacks (FK dependency)")
+            return
+        
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS feedbacks (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -154,6 +177,11 @@ class SchemaManager:
     async def _update_users_table(self, conn):
         """Apply updates to users table"""
         logger.info("Updating users table schema...")
+        
+        # Check if users table exists first
+        if not await self._table_exists(conn, 'users'):
+            logger.warning("users table does not exist yet, skipping column updates")
+            return
         
         # allowed_animal_types
         if not await self._column_exists(conn, 'users', 'allowed_animal_types'):
@@ -205,6 +233,11 @@ class SchemaManager:
         """Apply updates to user_sessions table"""
         logger.info("Updating user_sessions table schema...")
         
+        # Check if user_sessions table exists first
+        if not await self._table_exists(conn, 'user_sessions'):
+            logger.warning("user_sessions table does not exist yet, skipping column updates")
+            return
+        
         # deleted (already in create, but check to be safe)
         if not await self._column_exists(conn, 'user_sessions', 'deleted'):
             await conn.execute(text("ALTER TABLE user_sessions ADD COLUMN deleted BOOLEAN NOT NULL DEFAULT FALSE"))
@@ -219,6 +252,11 @@ class SchemaManager:
         """Apply updates to oauth_account table"""
         logger.info("Updating oauth_account table schema...")
         
+        # Only run ALTER if table exists (might not exist on fresh database)
+        if not await self._table_exists(conn, 'oauth_account'):
+            logger.info("oauth_account table does not exist yet, skipping column updates")
+            return
+        
         # Expand tokens to TEXT
         # We can't easily check type in a cross-db way without complex queries, 
         # but ALTER COLUMN TYPE is safe if compatible.
@@ -230,6 +268,11 @@ class SchemaManager:
 
     async def _ensure_admin_user(self, conn):
         """Create default admin user if none exists"""
+        # Check if users table exists first
+        if not await self._table_exists(conn, 'users'):
+            logger.warning("users table does not exist yet, skipping admin user creation")
+            return
+            
         result = await conn.execute(text("SELECT COUNT(*) FROM users WHERE is_superuser = TRUE"))
         if result.scalar() == 0:
             logger.info("Creating default admin user...")
@@ -261,6 +304,11 @@ class SchemaManager:
         """Update session metadata defaults"""
         logger.info("Migrating session metadata...")
         
+        # Check if user_sessions table exists first
+        if not await self._table_exists(conn, 'user_sessions'):
+            logger.warning("user_sessions table does not exist yet, skipping metadata migration")
+            return
+        
         # animal_type default
         await conn.execute(text("""
             UPDATE user_sessions
@@ -278,6 +326,129 @@ class SchemaManager:
             )
             WHERE metadata IS NULL OR NOT (metadata ? 'token_stats')
         """))
+
+    async def _ensure_langgraph_checkpointer_tables(self, conn):
+        """Create LangGraph checkpointer tables to avoid setup() hangs
+        
+        These tables are normally created by AsyncPostgresSaver.setup() but 
+        doing it manually ensures reliable startup without potential freezes.
+        Based on langgraph.checkpoint.postgres.base MIGRATIONS.
+        """
+        logger.info("Ensuring LangGraph checkpointer tables exist...")
+        
+        # Migration tracking table
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS checkpoint_migrations (
+                v INTEGER PRIMARY KEY
+            );
+        """))
+        
+        # Main checkpoints table
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS checkpoints (
+                thread_id TEXT NOT NULL,
+                checkpoint_ns TEXT NOT NULL DEFAULT '',
+                checkpoint_id TEXT NOT NULL,
+                parent_checkpoint_id TEXT,
+                type TEXT,
+                checkpoint JSONB NOT NULL,
+                metadata JSONB NOT NULL DEFAULT '{}',
+                PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
+            );
+        """))
+        
+        # Checkpoint blobs for channel data
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS checkpoint_blobs (
+                thread_id TEXT NOT NULL,
+                checkpoint_ns TEXT NOT NULL DEFAULT '',
+                channel TEXT NOT NULL,
+                version TEXT NOT NULL,
+                type TEXT NOT NULL,
+                blob BYTEA,
+                PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
+            );
+        """))
+        
+        # Checkpoint writes for task execution
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS checkpoint_writes (
+                thread_id TEXT NOT NULL,
+                checkpoint_ns TEXT NOT NULL DEFAULT '',
+                checkpoint_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                idx INTEGER NOT NULL,
+                channel TEXT NOT NULL,
+                type TEXT,
+                blob BYTEA NOT NULL,
+                task_path TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+            );
+        """))
+        
+        # Indexes for performance
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS checkpoints_thread_id_idx ON checkpoints(thread_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS checkpoint_blobs_thread_id_idx ON checkpoint_blobs(thread_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS checkpoint_writes_thread_id_idx ON checkpoint_writes(thread_id);"))
+        
+        # Record migration versions if not already recorded
+        for v in range(10):  # Current migrations count
+            await conn.execute(text("""
+                INSERT INTO checkpoint_migrations (v) VALUES (:v)
+                ON CONFLICT (v) DO NOTHING
+            """), {"v": v})
+        
+        logger.info("✓ LangGraph checkpointer tables ready")
+
+    async def _ensure_langgraph_store_tables(self, conn):
+        """Create LangGraph store tables to avoid setup() hangs
+        
+        These tables are normally created by AsyncPostgresStore.setup() but 
+        doing it manually ensures reliable startup without potential freezes.
+        Based on langgraph.store.postgres schema.
+        """
+        logger.info("Ensuring LangGraph store tables exist...")
+        
+        # Store migrations table
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS store_migrations (
+                v INTEGER PRIMARY KEY
+            );
+        """))
+        
+        # Main store table for key-value storage
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS store (
+                prefix TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value JSONB NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMPTZ,
+                ttl_minutes INTEGER,
+                PRIMARY KEY (prefix, key)
+            );
+        """))
+        
+        # Indexes for store
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS store_prefix_idx ON store(prefix);"))
+        
+        # Record migration versions
+        for v in range(3):  # Current store migrations count
+            await conn.execute(text("""
+                INSERT INTO store_migrations (v) VALUES (:v)
+                ON CONFLICT (v) DO NOTHING
+            """), {"v": v})
+        
+        logger.info("✓ LangGraph store tables ready")
+
+    async def _table_exists(self, conn, table_name):
+        """Check if a table exists"""
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_name = :table
+        """), {"table": table_name})
+        return result.scalar() is not None
 
     async def _column_exists(self, conn, table_name, column_name):
         """Check if a column exists"""

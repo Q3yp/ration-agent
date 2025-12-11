@@ -8,15 +8,17 @@ from dataclasses import dataclass, field
 from psycopg_pool import AsyncConnectionPool
 from core.agent import cleanup_agent_session
 from utils.message_parser import UnifiedMessageParser
+
+# Set tiktoken cache directory BEFORE importing tiktoken to use bundled encoding files
+os.environ.setdefault("TIKTOKEN_CACHE_DIR", str(Path(__file__).parent.parent / "tiktoken_cache"))
 import tiktoken
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize tiktoken encoder for token counting - MUST succeed
+# Initialize tiktoken encoder for token counting using local cache
 TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
-logger.info("Tiktoken encoder initialized successfully in session manager")
 
 MAX_SESSION_PROMPT_TOKENS = 50_000
 

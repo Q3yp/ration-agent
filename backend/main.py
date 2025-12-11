@@ -1,8 +1,13 @@
+import os
+from pathlib import Path
+
+# Set tiktoken cache directory BEFORE importing tiktoken to use bundled encoding files
+os.environ["TIKTOKEN_CACHE_DIR"] = str(Path(__file__).parent / "tiktoken_cache")
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-import tiktoken
 
 from api.routes import router
 from auth.routes import auth_router
@@ -37,8 +42,7 @@ class HealthCheckFilter(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
-# Initialize tiktoken encoder at app startup
-TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
+# Tiktoken encoder is lazily initialized in session_manager.py using bundled cache
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
