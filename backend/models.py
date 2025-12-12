@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, AliasChoices
 from enum import Enum
 import uuid
-from utils.language import normalize_locale
+from utils.language import normalize_locale, t
 
 
 class AnimalType(str, Enum):
@@ -166,10 +166,7 @@ def create_tool_call_message(
 ) -> ParsedMessage:
     """Tool execution indicator"""
     locale = normalize_locale(preferred_language)
-    if locale == "en-US":
-        content = f"Executing {tool_name}"
-    else:
-        content = f"正在执行 {tool_name}"
+    content = t("tool.executing", locale, tool_name=tool_name)
 
     return ParsedMessage(
         id=tool_id,
@@ -201,22 +198,11 @@ def create_role_transition_message(
 ) -> ParsedMessage:
     """Simple bubble for agent handoffs"""
     locale = normalize_locale(preferred_language)
-    if locale == "en-US":
-        role_messages = {
-            "researcher": "🔬 Delegating to researcher",
-            "coder": "💻 Delegating to coder",
-            "nutritionist": "🥛 Returning to nutritionist"
-        }
-        default_message = f"Transitioning to {to_role}"
-    else:
-        role_messages = {
-            "researcher": "🔬 正在切换到研究专员",
-            "coder": "💻 正在切换到代码专员",
-            "nutritionist": "🥛 返回营养师"
-        }
-        default_message = f"切换到 {to_role}"
-
-    transition_message = role_messages.get(to_role, default_message)
+    role_key = f"role.{to_role}"
+    transition_message = t(role_key, locale)
+    # If key not found (returns the key itself), use default transition
+    if transition_message == role_key:
+        transition_message = t("role.transition", locale, role=to_role)
     
     return ParsedMessage(
         id=message_id,
@@ -240,12 +226,8 @@ def create_file_export_message(
 ) -> ParsedMessage:
     """File export with download capability"""
     locale = normalize_locale(preferred_language)
-    if locale == "en-US":
-        content = f"📊 {filename} ready for download"
-        status_label = "Ready to download"
-    else:
-        content = f"📊 {filename} 已准备好下载"
-        status_label = "准备下载"
+    content = f"📊 {t('file.ready_download', locale, filename=filename)}"
+    status_label = t("file.status_ready", locale)
 
     return ParsedMessage(
         id=message_id,
@@ -270,10 +252,9 @@ def create_analysis_start_message(
 ) -> ParsedMessage:
     """Start of analysis status block"""
     locale = normalize_locale(preferred_language)
-    if locale == "en-US":
-        content = f"{analysis_type}: Initializing..."
-    else:
-        content = f"{analysis_type}: 正在初始化..."
+    # Use simple format with "Initializing..." suffix
+    init_text = "Initializing..." if locale == "en-US" else "正在初始化..."
+    content = f"{analysis_type}: {init_text}"
 
     return ParsedMessage(
         id=message_id,
@@ -344,10 +325,8 @@ def create_formulation_start_message(
 ) -> ParsedMessage:
     """Start of feed formulation block"""
     locale = normalize_locale(preferred_language)
-    if locale == "en-US":
-        content = f"{formulation_type}: Initializing..."
-    else:
-        content = f"{formulation_type}: 正在初始化..."
+    init_text = "Initializing..." if locale == "en-US" else "正在初始化..."
+    content = f"{formulation_type}: {init_text}"
 
     return ParsedMessage(
         id=message_id,
@@ -409,10 +388,7 @@ def create_calculation_message(
 ) -> ParsedMessage:
     """Calculator tool result (formula -> result)"""
     locale = normalize_locale(preferred_language)
-    if locale == "en-US":
-        content = f"Calculate: {expression}"
-    else:
-        content = f"计算: {expression}"
+    content = t("calc.expression", locale, expression=expression)
 
     metadata = {
         "expression": expression,

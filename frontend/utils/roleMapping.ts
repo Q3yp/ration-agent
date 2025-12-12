@@ -26,7 +26,7 @@ export const roleMapping: Record<string, RoleInfo> = {
       borderColor: '#93c5fd'
     }
   },
-  'researcher': { 
+  'researcher': {
     name: '搜索专员',
     transitionMessage: '开始搜索和研究',
     icon: Search,
@@ -109,35 +109,41 @@ export const toolNameMapping: Record<string, string> = {
   'bash_command_for_session': '执行命令',
   'create_artifact': '创建可视化',
   'artifact_tool': '创建可视化',
-  
+
   // File management
   'write_file': '写入文件',
   'list_directory': '列出目录',
-  
+
   // Excel tools
   'excel_metadata': 'Excel元数据',
   'excel_query': 'Excel查询',
   'read_excel': '读取Excel',
   'read_excel_file': '读取Excel文件',
-  'write_excel_file': '写入Excel文件', 
+  'write_excel_file': '写入Excel文件',
   'analyze_excel_data': '分析Excel数据',
-  
+
   // Search tools
   'duckduckgo_search': '网页搜索',
   'duckduckgo_news_search': '新闻搜索',
   'search_knowledge_base': '知识库搜索',
   'research_topic_comprehensive': '综合研究',
   'search_and_crawl': '搜索抓取',
-  
+
   // Web crawling
   'crawl_website': '网页抓取',
   'crawl_multiple_urls': '批量抓取',
-  
+
   // Formulation tools
   'add_feed': '添加饲料',
   'check_feeds': '检查饲料',
   'formulate_ration': '配方制作',
-  
+  'export_formulation': '导出配方',
+  'list_feed_bases': '饲料库列表',
+
+  // NASEM tools
+  'calculate_dairy_requirements': '计算营养需求',
+  'evaluate_diet_with_nasem': '评估日粮',
+
   // Fallback
   'unknown': '未知工具'
 }

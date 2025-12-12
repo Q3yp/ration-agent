@@ -44,6 +44,11 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL}
       
+      # Embedding Model (for semantic feed search)
+      - EMBEDDING_ENDPOINT=${EMBEDDING_ENDPOINT:-https://openrouter.ai/api/v1}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      
       # Agent-specific Models
       - NUTRITIONIST_MODEL=${NUTRITIONIST_MODEL}
       - RESEARCHER_MODEL=${RESEARCHER_MODEL}

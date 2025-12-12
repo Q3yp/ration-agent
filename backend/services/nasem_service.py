@@ -51,8 +51,10 @@ class NASEMService:
             feed_keys: Optional list of feed keys to include. If None, includes all.
         
         Returns:
-            DataFrame in NASEM feed library format
+            DataFrame in NASEM feed library format with all required columns
         """
+        from nasem_dairy.model.input_definitions import FeedLibrarySchema
+        
         feeds = feedbase.get("feeds", {})
         if not feeds:
             raise ValueError("Empty feedbase provided")
@@ -78,6 +80,17 @@ class NASEMService:
             raise ValueError(f"No matching feeds found for keys: {feed_keys}")
         
         df = pd.DataFrame(rows)
+        
+        # Ensure all required columns from FeedLibrarySchema exist
+        # Add missing columns with appropriate default values
+        for col, col_type in FeedLibrarySchema.items():
+            if col not in df.columns:
+                if col_type == str:
+                    df[col] = ""
+                else:  # float or int
+                    df[col] = 0
+        
+        # Fill NaN values in numeric columns
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         df[numeric_cols] = df[numeric_cols].fillna(0)
         return df

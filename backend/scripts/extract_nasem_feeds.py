@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Extract NASEM 2021 Feed Library and convert to ration-agent feedbase format.
+Also generates embeddings for semantic search.
 
 The NASEM feed data is from the CNM-University-of-Guelph/NASEM-Model-Python project
 which is MIT licensed.
@@ -9,14 +10,21 @@ This script extracts ALL NASEM nutrient columns to ensure full compatibility
 with the NASEM model calculations.
 
 Usage:
-    python scripts/extract_nasem_feeds.py [--validate] [--output FILENAME]
+    python scripts/extract_nasem_feeds.py [--validate] [--output FILENAME] [--all] [--embeddings]
 """
 
+import asyncio
 import csv
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
+
+import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Metadata columns (not nutrients but needed for feed identification)
 METADATA_COLUMNS = ["Fd_Libr", "UID", "Fd_Index", "Fd_Name", "Fd_Category", "Fd_Type", "Fd_Locked"]
@@ -115,14 +123,15 @@ def extract_all_nasem_nutrients(row: dict) -> dict:
     """Extract ALL nutrient columns from a NASEM feed row.
     
     This preserves NASEM column names exactly for full model compatibility.
+    Missing/NaN values are stored as 0 to ensure all required columns exist.
     """
     nutrients = {}
     for col, value in row.items():
         # Skip metadata columns
         if col in METADATA_COLUMNS:
             continue
-        # Try to convert to float
-        float_val = safe_float(value)
+        # Convert to float, using 0 for missing/NaN values
+        float_val = safe_float(value, default=0.0)
         if float_val is not None:
             nutrients[col] = round(float_val, 6)  # Keep precision
     return nutrients
@@ -215,12 +224,114 @@ def load_csv(filepath: Path) -> list[dict]:
         return list(reader)
 
 
+def create_feed_text(feed_name: str, feed_data: dict) -> str:
+    """Create searchable text from feed data for embedding."""
+    parts = []
+    
+    # Add the human-readable NASEM name
+    nasem_name = feed_data.get("nasem_name", "")
+    if nasem_name:
+        parts.append(nasem_name)
+    
+    # Add category
+    category = feed_data.get("category", "")
+    if category:
+        parts.append(category)
+    
+    # Add type (Forage/Concentrate)
+    feed_type = feed_data.get("type", "")
+    if feed_type:
+        parts.append(feed_type)
+    
+    # Add the internal name (with underscores replaced by spaces)
+    parts.append(feed_name.replace("_", " "))
+    
+    return " - ".join(parts)
+
+
+async def generate_embeddings_batch(texts: list[str], client: httpx.AsyncClient) -> list[list[float]]:
+    """Generate embeddings for multiple texts in a single API call."""
+    model = os.getenv("EMBEDDING_MODEL", "openai/text-embedding-3-small")
+    endpoint = os.getenv("EMBEDDING_ENDPOINT", "https://openrouter.ai/api/v1")
+    api_key = os.getenv("EMBEDDING_API_KEY")
+    
+    if not api_key:
+        raise ValueError("EMBEDDING_API_KEY not set in environment")
+    
+    url = f"{endpoint}/embeddings"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model,
+        "input": texts  # Batch input
+    }
+    
+    response = await client.post(url, json=payload, headers=headers)
+    response.raise_for_status()
+    data = response.json()
+    
+    # Sort by index to ensure order matches input
+    embeddings_data = sorted(data["data"], key=lambda x: x["index"])
+    return [item["embedding"] for item in embeddings_data]
+
+
+async def generate_embeddings(feeds: dict[str, dict], output_path: Path):
+    """Generate embeddings for all feeds using batch API and save to JSON."""
+    print("\n🔄 Generating embeddings for semantic search (batch mode)...")
+    
+    model = os.getenv("EMBEDDING_MODEL", "openai/text-embedding-3-small")
+    result = {
+        "model": model,
+        "dimension": 1536,
+        "feed_texts": {},
+        "embeddings": {}
+    }
+    
+    # Prepare all texts
+    feed_names = list(feeds.keys())
+    feed_texts = []
+    for feed_name in feed_names:
+        feed_text = create_feed_text(feed_name, feeds[feed_name])
+        result["feed_texts"][feed_name] = feed_text
+        feed_texts.append(feed_text)
+    
+    print(f"📊 Embedding {len(feed_texts)} feeds in batch...")
+    
+    # Generate all embeddings in one batch call
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        try:
+            embeddings = await generate_embeddings_batch(feed_texts, client)
+            
+            # Map embeddings back to feed names
+            for feed_name, embedding in zip(feed_names, embeddings):
+                result["embeddings"][feed_name] = embedding
+            
+            print(f"✅ Generated {len(embeddings)} embeddings")
+            
+        except Exception as e:
+            print(f"❌ Batch embedding failed: {e}")
+            return
+    
+    # Save embeddings
+    with open(output_path, 'w') as f:
+        json.dump(result, f)
+    
+    print(f"\n✅ Generated {len(result['embeddings'])} embeddings")
+    print(f"📁 Saved to {output_path}")
+    
+    file_size = output_path.stat().st_size / 1024 / 1024
+    print(f"📏 File size: {file_size:.2f} MB")
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Extract NASEM feeds to ration-agent format")
     parser.add_argument("--validate", action="store_true", help="Validate extraction")
     parser.add_argument("--output", default=None, help="Output file path")
     parser.add_argument("--all", action="store_true", help="Extract all feeds (not just targets)")
+    parser.add_argument("--embeddings", action="store_true", help="Generate embeddings for semantic search")
     args = parser.parse_args()
     
     # Find CSV file
@@ -263,6 +374,11 @@ def main():
         json.dump(feedbase, f, indent=2)
     
     print(f"Saved to: {output_path}")
+    
+    # Generate embeddings if requested
+    if args.embeddings:
+        embeddings_path = script_dir / "feed_embeddings.json"
+        asyncio.run(generate_embeddings(feeds, embeddings_path))
     
     # Validation
     if args.validate:

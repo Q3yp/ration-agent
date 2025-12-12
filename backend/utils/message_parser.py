@@ -25,7 +25,7 @@ from models import (
     create_formulation_complete_message,
     create_calculation_message
 )
-from utils.language import normalize_locale
+from utils.language import normalize_locale, t
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class UnifiedMessageParser:
         self.excel_tools = {"excel_metadata", "excel_query", "read_excel"}
         self.file_tools = {"write_file", "list_directory", "read_file"}
         self.bash_tools = {"bash_command"}
-        self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation", "list_feed_bases"}
+        self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation", "list_feed_bases", "calculate_dairy_requirements", "evaluate_diet_with_nasem"}
         self.active_analysis = None  # {"message_id": str, "operations": [], "start_time": float}
         self.active_formulation = None  # {"message_id": str, "operations": [], "start_time": float, "results": {}}
         self.analysis_operation_counter = 0
@@ -277,11 +277,11 @@ class UnifiedMessageParser:
 
     def _get_analysis_label(self) -> str:
         """Localized label for analysis sections."""
-        return "Data Analysis" if self.preferred_language == "en-US" else "数据分析"
+        return t("tool.data_analysis", self.preferred_language)
 
     def _get_formulation_label(self) -> str:
         """Localized label for formulation sections."""
-        return "Formulation" if self.preferred_language == "en-US" else "饲料配方"
+        return t("tool.formulation", self.preferred_language)
     
     def _get_operation_description(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
         """Get human-readable description for tool operation with detailed context"""
@@ -463,6 +463,36 @@ class UnifiedMessageParser:
         elif tool_name == "list_feed_bases":
             operation_data = {"action": "列出饲料基础库"}
             description = "获取饲料基础库列表" if locale != "en-US" else "List feedbases"
+            return description, operation_data
+            
+        elif tool_name == "calculate_dairy_requirements":
+            body_weight = tool_args.get("body_weight_kg", 0)
+            target_milk = tool_args.get("target_milk_kg", 0)
+            feedbase_name = tool_args.get("feedbase_name", "")
+            operation_data = {
+                "body_weight_kg": body_weight,
+                "target_milk_kg": target_milk,
+                "feedbase_name": feedbase_name
+            }
+            description = (
+                f"计算营养需求 (体重{body_weight}kg, 目标产奶{target_milk}kg)"
+                if locale != "en-US"
+                else f"Calculate nutrition requirements (BW {body_weight}kg, target milk {target_milk}kg)"
+            )
+            return description, operation_data
+            
+        elif tool_name == "evaluate_diet_with_nasem":
+            body_weight = tool_args.get("body_weight_kg", 0)
+            target_milk = tool_args.get("target_milk_kg", 0)
+            operation_data = {
+                "body_weight_kg": body_weight,
+                "target_milk_kg": target_milk
+            }
+            description = (
+                f"使用NASEM模型评估日粮 (目标产奶{target_milk}kg)"
+                if locale != "en-US"
+                else f"Evaluate diet with NASEM (target milk {target_milk}kg)"
+            )
             return description, operation_data
             
         else:

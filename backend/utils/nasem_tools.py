@@ -184,8 +184,6 @@ async def calculate_dairy_requirements(
 
 @tool
 async def evaluate_diet_with_nasem(
-    feedbase_name: str,
-    diet_composition: Dict[str, float],
     body_weight_kg: float,
     days_in_milk: int,
     parity: int,
@@ -197,13 +195,15 @@ async def evaluate_diet_with_nasem(
     state: Annotated[dict, InjectedState] = None,
     config: RunnableConfig = None
 ) -> str:
-    """Evaluate a formulated diet using the NASEM dairy model.
+    """Evaluate the current formulated diet using the NASEM dairy model.
     
-    Use this AFTER formulation to predict actual cow performance.
+    IMPORTANT: You must have a successful formulation in state before calling this.
+    This tool automatically uses the current formulation from state - do NOT 
+    provide diet composition manually.
+    
+    Use this AFTER formulate_ration to predict actual cow performance.
     
     Args:
-        feedbase_name: Name of feedbase containing the diet feeds
-        diet_composition: Dict of {feed_key: kg_dm_per_day} from formulation
         body_weight_kg: Animal body weight in kg
         days_in_milk: Days since calving
         parity: Number of lactations
@@ -224,14 +224,47 @@ async def evaluate_diet_with_nasem(
         - diet_summary: {total_dmi_kg, feed_count}
     """
     try:
-        user_id = config["configurable"].get("user_id") if config else None
-        if not user_id:
-            return json.dumps({"status": "error", "error": "User ID not found"})
+        # Check for successful formulation in state
+        current_formulation = state.get("current_formulation", {}) if state else {}
+        if not current_formulation or current_formulation.get("status") != "success":
+            return json.dumps({
+                "status": "error", 
+                "error": "No successful formulation found. Please run formulate_ration first."
+            })
+        
+        # Get feedbase reference from state
+        feedbase_name = state.get("current_feedbase_name", "")
+        user_id = state.get("current_user_id", "")
+        
+        if not feedbase_name or not user_id:
+            # Fallback to config for user_id
+            user_id = config["configurable"].get("user_id") if config else None
+            if not user_id:
+                return json.dumps({"status": "error", "error": "User ID not found"})
+            if not feedbase_name:
+                return json.dumps({
+                    "status": "error", 
+                    "error": "Feedbase name not found in state. Please run formulate_ration first."
+                })
         
         # Load feedbase
         feedbase = await _get_feedbase(user_id, feedbase_name)
         if not feedbase:
             return json.dumps({"status": "error", "error": f"Feedbase '{feedbase_name}' not found"})
+        
+        # Build diet composition from formulation result
+        formulation_feeds = current_formulation.get("formulation", {})
+        diet_composition = {}
+        for feed_name, feed_data in formulation_feeds.items():
+            kg_per_day = feed_data.get("kg_per_day", 0)
+            if kg_per_day and kg_per_day > 0:
+                diet_composition[feed_name] = kg_per_day
+        
+        if not diet_composition:
+            return json.dumps({
+                "status": "error", 
+                "error": "No valid diet composition found in formulation. Check that formulation has kg_per_day values."
+            })
         
         service = get_nasem_service()
         
@@ -253,6 +286,11 @@ async def evaluate_diet_with_nasem(
             diet_composition=diet_composition,
             animal_input=animal_input
         )
+        
+        # Add diet info to result for transparency
+        if result.get("status") == "success":
+            result["diet_used"] = diet_composition
+            result["feedbase_used"] = feedbase_name
         
         return json.dumps(result, indent=2, default=str)
         

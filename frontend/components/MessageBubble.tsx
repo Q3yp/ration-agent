@@ -449,8 +449,10 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
                     onClick={(e) => {
                       e.stopPropagation()
                       if (onArtifactOpen) {
-                        // Escape HTML to prevent XSS, but preserve formatting
+                        // First convert literal \n to actual newlines (fix double-escaped JSON)
+                        // Then escape HTML to prevent XSS, but preserve formatting
                         const escapedDescription = (fileExportMeta.description || '')
+                          .replace(/\\n/g, '\n')  // Convert literal \n to actual newlines
                           .replace(/&/g, '&amp;')
                           .replace(/</g, '&lt;')
                           .replace(/>/g, '&gt;')
