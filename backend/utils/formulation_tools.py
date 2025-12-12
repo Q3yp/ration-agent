@@ -63,7 +63,49 @@ EXPORT_TRANSLATIONS = {
         "error_no_formulation": "未找到成功的配方。请先运行配方优化。",
         "error_no_db": "未找到饲料数据库。导出可能不包含完整的饲料信息。",
         "export_success": "✅ 成功导出 {filename}。",
-        "export_fail": "导出配方时出错: {error}"
+        "export_fail": "导出配方时出错: {error}",
+        # NASEM sheet translations
+        "sheet_nasem": "NASEM分析",
+        "nasem_production": "产奶预测",
+        "nasem_predicted_milk": "预测产奶量 (kg/day)",
+        "nasem_mp_allow_milk": "MP允许产奶量 (kg)",
+        "nasem_ne_allow_milk": "NE允许产奶量 (kg)",
+        "nasem_limiting_factor": "限制因素",
+        "nasem_milk_fat": "乳脂 (g/g)",
+        "nasem_milk_protein": "乳蛋白 (g/g)",
+        "nasem_energy_balance": "能量平衡",
+        "nasem_me_intake": "ME摄入 (Mcal/d)",
+        "nasem_me_required": "ME需求 (Mcal/d)",
+        "nasem_me_balance": "ME平衡",
+        "nasem_protein_balance": "蛋白质平衡",
+        "nasem_mp_intake": "MP摄入 (g/d)",
+        "nasem_mp_required": "MP需求 (g/d)",
+        "nasem_mp_balance": "MP平衡",
+        "nasem_rdp_intake": "RDP摄入 (g/d)",
+        "nasem_other_metrics": "其他指标",
+        "nasem_dmi": "干物质采食量 (kg)",
+        "nasem_dcad": "DCAD (meq)",
+        "nasem_lys_mp": "赖氨酸占MP比例 (%)",
+        "nasem_met_mp": "蛋氨酸占MP比例 (%)",
+        "nasem_no_animal_input": "未提供动物参数,跳过NASEM分析",
+        # Profitability section
+        "sheet_summary": "配方摘要",
+        "key_nutrients": "关键营养指标",
+        "profitability": "经济效益分析",
+        "input_section": "输入参数 (黄色单元格可编辑)",
+        "herd_size": "牛群规模 (头)",
+        "milk_price": "奶价 (元/kg)",
+        "cost_per_kg_dm": "成本 (元/kg DM)",
+        "cost_per_cow_day": "每头日成本 (元)",
+        "revenue_per_cow_day": "每头日收入 (元)",
+        "profit_per_cow_day": "每头日利润 (元)",
+        "herd_profit_day": "牛群日利润 (元)",
+        "herd_profit_month": "牛群月利润 (元)",
+        "fc_ratio": "粗精比",
+        "forage": "粗料",
+        "concentrate": "精料",
+        "price_per_kg": "价格 (元/kg)",
+        "cost_per_day": "日成本 (元)"
     },
     "en-US": {
         "sheet_results": "Formulation Results",
@@ -108,7 +150,49 @@ EXPORT_TRANSLATIONS = {
         "error_no_formulation": "No successful formulation found. Please run optimization first.",
         "error_no_db": "Feed database not found. Export may not include complete feed information.",
         "export_success": "✅ Successfully exported {filename}.",
-        "export_fail": "Error exporting formulation: {error}"
+        "export_fail": "Error exporting formulation: {error}",
+        # NASEM sheet translations
+        "sheet_nasem": "NASEM Analysis",
+        "nasem_production": "Production Predictions",
+        "nasem_predicted_milk": "Predicted Milk (kg/day)",
+        "nasem_mp_allow_milk": "MP Allowable Milk (kg)",
+        "nasem_ne_allow_milk": "NE Allowable Milk (kg)",
+        "nasem_limiting_factor": "Limiting Factor",
+        "nasem_milk_fat": "Milk Fat (g/g)",
+        "nasem_milk_protein": "Milk Protein (g/g)",
+        "nasem_energy_balance": "Energy Balance",
+        "nasem_me_intake": "ME Intake (Mcal/d)",
+        "nasem_me_required": "ME Required (Mcal/d)",
+        "nasem_me_balance": "ME Balance",
+        "nasem_protein_balance": "Protein Balance",
+        "nasem_mp_intake": "MP Intake (g/d)",
+        "nasem_mp_required": "MP Required (g/d)",
+        "nasem_mp_balance": "MP Balance",
+        "nasem_rdp_intake": "RDP Intake (g/d)",
+        "nasem_other_metrics": "Other Metrics",
+        "nasem_dmi": "DMI (kg)",
+        "nasem_dcad": "DCAD (meq)",
+        "nasem_lys_mp": "Lys % of MP",
+        "nasem_met_mp": "Met % of MP",
+        "nasem_no_animal_input": "No animal input provided, NASEM analysis skipped",
+        # Profitability section
+        "sheet_summary": "Summary",
+        "key_nutrients": "Key Nutrients",
+        "profitability": "Profitability Analysis",
+        "input_section": "Inputs (edit yellow cells)",
+        "herd_size": "Herd Size",
+        "milk_price": "Milk Price (¥/kg)",
+        "cost_per_kg_dm": "Cost (¥/kg DM)",
+        "cost_per_cow_day": "Cost/Cow/Day (¥)",
+        "revenue_per_cow_day": "Revenue/Cow/Day (¥)",
+        "profit_per_cow_day": "Profit/Cow/Day (¥)",
+        "herd_profit_day": "Herd Profit/Day (¥)",
+        "herd_profit_month": "Herd Profit/Month (¥)",
+        "fc_ratio": "F:C Ratio",
+        "forage": "Forage",
+        "concentrate": "Concentrate",
+        "price_per_kg": "Price (¥/kg)",
+        "cost_per_day": "Cost/Day (¥)"
     }
 }
 
@@ -599,17 +683,133 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         feed_base_name: str,
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
-        config: RunnableConfig
+        config: RunnableConfig,
+        query: str = ""
     ) -> Command:
         """
-        Check and list all feeds in a specific feedbase.
+        Query feeds in a feedbase using SQL-like syntax or list syntax.
+        
+        Query Syntax Options:
+        
+        1. Empty query ("") - Returns category summary for large feedbases, or full list for small ones
+        
+        2. Special queries:
+           - "nutrients" → Returns list of all available nutrient column names
+        
+        3. SQL-like query:
+           [regex_pattern] WHERE category IN [cat1, cat2] ORDER BY nutrient ASC|DESC LIMIT n RETURN full
+           
+           - regex_pattern: Matches feed names (case-insensitive), e.g., "corn.*", "soy.*"
+           - WHERE category IN [...]: Filter by category, e.g., WHERE category IN [Energy Source, Plant Protein]
+           - ORDER BY nutrient ASC|DESC: Sort by nutrient value
+           - LIMIT n: Max results (default 20, max 20)
+           - RETURN full: Include all nutrients (default returns names only)
+        
+        4. List syntax:
+           "[feed1, feed2, feed3]" → Returns full details for specific feeds
+        
+        Examples:
+            check_feeds("default_dairy_cow", "")  
+            # → Category summary (Energy Source: 30, Plant Protein: 21, ...)
+            
+            check_feeds("default_dairy_cow", "nutrients")  
+            # → [Fd_CP, Fd_NDF, Fd_ADF, Fd_DE_Base, ...]
+            
+            check_feeds("default_dairy_cow", "corn.* WHERE category IN [Energy Source] LIMIT 10")
+            # → corn_grain, corn_grain_hm, corn_silage, ... (names only)
+            
+            check_feeds("default_dairy_cow", "soy.* ORDER BY Fd_CP DESC LIMIT 5 RETURN full")
+            # → Full nutrient data for matching feeds
+            
+            check_feeds("default_dairy_cow", "[corn_silage, alfalfa_hay, soybean_meal_48]")
+            # → Full details for these specific feeds
         
         Args:
-            feed_base_name: Name of the feedbase to check
+            feed_base_name: Name of the feedbase to query
+            query: Query string (empty for summary, or SQL-like/list syntax)
             
         Returns:
-            Formatted string with complete feedbase information
+            Query results (names by default, full nutrients with RETURN full or list syntax)
         """
+        from services.session_manager import check_token_limit
+        
+        HUGE_FEEDBASE_THRESHOLD = 50
+        MAX_LIMIT = 20
+        MAX_TOKENS = 50000  # Safe limit for tool responses
+        
+        def parse_query(query_str: str) -> dict:
+            """Parse SQL-like query into components."""
+            result = {
+                "pattern": None,
+                "categories": [],
+                "order_by": None,
+                "order_dir": "ASC",
+                "limit": MAX_LIMIT,
+                "return_full": False  # Default to names only
+            }
+            
+            if not query_str:
+                return result
+            
+            q = query_str.strip()
+            
+            # Extract RETURN full clause
+            return_match = re.search(r'\bRETURN\s+full\b', q, re.IGNORECASE)
+            if return_match:
+                result["return_full"] = True
+                q = q[:return_match.start()] + q[return_match.end():]
+            
+            # Extract LIMIT clause
+            limit_match = re.search(r'\bLIMIT\s+(\d+)\b', q, re.IGNORECASE)
+            if limit_match:
+                result["limit"] = min(int(limit_match.group(1)), MAX_LIMIT)
+                q = q[:limit_match.start()] + q[limit_match.end():]
+            
+            # Extract ORDER BY clause
+            order_match = re.search(r'\bORDER\s+BY\s+(\w+)\s*(ASC|DESC)?\b', q, re.IGNORECASE)
+            if order_match:
+                result["order_by"] = order_match.group(1)
+                result["order_dir"] = (order_match.group(2) or "ASC").upper()
+                q = q[:order_match.start()] + q[order_match.end():]
+            
+            # Extract WHERE category IN [...] clause
+            where_match = re.search(r'\bWHERE\s+category\s+IN\s*\[([^\]]+)\]', q, re.IGNORECASE)
+            if where_match:
+                cats = where_match.group(1)
+                result["categories"] = [c.strip() for c in cats.split(",") if c.strip()]
+                q = q[:where_match.start()] + q[where_match.end():]
+            
+            # Remaining text is the pattern
+            pattern = q.strip()
+            if pattern:
+                result["pattern"] = pattern
+            
+            return result
+        
+        def format_feed_names(feeds: list) -> str:
+            """Format feed names as comma-separated list."""
+            return ", ".join(feeds)
+        
+        def format_feed_full(feed_name: str, feed_data: dict) -> str:
+            """Format feed with all nutrients (full mode), skipping 0/null values."""
+            lines = [f"**{feed_name}**"]
+            lines.append(f"  DM: {feed_data.get('dm_percent', 'N/A')}%")
+            lines.append(f"  Cost: ${feed_data.get('cost_per_kg', 0)}/kg")
+            
+            if feed_data.get('category'):
+                lines.append(f"  Category: {feed_data['category']}")
+            if feed_data.get('type'):
+                lines.append(f"  Type: {feed_data['type']}")
+            
+            nutrients = feed_data.get('nutrients', {})
+            if nutrients:
+                lines.append("  Nutrients (DM basis):")
+                for nutrient, value in nutrients.items():
+                    # Skip 0/null values
+                    if value not in (0, 0.0, None, ""):
+                        lines.append(f"    {nutrient}: {value}")
+            return "\n".join(lines)
+        
         try:
             # Validate feedbase name
             if not isinstance(feed_base_name, str) or not feed_base_name.strip():
@@ -653,26 +853,168 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 return Command(
                     update={"messages": [ToolMessage(f"Feedbase '{feed_base_name}' is empty.", tool_call_id=tool_call_id)]}
                 )
-
-            # Format feed information for all feeds
-            feed_info = []
-            feedbase_type = "[SYSTEM DEFAULT]" if is_system_feedbase else "[USER]"
-            feed_info.append(f"Feedbase '{feed_base_name}' {feedbase_type} (Animal Type: {feedbase_animal_type}, {len(feed_database)} feeds):\n")
             
-            for feed_name, feed_data in feed_database.items():
-                feed_info.append(f"**{feed_name}**")
-                feed_info.append(f"  - Dry Matter: {feed_data.get('dm_percent', 'N/A')}%")
-                feed_info.append(f"  - Cost: ${feed_data.get('cost_per_kg', 'N/A')}/kg")
+            num_feeds = len(feed_database)
+            is_huge = num_feeds > HUGE_FEEDBASE_THRESHOLD
+            feedbase_type = "[SYSTEM]" if is_system_feedbase else "[USER]"
+            header = f"Feedbase '{feed_base_name}' {feedbase_type} ({feedbase_animal_type}, {num_feeds} feeds)"
+            
+            query = query.strip() if query else ""
+            
+            # Handle special query: "nutrients"
+            if query.lower() == "nutrients":
+                # Collect all unique nutrient names from all feeds
+                all_nutrients = set()
+                for feed_data in feed_database.values():
+                    nutrients = feed_data.get("nutrients", {})
+                    all_nutrients.update(nutrients.keys())
                 
-                nutrients = feed_data.get('nutrients', {})
-                if nutrients:
-                    feed_info.append("  - Nutrients (DM basis):")
-                    for nutrient, value in nutrients.items():
-                        feed_info.append(f"    - {nutrient}: {value}")
-                feed_info.append("")
+                sorted_nutrients = sorted(all_nutrients)
+                result = f"{header}\n\nAvailable nutrient columns ({len(sorted_nutrients)}):\n{', '.join(sorted_nutrients)}"
+                return Command(
+                    update={"messages": [ToolMessage(result, tool_call_id=tool_call_id)]}
+                )
+            
+            # Handle list syntax: "[feed1, feed2, feed3]"
+            list_match = re.match(r'^\s*\[([^\]]+)\]\s*$', query)
+            if list_match:
+                feed_names = [f.strip() for f in list_match.group(1).split(",") if f.strip()]
+                output_lines = [header, ""]
+                found_feeds = []
+                missing_feeds = []
+                
+                for name in feed_names:
+                    if name in feed_database:
+                        found_feeds.append(name)
+                    else:
+                        missing_feeds.append(name)
+                
+                if missing_feeds:
+                    output_lines.append(f"⚠️ Not found: {', '.join(missing_feeds)}\n")
+                
+                for name in found_feeds:
+                    output_lines.append(format_feed_full(name, feed_database[name]))
+                    output_lines.append("")
+                
+                result = "\n".join(output_lines)
+                
+                # Token check
+                is_within_limit, token_count, error_msg = check_token_limit(result, MAX_TOKENS)
+                if not is_within_limit:
+                    return Command(
+                        update={"messages": [ToolMessage(f"Error: {error_msg}\nTry requesting fewer feeds.", tool_call_id=tool_call_id)]}
+                    )
+                
+                result = f"[FULL] {result}"
+                return Command(
+                    update={"messages": [ToolMessage(result, tool_call_id=tool_call_id)]}
+                )
+            
+            # Handle empty query - return summary for huge feedbases
+            if not query:
+                if is_huge:
+                    # Return category summary
+                    categories = {}
+                    for feed_name, feed_data in feed_database.items():
+                        cat = feed_data.get("category", "Unknown")
+                        categories[cat] = categories.get(cat, 0) + 1
+                    
+                    output_lines = [header, "", "Categories:"]
+                    for cat, count in sorted(categories.items(), key=lambda x: -x[1]):
+                        output_lines.append(f"  - {cat}: {count} feeds")
+                    
+                    output_lines.append("")
+                    output_lines.append("ℹ️ This is a large feedbase. Use query syntax:")
+                    output_lines.append(f'  check_feeds("{feed_base_name}", "nutrients")  # List nutrient columns')
+                    output_lines.append(f'  check_feeds("{feed_base_name}", "corn.* LIMIT 10")  # Search by name')
+                    output_lines.append(f'  check_feeds("{feed_base_name}", "WHERE category IN [Plant Protein]")')
+                    output_lines.append(f'  check_feeds("{feed_base_name}", "[feed1, feed2]")  # Full details for specific feeds')
+                    
+                    result = "\n".join(output_lines)
+                    return Command(
+                        update={"messages": [ToolMessage(result, tool_call_id=tool_call_id)]}
+                    )
+                else:
+                    # Small feedbase - return all feed names
+                    feed_names = list(feed_database.keys())
+                    output_lines = [header, "", format_feed_names(feed_names)]
+                    result = "\n".join(output_lines)
+                    
+                    return Command(
+                        update={"messages": [ToolMessage(result, tool_call_id=tool_call_id)]}
+                    )
+            
+            # Parse SQL-like query
+            parsed = parse_query(query)
+            
+            # Filter feeds
+            filtered_feeds = []
+            for feed_name, feed_data in feed_database.items():
+                # Apply pattern filter
+                if parsed["pattern"]:
+                    try:
+                        if not re.search(parsed["pattern"], feed_name, re.IGNORECASE):
+                            # Also check nasem_name if available
+                            nasem_name = feed_data.get("nasem_name", "")
+                            if not re.search(parsed["pattern"], nasem_name, re.IGNORECASE):
+                                continue
+                    except re.error:
+                        # If invalid regex, treat as substring match
+                        if parsed["pattern"].lower() not in feed_name.lower():
+                            nasem_name = feed_data.get("nasem_name", "").lower()
+                            if parsed["pattern"].lower() not in nasem_name:
+                                continue
+                
+                # Apply category filter
+                if parsed["categories"]:
+                    feed_cat = feed_data.get("category", "")
+                    if not any(cat.lower() == feed_cat.lower() for cat in parsed["categories"]):
+                        continue
+                
+                filtered_feeds.append((feed_name, feed_data))
+            
+            # Sort if requested
+            if parsed["order_by"]:
+                def get_sort_key(item):
+                    _, feed_data = item
+                    nutrients = feed_data.get("nutrients", {})
+                    val = nutrients.get(parsed["order_by"], 0)
+                    return val if val is not None else 0
+                
+                reverse = parsed["order_dir"] == "DESC"
+                filtered_feeds.sort(key=get_sort_key, reverse=reverse)
+            
+            # Apply limit
+            filtered_feeds = filtered_feeds[:parsed["limit"]]
+            
+            # Format output based on return type
+            output_lines = [header, f"\nQuery: {query}", f"Results: {len(filtered_feeds)} feeds\n"]
+            
+            if parsed["return_full"]:
+                # Full nutrient data
+                for feed_name, feed_data in filtered_feeds:
+                    output_lines.append(format_feed_full(feed_name, feed_data))
+                    output_lines.append("")
+                result = "\n".join(output_lines)
+            else:
+                # Names only (default)
+                feed_names = [name for name, _ in filtered_feeds]
+                output_lines.append(format_feed_names(feed_names))
+                result = "\n".join(output_lines)
+            
+            # Token check for all responses
+            is_within_limit, token_count, error_msg = check_token_limit(result, MAX_TOKENS)
+            if not is_within_limit:
+                return Command(
+                    update={"messages": [ToolMessage(
+                        f"Error: {error_msg}\n"
+                        f"Try: LIMIT {parsed['limit'] // 2}",
+                        tool_call_id=tool_call_id
+                    )]}
+                )
             
             return Command(
-                update={"messages": [ToolMessage("\n".join(feed_info), tool_call_id=tool_call_id)]}
+                update={"messages": [ToolMessage(result, tool_call_id=tool_call_id)]}
             )
             
         except Exception as e:
@@ -680,6 +1022,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             return Command(
                 update={"messages": [ToolMessage(f"Error retrieving feed information: {str(e)}", tool_call_id=tool_call_id)]}
             )
+
     
     
     @tool
@@ -688,31 +1031,27 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
         config: RunnableConfig,
-        filename: Optional[str] = None
+        filename: Optional[str] = None,
+        animal_input: Optional[Dict[str, Any]] = None
     ) -> Command:
         """
-        Export current formulation to Excel with 3-tab layout for better organization.
+        Export current formulation to Excel with multi-tab layout.
 
-        Creates Excel with 3 sheets:
+        Creates Excel with 3 sheets (4 for dairy cows):
         1. Formulation Results
-           - Top: Ingredient table (Name | Amount kg/day | Key Nutrients)
-           - Middle: Final nutrition profile summary
-           - Bottom: Nutrition profile chart (bar chart)
-
         2. Formulation Notes
-           - Formatted description text from the LLM
-           - Formulation rationale and recommendations
-
         3. Constraints Used
-           - Constraint validation table (pass/fail indicators)
-           - Feed constraints table (min/max percentages)
+        4. NASEM Analysis (dairy_cow only, if animal_input provided)
 
         Args:
             description: Detailed formulation description and recommendations (supports multi-line text)
             filename: Optional custom filename (default: formulation_export_TIMESTAMP.xlsx)
+            animal_input: Optional animal parameters for NASEM evaluation (dairy_cow only).
+                         Required keys: body_weight_kg, days_in_milk, parity, target_milk_kg
+                         Optional: milk_fat_percent, milk_protein_percent, days_pregnant, breed
 
         Returns:
-            Excel file with 3-tab layout focusing on practical feeding information
+            Excel file with feeding information
         """
         try:
             # Get preferred language and texts
@@ -907,137 +1246,402 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             # Get constraint validation results
             constraint_results = validate_constraints()
 
-            # Create Excel with 3 sheets
+            # ==================== Run NASEM Evaluation First (dairy_cow only) ====================
+            model_output = None
+            predicted_milk = 0.0
+            if animal_type == "dairy_cow" and animal_input:
+                try:
+                    from services.nasem_service import get_nasem_service
+                    
+                    nasem_service = get_nasem_service()
+                    
+                    # Build diet composition from formulation
+                    diet_composition = {}
+                    for feed_name, feed_data in formulation_feeds.items():
+                        kg_per_day = feed_data.get("kg_per_day", 0)
+                        if kg_per_day and kg_per_day > 0:
+                            diet_composition[feed_name] = kg_per_day
+                    
+                    if diet_composition and feed_database:
+                        # Build animal input for NASEM
+                        nasem_animal_input = nasem_service.build_animal_input(
+                            body_weight_kg=animal_input.get("body_weight_kg", 650),
+                            days_in_milk=animal_input.get("days_in_milk", 100),
+                            parity=animal_input.get("parity", 2),
+                            target_milk_kg=animal_input.get("target_milk_kg", 35),
+                            milk_fat_percent=animal_input.get("milk_fat_percent", 3.5),
+                            milk_protein_percent=animal_input.get("milk_protein_percent", 3.2),
+                            days_pregnant=animal_input.get("days_pregnant", 0),
+                            breed=animal_input.get("breed", "Holstein")
+                        )
+                        
+                        # Build feedbase dict for NASEM
+                        feedbase_dict = {"feeds": feed_database}
+                        
+                        # Run NASEM evaluation with full output
+                        nasem_results = nasem_service.evaluate_diet(
+                            feedbase=feedbase_dict,
+                            diet_composition=diet_composition,
+                            animal_input=nasem_animal_input,
+                            return_full_output=True
+                        )
+                        
+                        if nasem_results.get("status") == "success":
+                            model_output = nasem_results.get("model_output")
+                            # Extract predicted milk for profitability
+                            if model_output:
+                                predicted_milk = model_output.get_value("Mlk_Prod_comp") or 0.0
+                        
+                except Exception as e:
+                    logger.warning(f"NASEM evaluation failed: {e}")
+                    model_output = None
+                    predicted_milk = 0.0
+
+            # Create Excel with tabs
             with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
 
-                # ==================== TAB 1: 配方结果 (Formulation Results) ====================
-                tab1_data = []
-
+                # ==================== SINGLE TAB: Summary (All sections combined) ====================
+                # Layout: A-E: ingredients, nutrients, constraints | F-G: profitability | H+: notes
+                # Constraints and NASEM summary are side-by-side at the bottom
+                
+                # Build main column data (A-E)
+                main_rows = []
+                
                 # Header
-                tab1_data.append([texts["sheet_results"]])
-                tab1_data.append([f"{texts['date']}:", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
-                tab1_data.append([f"{texts['status']}:", current_formulation.get('status', 'Unknown')])
-                tab1_data.append([f"{texts['total_cost']}:", f"{current_formulation.get('cost_per_kg_dm', 'N/A')} {texts['cost_unit']}"])
-                if daily_intake_kg:
-                    tab1_data.append([f"{texts['dmi']}:", f"{daily_intake_kg} kg/day"])
-                tab1_data.append([])
-
-                # Section 1: Ingredient Table with Nutritional Facts
-                tab1_data.append([texts["ingredients"]])
-                tab1_data.append([])  # Empty row for spacing
-
-                # Build header dynamically based on available nutrients
-                # Get all unique nutrients from used feeds
-                all_nutrients = set()
-                for feed_name in formulation_feeds.keys():
-                    if feed_name in feed_database:
-                        all_nutrients.update(feed_database[feed_name].get('nutrients', {}).keys())
-
-                # Create two-row header
-                # Row 1: Column names with merged "原料含量 (% DM)" header
-                header_row1 = [texts["feed_name"], texts["amount"], texts["dm_percent"]]
-                if len(all_nutrients) > 0:
-                    header_row1.append(texts["nutrients_header"])
-                    header_row1.extend([''] * (len(all_nutrients) - 1))
-                tab1_data.append(header_row1)
-
-                # Row 2: Individual nutrient names
-                header_row2 = ['', '', ''] + [nutrient for nutrient in sorted(all_nutrients)]
-                tab1_data.append(header_row2)
-
-                # Add each feed with its details
+                main_rows.append([texts["sheet_summary"], "", "", "", ""])
+                main_rows.append([f"{texts['date']}:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "", "", ""])
+                main_rows.append(["", "", "", "", ""])
+                
+                # Section 1: Feed Formula Table with Costs
+                main_rows.append([texts["ingredients"], "", "", "", ""])
+                
+                # Calculate total cost and prepare cost data
+                total_cost = 0.0
+                feed_rows = []
                 for feed_name, feed_data in formulation_feeds.items():
                     sanitized_name = sanitize_feed_name(feed_name)
-                    row = [
-                        sanitized_name,
-                        feed_data.get("kg_per_day", "N/A"),
-                        feed_data.get("percentage_dm", "N/A")
-                    ]
-
-                    # Add nutrient values for this feed
+                    kg_per_day = feed_data.get("kg_per_day", 0)
+                    percentage_dm = feed_data.get("percentage_dm", 0)
+                    
+                    # Get price from feed database
+                    price_per_kg = 0.0
                     if feed_name in feed_database:
-                        feed_nutrients = feed_database[feed_name].get('nutrients', {})
-                        for nutrient in sorted(all_nutrients):
-                            row.append(feed_nutrients.get(nutrient, ""))
-                    else:
-                        row.extend([""] * len(all_nutrients))
-
-                    tab1_data.append(row)
-
-                tab1_data.append([])
-
-                # Section 2: Final Nutrition Profile
-                tab1_data.append([texts["nutrition_profile"]])
-                tab1_data.append([texts["nutrient"], texts["content"]])
-
-                for nutrient, value in nutrient_analysis.items():
-                    tab1_data.append([nutrient, value])
-
-                # Write Tab 1
-                tab1_df = pd.DataFrame(tab1_data)
-                tab1_df.to_excel(writer, sheet_name=texts["sheet_results"], index=False, header=False)
-
-                # ==================== TAB 2: 配方说明 (Formulation Notes) ====================
-                tab2_data = []
-
-                tab2_data.append([texts["sheet_notes"]])
-                tab2_data.append([])
-
-                # Add description text
-                if isinstance(description, str) and description.strip():
-                    # Split by newlines to preserve formatting
-                    for line in description.split('\n'):
-                        tab2_data.append([line])
-                else:
-                    tab2_data.append([texts["notes_none"]])
-
-                # Write Tab 2
-                tab2_df = pd.DataFrame(tab2_data)
-                tab2_df.to_excel(writer, sheet_name=texts["sheet_notes"], index=False, header=False)
-
-                # ==================== TAB 3: 约束条件 (Constraints) ====================
-                tab3_data = []
-
-                tab3_data.append([texts["sheet_constraints"]])
-                tab3_data.append([])
-
-                # Section 1: Nutritional Constraints Validation
-                tab3_data.append([texts["constraint_validation"]])
-                tab3_data.append([texts["constraint_type"], texts["nutrient"], texts["condition"], texts["actual"], texts["unit"], texts["satisfaction"]])
-
+                        price_per_kg = feed_database[feed_name].get("price", 0) or 0
+                    
+                    cost_per_day = kg_per_day * price_per_kg if kg_per_day and price_per_kg else 0
+                    total_cost += cost_per_day
+                    
+                    feed_rows.append([
+                        sanitized_name,
+                        round(kg_per_day, 2) if kg_per_day else "N/A",
+                        round(percentage_dm, 1) if percentage_dm else "N/A",
+                        round(price_per_kg, 2) if price_per_kg else "-",
+                        round(cost_per_day, 2) if cost_per_day else "-"
+                    ])
+                
+                # Header row for feed table
+                main_rows.append([texts["feed_name"], texts["amount"], texts["dm_percent"], 
+                                 texts["price_per_kg"], texts["cost_per_day"]])
+                main_rows.extend(feed_rows)
+                
+                # Total row
+                main_rows.append(["TOTAL", daily_intake_kg or "-", "100%", "", round(total_cost, 2)])
+                main_rows.append(["", "", "", "", ""])
+                
+                # Section 2: Key Nutrients
+                main_rows.append([texts["key_nutrients"], "", "", "", ""])
+                
+                # Key nutrients - map display names to NASEM field names
+                key_nutrient_map = {
+                    "CP": "Fd_CP",
+                    "NDF": "Fd_NDF",
+                    "ADF": "Fd_ADF",
+                    "Fat": "Fd_CFat",
+                    "Ca": "Fd_Ca",
+                    "P": "Fd_P"
+                }
+                for display_name, field_name in key_nutrient_map.items():
+                    value = nutrient_analysis.get(field_name, "-")
+                    if isinstance(value, (int, float)):
+                        value = round(value, 2)
+                    main_rows.append([display_name, f"{value}%", "", "", ""])
+                
+                # F:C ratio
+                forage_dm = 0.0
+                concentrate_dm = 0.0
+                for feed_name, feed_data in formulation_feeds.items():
+                    kg = feed_data.get("kg_per_day", 0) or 0
+                    if feed_name in feed_database:
+                        category = feed_database[feed_name].get("type", "").lower()
+                        if "forage" in category or "silage" in category or "hay" in category:
+                            forage_dm += kg
+                        else:
+                            concentrate_dm += kg
+                
+                if forage_dm + concentrate_dm > 0:
+                    forage_pct = round((forage_dm / (forage_dm + concentrate_dm)) * 100)
+                    concentrate_pct = 100 - forage_pct
+                    main_rows.append([texts["fc_ratio"], f"{forage_pct}:{concentrate_pct}", "", "", ""])
+                
+                main_rows.append(["", "", "", "", ""])
+                
+                # Track where constraints start for side-by-side with NASEM
+                constraints_start_row = len(main_rows)
+                
+                # Section 3: Constraints (in main column area, will be side by side with NASEM)
+                main_rows.append([texts["sheet_constraints"], "", "", "", ""])
+                main_rows.append([texts["constraint_type"], texts["nutrient"], texts["condition"], texts["actual"], texts["satisfaction"]])
+                
                 for result in constraint_results:
-                    tab3_data.append([
+                    main_rows.append([
                         result["type"],
                         result["nutrient"],
                         result["condition"],
                         result["actual"],
-                        result["unit"],
                         result["satisfaction"]
                     ])
-
-                tab3_data.append([])
-
-                # Section 2: Feed Constraints
-                tab3_data.append([texts["feed_constraints"]])
+                
+                main_rows.append(["", "", "", "", ""])
+                
+                # Feed constraints
+                main_rows.append([texts["feed_constraints"], "", "", "", ""])
                 if feed_constraints:
-                    tab3_data.append([texts["feed_name"], texts["min_percent"], texts["max_percent"]])
+                    main_rows.append([texts["feed_name"], texts["min_percent"], texts["max_percent"], "", ""])
                     for feed_name, constraints in feed_constraints.items():
                         sanitized_name = sanitize_feed_name(feed_name)
                         min_val = constraints.get('min', '')
                         max_val = constraints.get('max', '')
-                        tab3_data.append([sanitized_name, min_val, max_val])
+                        main_rows.append([sanitized_name, min_val, max_val, "", ""])
                 else:
-                    tab3_data.append([texts["no_feed_constraints"]])
-
-                # Write Tab 3
-                tab3_df = pd.DataFrame(tab3_data)
-                tab3_df.to_excel(writer, sheet_name=texts["sheet_constraints"], index=False, header=False)
+                    main_rows.append([texts["no_feed_constraints"], "", "", "", ""])
                 
+                # Build profitability column data (G-H, starting at row 1)
+                profit_rows = []
+                profit_rows.append([texts["profitability"], ""])
+                profit_rows.append([texts["input_section"], ""])
+                profit_rows.append([texts["herd_size"], 100])  # Default 100
+                profit_rows.append([texts["milk_price"], 4.0])  # Default 4.0 yuan/kg
+                profit_rows.append(["", ""])
+                
+                # Cost metrics
+                cost_per_kg_dm = round(total_cost / daily_intake_kg, 2) if daily_intake_kg and daily_intake_kg > 0 else 0
+                profit_rows.append([texts["cost_per_kg_dm"], cost_per_kg_dm])
+                profit_rows.append([texts["cost_per_cow_day"], round(total_cost, 2)])
+                profit_rows.append([texts["nasem_predicted_milk"], round(predicted_milk, 2) if predicted_milk else 0])
+                profit_rows.append([texts["revenue_per_cow_day"], 0])  # Formula placeholder
+                profit_rows.append([texts["profit_per_cow_day"], 0])  # Formula placeholder
+                profit_rows.append(["", ""])
+                profit_rows.append([texts["herd_profit_day"], 0])  # Formula placeholder
+                profit_rows.append([texts["herd_profit_month"], 0])  # Formula placeholder
+                
+                # Build notes as single text (will be put in vertically merged cell F)
+                # Join all lines with newline for the merged cell
+                if isinstance(description, str) and description.strip():
+                    notes_text = description
+                else:
+                    notes_text = texts["notes_none"]
+                
+                # Build NASEM summary for side column (starting at constraints_start_row in column G-H)
+                nasem_summary_rows = []
+                if model_output is not None:
+                    nasem_summary_rows.append([texts["nasem_production"], ""])
+                    
+                    # Get values using ModelOutput.get_value()
+                    mlk_prod = model_output.get_value("Mlk_Prod_comp")
+                    mp_allow = model_output.get_value("Mlk_Prod_MPalow")
+                    ne_allow = model_output.get_value("Mlk_Prod_NEalow")
+                    milk_fat = model_output.get_value("MlkFat_Milk")
+                    milk_protein = model_output.get_value("MlkNP_Milk")
+                    
+                    # Limiting factor
+                    try:
+                        mp_val = float(mp_allow) if mp_allow else 999
+                        ne_val = float(ne_allow) if ne_allow else 999
+                        if mp_val < ne_val:
+                            limiting_factor = "MP (protein)"
+                        elif ne_val < mp_val:
+                            limiting_factor = "NE (energy)"
+                        else:
+                            limiting_factor = "Balanced"
+                    except:
+                        limiting_factor = "N/A"
+                    
+                    nasem_summary_rows.append([texts["nasem_predicted_milk"], round(mlk_prod, 2) if mlk_prod else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_mp_allow_milk"], round(mp_allow, 2) if mp_allow else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_ne_allow_milk"], round(ne_allow, 2) if ne_allow else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_limiting_factor"], limiting_factor])
+                    nasem_summary_rows.append([texts["nasem_milk_fat"], round(milk_fat, 4) if milk_fat else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_milk_protein"], round(milk_protein, 4) if milk_protein else "N/A"])
+                    nasem_summary_rows.append(["", ""])
+                    
+                    # Energy Balance
+                    nasem_summary_rows.append([texts["nasem_energy_balance"], ""])
+                    me_intake = model_output.get_value("An_MEIn")
+                    me_required = model_output.get_value("Trg_MEuse")
+                    try:
+                        me_balance = round(float(me_intake) - float(me_required), 2)
+                        me_balance_str = f"+{me_balance}" if me_balance >= 0 else str(me_balance)
+                    except:
+                        me_balance_str = "N/A"
+                    
+                    nasem_summary_rows.append([texts["nasem_me_intake"], round(me_intake, 2) if me_intake else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_me_required"], round(me_required, 2) if me_required else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_me_balance"], me_balance_str])
+                    nasem_summary_rows.append(["", ""])
+                    
+                    # Protein Balance
+                    nasem_summary_rows.append([texts["nasem_protein_balance"], ""])
+                    mp_intake = model_output.get_value("An_MPIn_g")
+                    mp_required = model_output.get_value("An_MPuse_g_Trg")
+                    rdp_intake = model_output.get_value("An_RDPIn_g")
+                    try:
+                        mp_balance = round(float(mp_intake) - float(mp_required), 1)
+                        mp_balance_str = f"+{mp_balance}" if mp_balance >= 0 else str(mp_balance)
+                    except:
+                        mp_balance_str = "N/A"
+                    
+                    nasem_summary_rows.append([texts["nasem_mp_intake"], round(mp_intake, 1) if mp_intake else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_mp_required"], round(mp_required, 1) if mp_required else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_mp_balance"], mp_balance_str])
+                    nasem_summary_rows.append([texts["nasem_rdp_intake"], round(rdp_intake, 1) if rdp_intake else "N/A"])
+                    nasem_summary_rows.append(["", ""])
+                    
+                    # Other Key Metrics
+                    nasem_summary_rows.append([texts["nasem_other_metrics"], ""])
+                    dcad = model_output.get_value("An_DCADmeq")
+                    nasem_summary_rows.append([texts["nasem_dcad"], round(dcad, 1) if dcad else "N/A"])
+                
+                # Determine max rows needed
+                max_rows = max(len(main_rows), len(profit_rows), constraints_start_row + len(nasem_summary_rows))
+                
+                # Track notes cell merge range for later formatting (starts at row 2 since row 1 is header)
+                notes_merge_start_row = 2
+                notes_merge_end_row = max_rows
+                
+                # Create combined data with proper positioning
+                # Layout: A-E (main) | F (notes with header) | G-H (profitability/NASEM)
+                # Borders will be added between sections in formatting phase
+                combined_data = []
+                for i in range(max_rows):
+                    row = []
+                    
+                    # Columns A-E (main content)
+                    if i < len(main_rows):
+                        row.extend(main_rows[i])
+                    else:
+                        row.extend(["", "", "", "", ""])
+                    
+                    # Column F (notes - header in row 1, text in row 2 for merge)
+                    if i == 0:
+                        row.append(texts["sheet_notes"])  # Header
+                    elif i == 1:
+                        row.append(notes_text)  # Notes text starts at row 2
+                    else:
+                        row.append("")  # Empty for merge
+                    
+                    # Columns G-H (profitability at top, NASEM summary at constraints_start_row)
+                    if i < len(profit_rows):
+                        # Profitability section at top
+                        row.extend(profit_rows[i])
+                    elif i >= constraints_start_row and nasem_summary_rows:
+                        # NASEM summary parallel to constraints
+                        nasem_idx = i - constraints_start_row
+                        if nasem_idx < len(nasem_summary_rows):
+                            row.extend(nasem_summary_rows[nasem_idx])
+                        else:
+                            row.extend(["", ""])
+                    else:
+                        row.extend(["", ""])
+                    
+                    combined_data.append(row)
+                
+                # Write combined data
+                combined_df = pd.DataFrame(combined_data)
+                combined_df.to_excel(writer, sheet_name=texts["sheet_summary"], index=False, header=False)
+                
+                # ==================== NASEM Category Tabs (dairy_cow only) ====================
+                # Note: model_output was obtained earlier before Excel creation
+                
+                # Create NASEM category tabs if we have full output
+                if model_output is not None:
+                    # Helper function to flatten nested dict to list of [key, value] rows
+                    # Skips 0 values, None, and empty values for cleaner output
+                    def flatten_dict(d, prefix="", skip_zeros=True):
+                        rows = []
+                        for k, v in d.items():
+                            # Build display key (show nested path)
+                            display_key = f"{prefix}.{k}" if prefix else k
+                            
+                            if isinstance(v, dict):
+                                rows.extend(flatten_dict(v, display_key, skip_zeros))
+                            elif isinstance(v, pd.DataFrame):
+                                # Skip DataFrames (too complex for simple key-value)
+                                continue
+                            elif isinstance(v, (list, pd.Series)):
+                                # Format arrays - skip if empty
+                                if hasattr(v, 'tolist'):
+                                    v = v.tolist()
+                                if v and len(v) > 0 and len(str(v)) < 100:
+                                    rows.append([display_key, str(v)])
+                            elif v is not None:
+                                # Skip zeros if requested
+                                if skip_zeros and isinstance(v, (int, float)) and v == 0:
+                                    continue
+                                # Skip empty strings
+                                if isinstance(v, str) and not v.strip():
+                                    continue
+                                # Round floats for cleaner display
+                                if isinstance(v, float):
+                                    v = round(v, 3)
+                                rows.append([display_key, v])
+                        return rows
+                    
+
+
+                    # NASEM category to sheet name mapping (NASEM-Summary is now in main tab)
+                    nasem_categories = {
+                        "Intakes": "NASEM-Intakes",
+                        "Requirements": "NASEM-Requirements", 
+                        "Production": "NASEM-Production",
+                        "Excretion": "NASEM-Excretion",
+                        "Efficiencies": "NASEM-Efficiencies"
+                    }
+
+                    
+                    # Export each category as a separate tab
+                    for category_name, sheet_name in nasem_categories.items():
+                        try:
+                            category_data = getattr(model_output, category_name, None)
+                            if category_data is None:
+                                continue
+                            
+                            tab_data = []
+                            tab_data.append([sheet_name])
+                            tab_data.append([f"{texts['date']}:", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+                            tab_data.append([])
+                            tab_data.append(["Variable", "Value"])
+                            
+                            # Flatten the category dict
+                            if isinstance(category_data, dict):
+                                rows = flatten_dict(category_data)
+                                tab_data.extend(rows)
+                            
+                            # Write tab
+                            if len(tab_data) > 4:  # Only if we have data beyond headers
+                                tab_df = pd.DataFrame(tab_data)
+                                tab_df.to_excel(writer, sheet_name=sheet_name[:31], index=False, header=False)
+                                
+                        except Exception as e:
+                            logger.warning(f"Failed to export NASEM {category_name}: {e}")
+                            continue
+                
+
                 # Apply formatting
                 workbook = writer.book
                 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
                 from openpyxl.chart import PieChart, Reference
                 from openpyxl.utils import get_column_letter
+
 
                 # Define common styles
                 title_font = Font(bold=True, size=16, color="FFFFFF")
@@ -1050,187 +1654,234 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 thin_side = Side(style="thin", color="B4C6E7")
                 table_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
 
-                # ==================== FORMAT TAB 1: 配方结果 ====================
-                if texts["sheet_results"] in workbook.sheetnames:
-                    ws_tab1 = workbook[texts["sheet_results"]]
+                # ==================== FORMAT Summary Tab (unified) ====================
+                if texts["sheet_summary"] in workbook.sheetnames:
+                    ws = workbook[texts["sheet_summary"]]
+                    
+                    # Define yellow fill for editable input cells
+                    input_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+                    
+                    # Define thick border for section dividers
+                    thick_side = Side(style="medium", color="1F4E79")
 
-                    # Auto-adjust column widths
-                    for column in ws_tab1.columns:
-                        max_length = 0
-                        column_letter = column[0].column_letter
-                        for cell in column:
-                            try:
-                                if cell.value and len(str(cell.value)) > max_length:
-                                    max_length = len(str(cell.value))
-                            except:
-                                pass
-                        adjusted_width = min(max(max_length + 2, 12), 30)
-                        ws_tab1.column_dimensions[column_letter].width = adjusted_width
+                    # Auto-adjust column widths for new layout
+                    # A-E: main content | F: notes | G-H: profitability/NASEM
+                    ws.column_dimensions['A'].width = 30  # Main labels
+                    ws.column_dimensions['B'].width = 15  # Main values
+                    ws.column_dimensions['C'].width = 12  # Condition/DM%
+                    ws.column_dimensions['D'].width = 12  # Actual/Price
+                    ws.column_dimensions['E'].width = 15  # Satisfaction/Cost
+                    ws.column_dimensions['F'].width = 50  # Notes column (wide)
+                    ws.column_dimensions['G'].width = 28  # Profitability/NASEM labels
+                    ws.column_dimensions['H'].width = 15  # Profitability/NASEM values
 
-                    # Apply formatting based on content
-                    ingredient_header_row = None
-                    nutrient_names_row = None
+                    # Format notes header (F1) and merge notes text (F2:F{max_rows})
+                    notes_header_cell = ws.cell(row=1, column=6)
+                    notes_header_cell.font = section_font
+                    notes_header_cell.fill = section_fill
+                    
+                    if notes_merge_end_row > notes_merge_start_row:
+                        ws.merge_cells(f'F{notes_merge_start_row}:F{notes_merge_end_row}')
+                        notes_cell = ws.cell(row=notes_merge_start_row, column=6)
+                        notes_cell.font = Font(size=10)
+                        notes_cell.alignment = Alignment(wrap_text=True, vertical="top")
+                    
+                    # Add outer borders around each section
+                    max_row = ws.max_row
+                    
+                    # Helper to apply border preserving existing borders
+                    def apply_border(cell, **sides):
+                        existing = cell.border
+                        cell.border = Border(
+                            left=sides.get('left', existing.left),
+                            right=sides.get('right', existing.right),
+                            top=sides.get('top', existing.top),
+                            bottom=sides.get('bottom', existing.bottom)
+                        )
+                    
+                    # Apply borders to all cells
+                    for row_num in range(1, max_row + 1):
+                        for col_num in range(1, 9):  # A-H
+                            cell = ws.cell(row=row_num, column=col_num)
+                            
+                            # Determine which borders to apply
+                            left = thick_side if col_num == 1 else None  # Left edge of main
+                            right = None
+                            top = thick_side if row_num == 1 else None  # Top edge
+                            bottom = thick_side if row_num == max_row else None  # Bottom edge
+                            
+                            # Right dividers between sections
+                            if col_num == 5:  # E - divider after main
+                                right = thick_side
+                            elif col_num == 6:  # F - divider after notes
+                                right = thick_side
+                            elif col_num == 8:  # H - right edge of profitability
+                                right = thick_side
+                            
+                            apply_border(cell, left=left, right=right, top=top, bottom=bottom)
 
-                    for row_num in range(1, ws_tab1.max_row + 1):
-                        first_cell = ws_tab1.cell(row=row_num, column=1)
-                        first_value = str(first_cell.value or "")
-                        fourth_cell_value = str(ws_tab1.cell(row=row_num, column=4).value or "")
+                    # Track special cells for formula insertion in column H (profitability values)
+                    herd_size_cell = None
+                    milk_price_cell = None
+                    predicted_milk_cell = None
+                    cost_per_cow_cell = None
+                    profit_row = None
+                    
+                    # Apply formatting based on content - scan all columns
+                    for row_num in range(1, ws.max_row + 1):
+                        # Column A content (main area)
+                        a_cell = ws.cell(row=row_num, column=1)
+                        a_value = str(a_cell.value or "")
+                        b_cell = ws.cell(row=row_num, column=2)
+                        
+                        # Column G content (profitability/NASEM labels)
+                        g_cell = ws.cell(row=row_num, column=7)
+                        g_value = str(g_cell.value or "")
+                        h_cell = ws.cell(row=row_num, column=8)
 
+                        # ===== Main area formatting (column A) =====
                         # Title row
-                        if first_value == texts["sheet_results"]:
-                            first_cell.font = title_font
-                            first_cell.fill = title_fill
-                            ws_tab1.merge_cells(f'A{row_num}:C{row_num}')
+                        if a_value == texts["sheet_summary"]:
+                            a_cell.font = title_font
+                            a_cell.fill = title_fill
+                            ws.merge_cells(f'A{row_num}:E{row_num}')
 
-                        # Section headers
-                        elif first_value in [texts["ingredients"], texts["nutrition_profile"]]:
-                            first_cell.font = section_font
-                            first_cell.fill = section_fill
-                            ws_tab1.merge_cells(f'A{row_num}:C{row_num}')
+                        # Section headers in main area
+                        elif a_value in [texts["ingredients"], texts["key_nutrients"], 
+                                        texts["sheet_constraints"], texts["feed_constraints"]]:
+                            a_cell.font = section_font
+                            a_cell.fill = section_fill
+                            ws.merge_cells(f'A{row_num}:E{row_num}')
 
-                        # Two-row ingredient table header
-                        elif first_value == texts["feed_name"]:
-                            ingredient_header_row = row_num
-                            # Format first row of header (with "原料含量 (% DM)")
-                            for col in range(1, 4):  # First 3 columns
-                                cell = ws_tab1.cell(row=row_num, column=col)
-                                cell.font = header_font
-                                cell.fill = header_fill
-                                cell.alignment = Alignment(horizontal="center", wrap_text=True, vertical="center")
-
-                            # Check next row for nutrient names
-                            next_row_first = str(ws_tab1.cell(row=row_num + 1, column=1).value or "")
-                            if next_row_first == "":  # Next row is nutrient names
-                                nutrient_names_row = row_num + 1
-                                # Merge "原料含量 (% DM)" across all nutrient columns
-                                if ws_tab1.max_column > 3:
-                                    last_col_letter = get_column_letter(ws_tab1.max_column)
-                                    ws_tab1.merge_cells(f'D{row_num}:{last_col_letter}{row_num}')
-                                    merged_cell = ws_tab1.cell(row=row_num, column=4)
-                                    merged_cell.font = header_font
-                                    merged_cell.fill = header_fill
-                                    merged_cell.alignment = Alignment(horizontal="center", wrap_text=True, vertical="center")
-
-                                # Format second row of header (nutrient names)
-                                for col in range(4, ws_tab1.max_column + 1):
-                                    cell = ws_tab1.cell(row=nutrient_names_row, column=col)
-                                    if cell.value:
-                                        cell.font = header_font
-                                        cell.fill = header_fill
-                                        cell.alignment = Alignment(horizontal="center", wrap_text=True, vertical="center")
-
-                        # Regular nutrient analysis table header
-                        elif first_value == texts["nutrient"]:
-                            for col in range(1, ws_tab1.max_column + 1):
-                                cell = ws_tab1.cell(row=row_num, column=col)
+                        # Feed table header
+                        elif a_value == texts["feed_name"]:
+                            for col in range(1, 6):
+                                cell = ws.cell(row=row_num, column=col)
                                 if cell.value:
                                     cell.font = header_font
                                     cell.fill = header_fill
-                                    cell.alignment = Alignment(horizontal="center", wrap_text=True)
-
-                        # Label rows (ending with :)
-                        elif first_value.endswith(":"):
-                            first_cell.font = label_font
-
-                    # Add pie chart for nutrition profile (if nutrients exist)
-                    if len(nutrient_analysis) > 0:
-                        chart = PieChart()
-                        chart.title = texts["chart_title"]
-
-                        # Find the nutrition analysis section
-                        nutrition_start_row = None
-                        for row_num in range(1, ws_tab1.max_row + 1):
-                            if str(ws_tab1.cell(row=row_num, column=1).value) == texts["nutrition_profile"]:
-                                nutrition_start_row = row_num + 2  # Skip header row
-                                break
-
-                        if nutrition_start_row:
-                            data = Reference(ws_tab1, min_col=2, min_row=nutrition_start_row,
-                                           max_row=nutrition_start_row + len(nutrient_analysis) - 1)
-                            cats = Reference(ws_tab1, min_col=1, min_row=nutrition_start_row,
-                                           max_row=nutrition_start_row + len(nutrient_analysis) - 1)
-                            chart.add_data(data, titles_from_data=False)
-                            chart.set_categories(cats)
-                            chart.height = 12
-                            chart.width = 15
-
-                            # Place chart below the nutrition table
-                            chart_position = f'D{nutrition_start_row}'
-                            ws_tab1.add_chart(chart, chart_position)
-
-                # ==================== FORMAT TAB 2: 配方说明 ====================
-                if texts["sheet_notes"] in workbook.sheetnames:
-                    ws_tab2 = workbook[texts["sheet_notes"]]
-
-                    # Set column A to wide for description text
-                    ws_tab2.column_dimensions['A'].width = 100
-
-                    # Title formatting
-                    title_cell = ws_tab2['A1']
-                    title_cell.font = title_font
-                    title_cell.fill = title_fill
-
-                    # Wrap text for all cells
-                    for row in ws_tab2.iter_rows(min_row=3):
-                        for cell in row:
-                            if cell.value:
-                                cell.alignment = Alignment(wrap_text=True, vertical="top")
-
-                # ==================== FORMAT TAB 3: 约束条件 ====================
-                if texts["sheet_constraints"] in workbook.sheetnames:
-                    ws_tab3 = workbook[texts["sheet_constraints"]]
-
-                    # Auto-adjust column widths
-                    for column in ws_tab3.columns:
-                        max_length = 0
-                        column_letter = column[0].column_letter
-                        for cell in column:
-                            try:
-                                if cell.value and len(str(cell.value)) > max_length:
-                                    max_length = len(str(cell.value))
-                            except:
-                                pass
-                        adjusted_width = min(max(max_length + 2, 12), 35)
-                        ws_tab3.column_dimensions[column_letter].width = adjusted_width
-
-                    # Apply formatting based on content
-                    for row_num in range(1, ws_tab3.max_row + 1):
-                        first_cell = ws_tab3.cell(row=row_num, column=1)
-                        first_value = str(first_cell.value or "")
-
-                        # Title row
-                        if first_value == texts["sheet_constraints"]:
-                            first_cell.font = title_font
-                            first_cell.fill = title_fill
-                            ws_tab3.merge_cells(f'A{row_num}:C{row_num}')
-
-                        # Section headers
-                        elif first_value in [texts["constraint_validation"], texts["feed_constraints"]]:
-                            first_cell.font = section_font
-                            first_cell.fill = section_fill
-                            ws_tab3.merge_cells(f'A{row_num}:C{row_num}')
-
-                        # Table headers
-                        elif first_value in [texts["constraint_type"], texts["feed_name"]]:
-                            for col in range(1, ws_tab3.max_column + 1):
-                                cell = ws_tab3.cell(row=row_num, column=col)
+                                    cell.alignment = Alignment(horizontal="center")
+                        
+                        # Constraint table header
+                        elif a_value == texts["constraint_type"]:
+                            for col in range(1, 6):
+                                cell = ws.cell(row=row_num, column=col)
                                 if cell.value:
                                     cell.font = header_font
                                     cell.fill = header_fill
-                                    cell.alignment = Alignment(horizontal="center", wrap_text=True)
+                                    cell.alignment = Alignment(horizontal="center")
 
-                        # Add green/red fill for pass/fail in satisfaction column
-                        if row_num > 1:
-                            for col in range(1, ws_tab3.max_column + 1):
-                                cell = ws_tab3.cell(row=row_num, column=col)
-                                if cell.value:
-                                    if texts["satisfied"] in str(cell.value):
-                                        cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-                                        cell.font = Font(color="006100")
-                                    elif texts["unsatisfied"] in str(cell.value):
-                                        cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-                                        cell.font = Font(color="9C0006")
+                        # TOTAL row
+                        elif a_value == "TOTAL":
+                            for col in range(1, 6):
+                                cell = ws.cell(row=row_num, column=col)
+                                cell.font = Font(bold=True)
+
+                        # Label rows in main area (ending with :)
+                        elif a_value.endswith(":"):
+                            a_cell.font = label_font
+                        
+                        # Satisfaction pass/fail coloring in column E
+                        e_cell = ws.cell(row=row_num, column=5)
+                        e_value = str(e_cell.value or "")
+                        if texts["satisfied"] in e_value:
+                            e_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                            e_cell.font = Font(color="006100")
+                        elif texts["unsatisfied"] in e_value:
+                            e_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                            e_cell.font = Font(color="9C0006")
+
+                        # ===== G-H area formatting (profitability + NASEM) =====
+                        # Profitability/NASEM section headers (now in column G)
+                        if g_value in [texts["profitability"], texts["nasem_production"], 
+                                      texts["nasem_energy_balance"], texts["nasem_protein_balance"],
+                                      texts["nasem_other_metrics"]]:
+                            g_cell.font = section_font
+                            g_cell.fill = section_fill
+                            ws.merge_cells(f'G{row_num}:H{row_num}')
+
+                        # Input cells - highlight yellow and track for formulas (values now in H)
+                        elif g_value == texts["herd_size"]:
+                            h_cell.fill = input_fill
+                            herd_size_cell = f"H{row_num}"
+                        elif g_value == texts["milk_price"]:
+                            h_cell.fill = input_fill
+                            milk_price_cell = f"H{row_num}"
+                        
+                        # Track cells for formulas
+                        elif g_value == texts["nasem_predicted_milk"]:
+                            predicted_milk_cell = f"H{row_num}"
+                        elif g_value == texts["cost_per_cow_day"]:
+                            cost_per_cow_cell = f"H{row_num}"
+                        
+                        # Revenue formula
+                        elif g_value == texts["revenue_per_cow_day"]:
+                            if predicted_milk_cell and milk_price_cell:
+                                h_cell.value = f"={predicted_milk_cell}*{milk_price_cell}"
+                        
+                        # Profit per cow formula
+                        elif g_value == texts["profit_per_cow_day"]:
+                            if predicted_milk_cell and milk_price_cell and cost_per_cow_cell:
+                                h_cell.value = f"={predicted_milk_cell}*{milk_price_cell}-{cost_per_cow_cell}"
+                            profit_row = row_num
+                        
+                        # Herd profit/day formula
+                        elif g_value == texts["herd_profit_day"]:
+                            if profit_row and herd_size_cell:
+                                h_cell.value = f"=H{profit_row}*{herd_size_cell}"
+                        
+                        # Herd profit/month formula
+                        elif g_value == texts["herd_profit_month"]:
+                            herd_day_cell = f"H{row_num - 1}" if row_num > 1 else None
+                            if herd_day_cell:
+                                h_cell.value = f"={herd_day_cell}*30"
+
+                        # Input section label
+                        elif g_value == texts["input_section"]:
+                            g_cell.font = Font(italic=True, color="666666")
+
+                        # Label rows in G column (ending with :)
+                        elif g_value.endswith(":"):
+                            g_cell.font = label_font
+
+                # ==================== FORMAT NASEM Category Tabs ====================
+                # Note: NASEM-Summary is now in main tab, so not included here
+                nasem_sheet_names = ["NASEM-Intakes", "NASEM-Requirements", "NASEM-Production", 
+                                     "NASEM-Excretion", "NASEM-Efficiencies"]
+                
+                for sheet_name in nasem_sheet_names:
+                    if sheet_name in workbook.sheetnames:
+                        ws = workbook[sheet_name]
+                        
+                        # Set column widths
+                        ws.column_dimensions['A'].width = 50
+                        ws.column_dimensions['B'].width = 25
+                        
+                        for row_num in range(1, ws.max_row + 1):
+                            first_cell = ws.cell(row=row_num, column=1)
+                            first_value = str(first_cell.value or "")
+                            
+                            # Title row (first row with sheet name)
+                            if first_value == sheet_name:
+                                first_cell.font = title_font
+                                first_cell.fill = title_fill
+                                ws.merge_cells(f'A{row_num}:B{row_num}')
+                            
+                            # Header row
+                            elif first_value == "Variable":
+                                first_cell.font = header_font
+                                first_cell.fill = header_fill
+                                second_cell = ws.cell(row=row_num, column=2)
+                                if second_cell.value:
+                                    second_cell.font = header_font
+                                    second_cell.fill = header_fill
+                            
+                            # Label rows (ending with :)
+                            elif first_value.endswith(":"):
+                                first_cell.font = label_font
             
+
+
             # Format file info for backend parsing
             # Convert literal \n from LLM to actual newlines
             normalized_description = description.replace('\\n', '\n') if description else None

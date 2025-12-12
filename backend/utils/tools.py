@@ -781,7 +781,21 @@ async def get_nutritionist_tools(animal_type: str = "dairy_cow"):
     """Get nutritionist-specific tools"""
     # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
     formulation_tools = create_formulation_tools(animal_type)
-    return formulation_tools + get_usda_tools() + [calculate]
+    
+    # Base tools for all animal types
+    tools = formulation_tools + get_usda_tools() + [calculate]
+    
+    # Add NASEM tools for dairy cows only
+    if animal_type == "dairy_cow":
+        try:
+            from utils.nasem_tools import get_nasem_tools
+            nasem_tools = get_nasem_tools()
+            tools.extend(nasem_tools)
+            logger.info(f"Added {len(nasem_tools)} NASEM tools for dairy_cow nutritionist")
+        except ImportError as e:
+            logger.warning(f"Could not load NASEM tools: {e}")
+    
+    return tools
 
 async def get_coder_tools(animal_type: str = "dairy_cow"):
     """Get all available tools for a session (code worker tools)."""

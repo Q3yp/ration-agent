@@ -8,6 +8,9 @@ from typing import Dict
 
 SYSTEM_FEEDBASES_PATH = Path(__file__).resolve().parents[1] / "migrations" / "data" / "system_feedbases.json"
 
+# NASEM feedbase with full Fd_* column names for dairy cow (extracted from NASEM feed library)
+NASEM_FEEDBASE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "nasem_feedbase.json"
+
 
 class SystemFeedbaseConfigError(RuntimeError):
     """Raised when the consolidated system feedbase JSON is missing or invalid."""
@@ -29,6 +32,19 @@ def _read_feedbase_file() -> Dict[str, dict]:
 
     if not isinstance(data, dict):
         raise SystemFeedbaseConfigError("System feedbase JSON must be an object mapping names to feedbases")
+
+    # Override dairy_cow with NASEM feedbase (full Fd_* columns for NASEM model compatibility)
+    if NASEM_FEEDBASE_PATH.exists():
+        try:
+            with NASEM_FEEDBASE_PATH.open("r", encoding="utf-8") as fh:
+                nasem_data = json.load(fh)
+            if "default_dairy_cow_nasem" in nasem_data:
+                # Use NASEM feedbase for dairy_cow (rename key to match expected format)
+                data["default_dairy_cow"] = nasem_data["default_dairy_cow_nasem"]
+                data["default_dairy_cow"]["animal_type"] = "dairy_cow"
+        except (json.JSONDecodeError, IOError) as exc:
+            # Fall back to regular feedbase if NASEM file has issues
+            pass
 
     return data
 

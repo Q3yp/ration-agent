@@ -5,48 +5,23 @@ Extract NASEM 2021 Feed Library and convert to ration-agent feedbase format.
 The NASEM feed data is from the CNM-University-of-Guelph/NASEM-Model-Python project
 which is MIT licensed.
 
+This script extracts ALL NASEM nutrient columns to ensure full compatibility
+with the NASEM model calculations.
+
 Usage:
     python scripts/extract_nasem_feeds.py [--validate] [--output FILENAME]
 """
 
 import csv
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
 
-# NASEM column to ration-agent nutrient key mapping
-NUTRIENT_MAPPING = {
-    # Basic composition
-    "Fd_DM": ("dm_percent", 1.0),  # % as-fed -> % as-fed
-    "Fd_CP": ("CP", 1.0),  # % DM
-    "Fd_NDF": ("NDF", 1.0),  # % DM
-    "Fd_ADF": ("ADF", 1.0),  # % DM
-    "Fd_Lg": ("Lignin", 1.0),  # % DM
-    "Fd_St": ("Starch", 1.0),  # % DM
-    "Fd_CFat": ("EE", 1.0),  # Crude fat, % DM
-    "Fd_Ash": ("Ash", 1.0),  # % DM
-    
-    # Minerals
-    "Fd_Ca": ("Ca", 1.0),  # % DM
-    "Fd_P": ("P", 1.0),  # % DM
-    "Fd_Mg": ("Mg", 1.0),  # % DM
-    "Fd_K": ("K", 1.0),  # % DM
-    "Fd_S": ("S", 1.0),  # % DM
-    "Fd_Na": ("Na", 1.0),  # % DM
-    "Fd_Cl": ("Cl", 1.0),  # % DM
-    
-    # Protein fractions
-    "Fd_RUP_base": ("RUP", 1.0),  # % CP (Rumen Undegradable Protein)
-    "Fd_dcRUP": ("dcRUP", 1.0),  # Digestibility of RUP, %
-    "Fd_NPN_CP": ("NPN", 1.0),  # Non-protein nitrogen, % CP
-    "Fd_NDFIP": ("NDFIP", 1.0),  # NDF-insoluble protein, % DM
-    "Fd_ADFIP": ("ADFIP", 1.0),  # ADF-insoluble protein, % DM
-}
+# Metadata columns (not nutrients but needed for feed identification)
+METADATA_COLUMNS = ["Fd_Libr", "UID", "Fd_Index", "Fd_Name", "Fd_Category", "Fd_Type", "Fd_Locked"]
 
 # Common dairy feeds to extract by category
-# These are the most commonly used feeds in dairy rations
 TARGET_FEEDS = {
     # Forages - Legumes
     "Alfalfa meal": "alfalfa_meal",
@@ -126,7 +101,7 @@ TARGET_FEEDS = {
 }
 
 
-def safe_float(value: str, default: float = 0.0) -> float:
+def safe_float(value: str, default: float | None = None) -> float | None:
     """Convert string to float, returning default for empty/invalid values."""
     if not value or value.strip() == "":
         return default
@@ -136,25 +111,60 @@ def safe_float(value: str, default: float = 0.0) -> float:
         return default
 
 
-def extract_nutrients(row: dict) -> dict:
-    """Extract nutrients from a NASEM feed row."""
+def extract_all_nasem_nutrients(row: dict) -> dict:
+    """Extract ALL nutrient columns from a NASEM feed row.
+    
+    This preserves NASEM column names exactly for full model compatibility.
+    """
     nutrients = {}
-    for nasem_col, (ration_key, multiplier) in NUTRIENT_MAPPING.items():
-        if nasem_col in row:
-            value = safe_float(row[nasem_col])
-            if value > 0:  # Only include non-zero values
-                nutrients[ration_key] = round(value * multiplier, 3)
+    for col, value in row.items():
+        # Skip metadata columns
+        if col in METADATA_COLUMNS:
+            continue
+        # Try to convert to float
+        float_val = safe_float(value)
+        if float_val is not None:
+            nutrients[col] = round(float_val, 6)  # Keep precision
     return nutrients
 
 
 def clean_feed_name(name: str) -> str:
     """Clean feed name to create a valid key."""
-    # Remove special characters, make lowercase, replace spaces
     key = name.lower()
     key = key.replace(",", "").replace("(", "").replace(")", "")
     key = key.replace("%", "pct").replace("/", "_")
     key = "_".join(key.split())
     return key
+
+
+def convert_row(row: dict, original_name: str) -> dict:
+    """Convert a NASEM row to ration-agent feed format with ALL nutrients."""
+    dm = safe_float(row.get("Fd_DM", "90"), 90)
+    category = row.get("Fd_Category", "")
+    fd_type = row.get("Fd_Type", "")
+    
+    # Extract ALL NASEM nutrient columns
+    nutrients = extract_all_nasem_nutrients(row)
+    
+    # Add NASEM metadata columns that the model requires
+    fd_libr = row.get("Fd_Libr", "NRC 2020")
+    uid = row.get("UID", "")
+    fd_index = safe_float(row.get("Fd_Index", "0"), 0)
+    fd_locked = safe_float(row.get("Fd_Locked", "0"), 0)
+    
+    return {
+        "dm_percent": round(dm, 1),
+        "cost_per_kg": 0.0,  # User must set prices
+        "nutrients": nutrients,
+        "nasem_name": original_name,
+        "category": category,
+        "type": fd_type,
+        # NASEM model metadata
+        "Fd_Libr": fd_libr,
+        "UID": uid,
+        "Fd_Index": int(fd_index),
+        "Fd_Locked": int(fd_locked),
+    }
 
 
 def find_matching_feeds(rows: list[dict]) -> dict[str, dict]:
@@ -183,39 +193,17 @@ def find_matching_feeds(rows: list[dict]) -> dict[str, dict]:
     return feeds
 
 
-def convert_row(row: dict, original_name: str) -> dict:
-    """Convert a NASEM row to ration-agent feed format."""
-    dm = safe_float(row.get("Fd_DM", "90"), 90)
-    nutrients = extract_nutrients(row)
-    
-    # Remove dm_percent from nutrients (it's at feed level)
-    nutrients.pop("dm_percent", None)
-    
-    return {
-        "dm_percent": round(dm, 1),
-        "cost_per_kg": 0.0,  # User must set prices
-        "nutrients": nutrients,
-        "nasem_name": original_name,  # Store original name for reference
-    }
-
-
 def extract_all_feeds(rows: list[dict]) -> dict[str, dict]:
-    """Extract all feeds grouped by category for selection."""
+    """Extract all feeds with full NASEM nutrient data."""
     feeds = {}
     
     for row in rows:
         name = row.get("Fd_Name", "")
-        category = row.get("Fd_Category", "Unknown")
-        fd_type = row.get("Fd_Type", "Unknown")
-        
         if not name:
             continue
             
         key = clean_feed_name(name)
-        converted = convert_row(row, name)
-        converted["category"] = category
-        converted["type"] = fd_type
-        feeds[key] = converted
+        feeds[key] = convert_row(row, name)
         
     return feeds
 
