@@ -12,8 +12,9 @@ RUN apt-get update && apt-get install -y \
 
 ENV UV_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
-# Install uv for fast Python package management
-RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple uv
+# Install uv using official standalone installer (more reliable than pip)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
 
 # Create non-root user for security and home directory
 RUN groupadd -r appuser && useradd -r -g appuser appuser
