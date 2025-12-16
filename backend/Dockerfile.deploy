@@ -24,14 +24,11 @@ RUN chown appuser:appuser /app
 USER appuser
 ENV HOME="/home/appuser"
 
-# Copy dependency files with correct ownership
-COPY --chown=appuser:appuser pyproject.toml uv.lock ./
-
-# Install dependencies using uv
-RUN uv sync --index-url https://pypi.tuna.tsinghua.edu.cn/simple
-
-# Copy application code with correct ownership
+# Copy all source code (including nasem_dairy local package)
 COPY --chown=appuser:appuser . .
+
+# Install dependencies using uv (nasem_dairy is a local editable dependency)
+RUN uv sync --index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
 # Ensure files directory exists
 RUN mkdir -p /app/files
