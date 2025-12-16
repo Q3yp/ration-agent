@@ -19,6 +19,7 @@ from api.feedback_routes import feedback_router
 from migrations.schema_manager import SchemaManager
 from services.session_manager import session_manager
 from core.agent import cleanup_shared_resources
+from utils.deepseek_wrapper import init_deepseek_compatibility
 
 import logging
 
@@ -62,6 +63,9 @@ async def lifespan(app: FastAPI):
         await session_manager.initialize()
     except Exception as e:
         raise
+
+    # Initialize DeepSeek thinking mode compatibility (must be before agent init)
+    init_deepseek_compatibility()
 
     # Initialize all agent types (eager loading for instant first response)
     try:

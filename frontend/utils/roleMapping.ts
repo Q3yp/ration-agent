@@ -141,7 +141,7 @@ export const toolNameMapping: Record<string, string> = {
   'list_feed_bases': '饲料库列表',
 
   // NASEM tools
-  'calculate_dairy_requirements': '计算营养需求',
+  'predict_dairy_requirements': '预测营养需求',
   'evaluate_diet_with_nasem': '评估日粮',
 
   // Fallback

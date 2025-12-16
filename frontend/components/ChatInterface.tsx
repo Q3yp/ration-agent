@@ -51,7 +51,9 @@ export default function ChatInterface({
   const [feedbackContent, setFeedbackContent] = useState('')
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const isUserAtBottomRef = useRef(true)
   const { t } = useI18n()
 
   const {
@@ -64,6 +66,7 @@ export default function ChatInterface({
     isTyping,
     analysisState,
     formulationState,
+    thinkingState,
     sendMessage,
     stopMessage,
     retryConnection,
@@ -81,6 +84,18 @@ export default function ChatInterface({
     // but for now we just hide UI.
   })
   const planLimitActive = planLimitInfo?.sessionId === sessionId
+
+  // Track if user is at or near the bottom of the message container
+  const checkIfAtBottom = () => {
+    const container = messagesContainerRef.current
+    if (!container) return true
+    const threshold = 100 // pixels from bottom to consider "at bottom"
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold
+  }
+
+  const handleScroll = () => {
+    isUserAtBottomRef.current = checkIfAtBottom()
+  }
 
   // Clear artifact when switching sessions
   useEffect(() => {
@@ -100,9 +115,12 @@ export default function ChatInterface({
     })
   }
 
+  // Only auto-scroll to bottom when user is already at the bottom
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    if (isUserAtBottomRef.current) {
+      scrollToBottom()
+    }
+  }, [messages, isTyping, isStreaming, thinkingState?.content, analysisState, formulationState])
 
   const handleFileUploaded = (uploadedFile: { name: string; size: number; originalName?: string }) => {
     // Buffer the file notification instead of sending immediately
@@ -358,12 +376,17 @@ export default function ChatInterface({
         )}
 
         {/* Messages */}
-        <CardContent className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 sm:space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0">
+        <CardContent
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 sm:space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 min-h-0"
+        >
           <MessageList
             messages={messages}
             isTyping={isTyping || isStreaming}
             analysisState={analysisState}
             formulationState={formulationState}
+            thinkingState={thinkingState}
             onArtifactOpen={setCurrentArtifact}
             onFileDownload={handleFileDownload}
             sessionId={sessionId}

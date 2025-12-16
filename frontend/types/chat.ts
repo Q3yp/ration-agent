@@ -1,6 +1,7 @@
 export type MessageType =
   | 'user'           // User input message
   | 'agent'          // Agent response content (streamable)
+  | 'thinking'       // DeepSeek reasoning content (streamable, collapsible)
   | 'tool_call'      // Tool execution indicator
   | 'tool_result'    // Tool execution result
   | 'role_transition' // Agent handoff/routing (single expandable bubble)

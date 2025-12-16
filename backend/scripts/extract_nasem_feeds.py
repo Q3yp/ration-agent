@@ -297,22 +297,37 @@ async def generate_embeddings(feeds: dict[str, dict], output_path: Path):
         result["feed_texts"][feed_name] = feed_text
         feed_texts.append(feed_text)
     
-    print(f"📊 Embedding {len(feed_texts)} feeds in batch...")
+    # Batch size limited for DashScope Qwen embeddings (limit is ~10)
+    BATCH_SIZE = 6
     
-    # Generate all embeddings in one batch call
+    print(f"📊 Embedding {len(feed_texts)} feeds in batches of {BATCH_SIZE}...")
+    
+    embeddings = []
+    
+    # Generate all embeddings in batches
     async with httpx.AsyncClient(timeout=120.0) as client:
-        try:
-            embeddings = await generate_embeddings_batch(feed_texts, client)
+        for i in range(0, len(feed_texts), BATCH_SIZE):
+            batch_texts = feed_texts[i : i + BATCH_SIZE]
+            batch_num = (i // BATCH_SIZE) + 1
+            total_batches = (len(feed_texts) + BATCH_SIZE - 1) // BATCH_SIZE
             
-            # Map embeddings back to feed names
-            for feed_name, embedding in zip(feed_names, embeddings):
-                result["embeddings"][feed_name] = embedding
-            
-            print(f"✅ Generated {len(embeddings)} embeddings")
-            
-        except Exception as e:
-            print(f"❌ Batch embedding failed: {e}")
-            return
+            try:
+                print(f"  - Processing batch {batch_num}/{total_batches} ({len(batch_texts)} items)...")
+                batch_embeddings = await generate_embeddings_batch(batch_texts, client)
+                embeddings.extend(batch_embeddings)
+            except Exception as e:
+                print(f"❌ Batch {batch_num} failed: {e}")
+                return
+
+    # Map embeddings back to feed names
+    if len(embeddings) != len(feed_names):
+        print(f"❌ Error: Got {len(embeddings)} embeddings for {len(feed_names)} feeds")
+        return
+
+    for feed_name, embedding in zip(feed_names, embeddings):
+        result["embeddings"][feed_name] = embedding
+    
+    print(f"✅ Generated {len(embeddings)} embeddings")
     
     # Save embeddings
     with open(output_path, 'w') as f:

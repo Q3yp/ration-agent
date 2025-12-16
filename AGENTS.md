@@ -154,6 +154,7 @@ The dairy cow feedbase uses the **full NASEM feed library** with native `Fd_*` c
 - **Output**: `scripts/nasem_feedbase.json` with full NASEM `Fd_*` column format
 - **Loading**: `system_feedbases.py` overrides `default_dairy_cow` with NASEM feedbase
 - **Service**: `NASEMService.build_feed_library_from_feedbase()` converts dict → DataFrame
+- **Nutrient Reference**: `prompts/nutritionist_dairy_cow.md` contains a comprehensive NASEM Nutrient Reference section with all 81 `Fd_*` fields documented (names, units, usage notes)
 
 **Feed data structure**:
 ```python
@@ -210,6 +211,29 @@ add_feed("my_farm", "soybean_meal_48", cost_per_kg=0.45, nutrients={"Fd_CP": 50.
 - `cost_per_kg` optional (defaults to 0)
 - `nutrients` dict merges/overrides specific values only
 - Same call adds or updates existing feed in target feedbase
+
+### Formulation Constraints (formulate_ration)
+
+The `formulate_ration` tool uses linear programming with three constraint types:
+
+| Type | Purpose | Required Fields |
+|------|---------|-----------------|
+| `concentration` | Min/max % of nutrient in final ration (DM basis) | `nutrient`, at least one of `min`/`max` |
+| `daily_total` | Target daily intake amount with tolerance | `attribute`, `target`, optional `tolerance_percent` (default 10%) |
+| `ratio` | Min/max ratio between two nutrients | `numerator`, `denominator`, at least one of `min`/`max` |
+
+**Critical: `dmi` is a special attribute** for `daily_total` type. When used, it sets the total dry matter intake target and enables `kg_per_day` calculations. **Must be specified first** if other `daily_total` nutrient constraints are used.
+
+**Optimization Goals** (`optimization_goal` parameter):
+| Goal | Description |
+|------|-------------|
+| `minimize_cost` | (Default) Find the least-cost ration that satisfies all constraints |
+| `feasibility` | Find any ration that satisfies constraints without optimizing for cost |
+
+> [!WARNING]
+> **Nutrient names must exactly match feedbase columns** (use `check_feeds(feedbase, "nutrients")` to list them).
+> For dairy cows, nutrients use NASEM `Fd_*` prefixes: `Fd_CP`, `Fd_NDF`, `Fd_Ca`, `Fd_DE_Base`, etc.
+> Using incorrect names like `CP` instead of `Fd_CP` returns 0 for all feeds → **infeasible optimization**.
 
 
 ## StopManager & Message Caching (Critical)
@@ -317,8 +341,9 @@ GET /sessions/{id}/history?stream=true&skip_cache=true
 | `utils/tools.py` | Agent tools: file listing, reading, web search, artifact creation |
 | `utils/formulation_tools.py` | Core formulation tools: `add_feed`, `formulate_ration`, `check_feeds`, `list_feed_bases`. Export tool imported from `formulation_exporter.py` |
 | `utils/formulation_exporter.py` | `export_formulation` tool (~900 lines): Creates unified Summary tab with 3 sections separated by borders: A-E (ingredients, key nutrients using Fd_* fields, constraints), F (notes with header + merged text), G-H (profitability with editable inputs + NASEM predictions). Also creates NASEM category tabs for dairy |
-| `utils/language.py` | Centralized i18n: `normalize_locale()`, `t(key, locale)` helper for type-safe translations, `get_export_texts(locale)` for Excel export strings. ~160 translation keys for zh-CN/en-US |
-| `utils/nasem_tools.py` | `calculate_dairy_requirements`, `evaluate_diet_with_nasem` tools for dairy cow nutritionist. Note: `evaluate_diet_with_nasem` reads formulation from state - enforces `formulate_ration` workflow |
+| `utils/language.py` | Centralized i18n: `normalize_locale()`, `t(key, locale)` helper for type-safe translations, `get_export_texts(locale)` for Excel export strings. ~160 translation keys for zh-CN/en-US. Uses `[INSTRUCTION: ...]` blocks in some tool result messages to guide agent response behavior (e.g., export success instructs agent to be brief) |
+| `utils/nasem_tools.py` | `predict_dairy_requirements`, `evaluate_diet_with_nasem` tools for dairy cow nutritionist. Uses NASEM equations for factorial requirements (eq 8) and diet evaluation. `formulate_ration` now supports `animal_params` for embedded DMI prediction (eq 9) |
+| `utils/prompt_loader.py` | Loads agent prompts with Jinja2 templating. Implements **Anthropic prompt caching** via OpenRouter: system prompt + conversation history messages get `cache_control: ephemeral` for ~87% cost reduction on multi-tool-call chains |
 | `utils/system_feedbases.py` | Loads system feedbase definitions. For dairy cow, uses NASEM feedbase JSON with full `Fd_*` nutrient columns extracted from NASEM feed library |
 | `formulation/optimizer.py` | `RationOptimizer`: scipy-based least-cost formulation solver |
 
@@ -327,7 +352,8 @@ GET /sessions/{id}/history?stream=true&skip_cache=true
 | File | Purpose |
 |------|---------|
 | `app/page.tsx` | Landing page with session creation flow |
-| `components/ChatInterface.tsx` | Main chat container with SSE streaming |
+| `components/ChatInterface.tsx` | Main chat container with SSE streaming. Implements **smart auto-scroll**: only scrolls to bottom when user is already at or near the bottom, allowing users to scroll up to read previous messages without interruption |
+| `components/TypingIndicator.tsx` | Agent thinking/typing animation. Thinking block content also uses smart auto-scroll for the reasoning content panel |
 | `hooks/useSSEChat.ts` | EventSource connection, message parsing, stop handling |
 | `hooks/useMessages.ts` | Message state, optimistic updates, history loading |
 | `components/MessageBubble.tsx` | Message rendering: markdown, artifacts, tool calls |
@@ -343,6 +369,7 @@ uv sync                          # Install dependencies
 uv run python main.py            # Start API server (localhost:8000)
 uv run python basic_test.py      # Run basic agent tests
 uv run python test_optimizer.py  # Test formulation optimizer
+uv run python formulate_cli.py   # CLI ration formulation tool (--help for options)
 ```
 
 ### Frontend
@@ -412,6 +439,32 @@ IHUYI_SMS_PASSWORD=api_key
 ```env
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=same_as_backend_if_using_google
 ```
+
+### DeepSeek Direct API Configuration
+When using DeepSeek API directly (not via OpenRouter):
+
+```env
+# DeepSeek API Direct
+OPENAI_ENDPOINT=https://api.deepseek.com/v1
+OPENROUTER_API_KEY=sk-your-deepseek-api-key
+
+# Model options:
+# - deepseek-chat: Standard model, supports tool calling
+# - deepseek-reasoner: Thinking mode model (CoT reasoning)
+NUTRITIONIST_MODEL=deepseek-reasoner
+RESEARCHER_MODEL=deepseek-reasoner
+CODER_MODEL=deepseek-reasoner
+TITLE_GENERATION_MODEL=deepseek-chat
+
+# For deepseek-chat with thinking mode (V3.2):
+# DEEPSEEK_THINKING_MODE=true
+```
+
+**DeepSeek Compatibility Notes:**
+- `utils/deepseek_wrapper.py`: Monkey-patches langchain-openai to handle `reasoning_content` for thinking mode tool calls
+- `utils/prompt_loader.py`: Anthropic cache_control is only applied for Claude models
+- `utils/model_config.py`: max_tokens capped at 8192 (DeepSeek limit)
+- **Reasoning Content Rendering**: When using `deepseek-reasoner`, the model's `reasoning_content` is streamed to the frontend as a separate `thinking` message type, displayed in a collapsible purple indicator block that auto-scrolls and collapses when the final answer starts
 
 ---
 

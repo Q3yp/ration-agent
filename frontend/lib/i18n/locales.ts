@@ -120,6 +120,8 @@ export const translations: Record<Locale, TranslationTree> = {
       localeToggleLabel: '界面语言',
       tokenUsageLabel: '对话长度',
       inputPlaceholder: '输入您的消息...',
+      thinking: '思考中...',
+      responding: '正在输入...',
       tierLabel: '账户等级',
       tierBadges: {
         free: '免费版',
@@ -370,6 +372,8 @@ export const translations: Record<Locale, TranslationTree> = {
       localeToggleLabel: 'Interface language',
       tokenUsageLabel: 'Tokens used',
       inputPlaceholder: 'Type your message...',
+      thinking: 'Thinking...',
+      responding: 'Responding...',
       tierLabel: 'Plan',
       tierBadges: {
         free: 'Free',

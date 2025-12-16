@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional, Annotated
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
+import numpy as np
 from langchain_core.tools import tool, InjectedToolCallId, InjectedToolArg
 from langchain_core.messages import ToolMessage
 from langchain_core.runnables import RunnableConfig
@@ -19,6 +20,28 @@ from utils.formulation_exporter import create_export_formulation_tool, sanitize_
 from services.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
+
+
+def numpy_to_python(obj: Any) -> Any:
+    """Recursively convert numpy types to native Python types.
+    
+    LangGraph's PostgreSQL checkpointer uses msgpack for serialization,
+    which cannot handle numpy types like float64. This function converts
+    all numpy types in nested structures to their Python equivalents.
+    """
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, dict):
+        return {k: numpy_to_python(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [numpy_to_python(item) for item in obj]
+    return obj
 
 
 def create_formulation_tools(animal_type: str = "dairy_cow"):
@@ -331,33 +354,49 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         tool_call_id: Annotated[str, InjectedToolCallId],
         config: RunnableConfig,
         feed_constraints: Optional[Dict[str, Dict]] = None,
-        optimization_goal: str = "minimize_cost"
+        optimization_goal: str = "minimize_cost",
+        animal_params: Optional[Dict[str, Any]] = None
     ) -> Command:
         """
-        Formulate optimal ration using flexible constraint system with tolerance support.
-        Automatically calculates daily feed amounts when DMI is specified in constraints.
+        Formulate optimal ration using linear/non-linear programming optimization.
+        
+        For DAIRY COWS: If animal_params is provided, uses NASEM DMI prediction model
+        (equation 9) to automatically calculate DMI from diet composition. MP supply
+        is also calculated automatically from diet composition.
+        
+        IMPORTANT: Use check_feeds(feedbase, "nutrients") to get exact nutrient column names.
         
         Args:
             feed_base_name: Name of the feedbase to use for formulation
-            nutritional_constraints: List of constraint dictionaries:
-                - {"type": "concentration", "nutrient": "CP", "min": 16.0, "max": 18.0}
-                - {"type": "daily_total", "attribute": "dmi", "target": 18.0, "tolerance_percent": 10.0}
-                - {"type": "daily_total", "attribute": "NEL", "target": 32.0, "tolerance_percent": 5.0}
-                - {"type": "daily_total", "attribute": "CP", "target": 2.8, "tolerance_percent": 8.0}
-                - {"type": "ratio", "numerator": "Ca", "denominator": "P", "min": 1.2, "max": 2.0}
-            selected_feeds: List of feed names to include in optimization
-            feed_constraints: Optional inclusion limits {"feed_name": {"min": 0, "max": 50}}
-            optimization_goal: "minimize_cost" or other objectives
+            nutritional_constraints: List of constraint dictionaries with these types:
             
-        Daily Total Constraints:
-            - Use "daily_total" type for any daily target (DMI, nutrients, etc.)
-            - "attribute": can be "dmi" or any nutrient name (e.g., "NEL", "CP", "Ca")
-            - "target": the target daily amount
-            - "tolerance_percent": optional tolerance (default 10%) - creates flexible range around target
-            - DMI constraint should be specified first, as nutrient daily totals depend on it
+                "concentration" - Set min/max % of nutrient in ration (DM basis)
+                    Required: nutrient (str), min/max (float)
+                    
+                "daily_total" - Set target daily intake amount with tolerance
+                    Required: attribute (str), target (float)
+                    Optional: tolerance_percent (default 10%)
+                    Special attributes:
+                      - "dmi": Sets fixed DMI (overrides prediction)
+                      - "mp": Metabolizable protein target (g/day, calculated from diet)
+                    
+                "ratio" - Set min/max ratio between two nutrients
+                    Required: numerator (str), denominator (str), min/max (float)
+                    
+            selected_feeds: List of feed names to include in optimization
+            feed_constraints: Optional inclusion limits per feed as % of ration DM
+            optimization_goal: Optimization objective:
+                - "minimize_cost" (default): Find least-cost ration
+                - "feasibility": Find any ration satisfying constraints (no cost optimization)
+            animal_params: Optional dict for NASEM predictions (dairy cows):
+                - milk_prod: Target milk production kg/day (REQUIRED)
+                - body_weight, dim, parity, bcs, milk_fat_pct, milk_protein_pct
             
         Returns:
-            State update with formulation results including daily amounts when DMI is provided
+            Formulation result with:
+            - formulation: feed percentages and kg/day
+            - predicted_dmi_kg, predicted_mp_g: from diet composition
+            - nutrient_analysis, cost_per_kg_dm
         """
         try:
             # Validate inputs
@@ -444,17 +483,26 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                     update={"messages": [ToolMessage(f"Error: The following feeds are not in the database: {', '.join(missing_feeds)}. Available feeds: {', '.join(feed_database.keys())}", tool_call_id=tool_call_id)]}
                 )
             
-            # Extract daily intake if provided in constraints
-            daily_intake_kg = None
-            for constraint in nutritional_constraints:
-                if constraint.get("type") == "daily_total" and constraint.get("attribute") == "dmi":
-                    daily_intake_kg = constraint.get("target")
-                    break
-            
             # Run optimization
             optimizer = create_optimizer()
             optimizer.set_feeds(feed_database)
             
+            # Set animal params for DMI prediction if applicable (dairy cows)
+            if animal_type == "dairy_cow" and animal_params is not None:
+                milk_prod = animal_params.get("milk_prod")
+                if milk_prod is not None:
+                    optimizer.set_animal_params(
+                        body_weight=animal_params.get("body_weight", 650.0),
+                        dim=animal_params.get("dim", 90),
+                        parity=animal_params.get("parity", 2),
+                        milk_prod=milk_prod,
+                        bcs=animal_params.get("bcs", 3.0),
+                        milk_fat_pct=animal_params.get("milk_fat_pct", 3.5),
+                        milk_protein_pct=animal_params.get("milk_protein_pct", 3.2)
+                    )
+            
+            # Run SLSQP optimization
+            # Note: DMI override via constraints handled automatically by optimizer
             optimization_result = await asyncio.to_thread(
                 optimizer.optimize,
                 nutritional_constraints=nutritional_constraints,
@@ -463,28 +511,12 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 optimization_goal=optimization_goal
             )
             
-            # If optimization succeeded and daily intake is provided, calculate daily amounts
-            if optimization_result.get("status") == "success" and daily_intake_kg is not None:
-                # Calculate daily amounts for each feed
-                updated_formulation = {}
-                for feed_name, feed_data in optimization_result["formulation"].items():
-                    percentage_dm = feed_data["percentage_dm"]
-                    
-                    # Get feed dry matter percentage
-                    feed_dm_percent = feed_database[feed_name]["dm_percent"]
-                    
-                    # Calculate daily amount as-fed
-                    # Formula: (feed_percentage_dm / 100) * daily_dm_intake_kg / (feed_dm_percent / 100)
-                    kg_per_day = (percentage_dm / 100) * daily_intake_kg / (feed_dm_percent / 100)
-                    
-                    updated_formulation[feed_name] = {
-                        "percentage_dm": percentage_dm,
-                        "kg_per_day": round(kg_per_day, 2)
-                    }
-                
-                # Update the formulation result
-                optimization_result["formulation"] = updated_formulation
-                optimization_result["daily_dm_intake_kg"] = daily_intake_kg
+            # Add animal params to result for reference
+            if animal_params and optimization_result.get("status") == "success":
+                optimization_result["animal_params_used"] = animal_params
+            
+            # Convert numpy types to Python types for msgpack serialization
+            optimization_result = numpy_to_python(optimization_result)
             
             # Only store constraints in state if optimization succeeded
             state_update = {
@@ -499,6 +531,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             if optimization_result.get("status") == "success":
                 state_update["formulation_constraints"] = nutritional_constraints
                 state_update["feed_constraints"] = feed_constraints or {}
+                if animal_params:
+                    state_update["animal_params"] = animal_params
             
             return Command(update=state_update)
             

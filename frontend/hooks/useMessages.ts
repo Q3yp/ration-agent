@@ -46,6 +46,12 @@ interface FormulationState {
   operationData?: any[]  // Track structured data for each operation
 }
 
+interface ThinkingState {
+  isActive: boolean
+  content: string
+  isComplete: boolean
+}
+
 interface PlanLimitInfo {
   sessionId: string
   limit: number
@@ -64,6 +70,7 @@ interface UseMessagesReturn {
   isTyping: boolean  // Immediate typing state for responsive UX
   analysisState?: AnalysisState
   formulationState?: FormulationState
+  thinkingState?: ThinkingState  // DeepSeek reasoning content state
   planLimitInfo: PlanLimitInfo | null
 
   // Actions
@@ -105,6 +112,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
   const [isTyping, setIsTyping] = useState(false)  // Immediate typing feedback
   const [analysisState, setAnalysisState] = useState<AnalysisState | undefined>(undefined)
   const [formulationState, setFormulationState] = useState<FormulationState | undefined>(undefined)
+  const [thinkingState, setThinkingState] = useState<ThinkingState | undefined>(undefined)
   const [planLimitInfo, setPlanLimitInfo] = useState<PlanLimitInfo | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const historyLoadedRef = useRef(false)
@@ -129,7 +137,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     setState(prevState => {
       const updateObj = typeof updates === 'function' ? updates(prevState) : updates
       const newState = { ...prevState, ...updateObj }
-      
+
       // Validate state integrity
       if (!MessageProcessor.validateMessageState(newState)) {
         console.warn('MessageProcessor: Invalid state update attempted', { prevState, updateObj, newState })
@@ -148,7 +156,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       switch (event.type) {
         case 'message':
           const message = event.data as Message
-          
+
           // Handle analysis events
           if (message.type === 'analysis_start' || message.type === 'analysis_update' || message.type === 'analysis_complete') {
             if (message.type === 'analysis_start') {
@@ -168,7 +176,15 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
               // Use the individual operation from metadata, or fall back to content
               const operation = message.metadata?.operation || message.content
               setAnalysisState(prev => {
-                if (!prev) return undefined
+                if (!prev) {
+                  // Resume scenario: create state from update event
+                  return {
+                    isActive: true,
+                    content: message.content,
+                    isComplete: false,
+                    operations: [operation]
+                  }
+                }
                 const currentOperations = prev.operations || []
                 return {
                   ...prev,
@@ -181,11 +197,11 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
             } else if (message.type === 'analysis_complete') {
               // Immediately clear analysis state - completion creates permanent message
               setAnalysisState(undefined)
-              
+
               // Let analysis_complete create a permanent message - don't break
             }
           }
-          
+
           // Handle formulation events
           if (message.type === 'formulation_start' || message.type === 'formulation_update' || message.type === 'formulation_complete') {
             if (message.type === 'formulation_start') {
@@ -207,7 +223,16 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
               const operation = message.metadata?.operation || message.content
               const operationData = message.metadata?.operation_data
               setFormulationState(prev => {
-                if (!prev) return undefined
+                if (!prev) {
+                  // Resume scenario: create state from update event
+                  return {
+                    isActive: true,
+                    content: message.content,
+                    isComplete: false,
+                    operations: [operation],
+                    operationData: operationData ? [operationData] : []
+                  }
+                }
                 const currentOperations = prev.operations || []
                 const currentOperationData = prev.operationData || []
                 return {
@@ -226,11 +251,47 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
             } else if (message.type === 'formulation_complete') {
               // Immediately clear formulation state - completion creates permanent message
               setFormulationState(undefined)
-              
+
               // Let formulation_complete create a permanent message - don't break
             }
           }
-          
+
+          // Handle thinking messages (DeepSeek reasoning content)
+          if (message.type === 'thinking') {
+            // Accumulate thinking content in real-time
+            setThinkingState(prev => {
+              if (!prev) {
+                // Start new thinking
+                return {
+                  isActive: true,
+                  content: message.content,
+                  isComplete: false
+                }
+              }
+              // Append to existing thinking (streaming)
+              return {
+                ...prev,
+                content: prev.content + message.content
+              }
+            })
+            // Stop regular typing indicator when thinking starts
+            if (isTyping) {
+              setIsTyping(false)
+            }
+            // Break out of switch - thinking messages are shown in indicator only
+            break
+          }
+
+          // When regular agent content arrives, clear thinking state (reasoning is done)
+          if (message.type === 'agent' && !message.metadata?.is_thinking) {
+            if (thinkingState?.isActive) {
+              // Mark thinking as complete before clearing
+              setThinkingState(prev => prev ? { ...prev, isActive: false, isComplete: true } : undefined)
+              // Clear after short delay to allow collapse animation
+              setTimeout(() => setThinkingState(undefined), 1500)
+            }
+          }
+
           // Use functional update to ensure we have the latest messages
           updateState(prevState => ({
             messages: MessageProcessor.processStreamingMessage(prevState.messages, message),
@@ -241,7 +302,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           if (isTyping) {
             setIsTyping(false)
           }
-          
+
           // Clear analysis state when regular agent messages arrive (analysis is done)
           if (message.type === 'agent' && analysisState?.isComplete) {
             // Set a timeout to clear analysis state after completion state is seen
@@ -277,10 +338,10 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           if (connData.streamingComplete || connData.streamingStopped) {
             // Complete streaming message using functional update
             updateState(prevState => {
-              const completedMessages = prevState.streamingMessageId 
+              const completedMessages = prevState.streamingMessageId
                 ? MessageProcessor.completeStreamingMessage(prevState.messages, prevState.streamingMessageId)
                 : prevState.messages
-              
+
               return {
                 messages: completedMessages,
                 streamingMessageId: null,
@@ -333,19 +394,19 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
             message: rawError.message || rawError.content || 'Server error',
             ...rawError
           })
-          
+
           updateState({
             error: classified.userMessage,
             connectionState: 'error',
             streamingMessageId: null
           })
-          
+
           setIsTyping(false)  // Stop typing on error
 
           if (onError) {
             onError(classified.userMessage)
           }
-          
+
           // Auto-retry for certain error types
           if (ErrorHandler.shouldAutoRetry(classified.originalError)) {
             setTimeout(() => {
@@ -356,7 +417,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           break
       }
     }
-  }, [updateState, onTitleUpdate, onArtifactUpdate, onConnectionChange, onError, onTokenUsageUpdate, state, analysisState])
+  }, [updateState, onTitleUpdate, onArtifactUpdate, onConnectionChange, onError, onTokenUsageUpdate, state, analysisState, thinkingState, isTyping])
 
   /**
    * Load session history
@@ -373,14 +434,14 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       const response = await fetch(`${endpoint}/sessions/${sessionId}/history`, {
         headers: getAuthHeadersWithDefaults()
       })
-      
+
       if (!response.ok) {
         throw new Error(`Failed to load session history: ${response.statusText}`)
       }
-      
+
       const data = await response.json()
       const messages = MessageProcessor.processHistoryMessages(data.messages || [])
-      
+
       updateState({
         messages: MessageProcessor.deduplicateMessages(messages),
         connectionState: 'connected'
@@ -394,7 +455,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
         error: classified.userMessage,
         connectionState: 'error'
       })
-      
+
       if (onError) {
         onError(classified.userMessage)
       }
@@ -411,7 +472,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     try {
       // Abort any previous stream
       if (abortControllerRef.current) {
-        try { abortControllerRef.current.abort() } catch {}
+        try { abortControllerRef.current.abort() } catch { }
         abortControllerRef.current = null
       }
       abortControllerRef.current = new AbortController()
@@ -473,7 +534,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           historyLoadedRef.current = false
           await loadHistory()
         }
-      } catch {}
+      } catch { }
     }
   }, [sessionId, endpoint, updateState, processEvents, onError, autoLoadHistory, loadHistory])
 
@@ -497,12 +558,13 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
         error: null,
         connectionState: 'connecting'
       }))
-      
+
       // Set typing immediately for responsive UX
       setIsTyping(true)
-      // Clear any previous analysis and formulation state when starting new message
+      // Clear any previous analysis, formulation, and thinking state when starting new message
       setAnalysisState(undefined)
       setFormulationState(undefined)
+      setThinkingState(undefined)
 
       // Create new abort controller for this request
       abortControllerRef.current = new AbortController()
@@ -564,7 +626,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
         console.log('Stream aborted (stop button clicked)')
         return
       }
-      
+
       ErrorHandler.logError(error, 'sendMessage')
       const classified = ErrorHandler.classify(error)
       updateState({
@@ -572,9 +634,9 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
         connectionState: 'error',
         streamingMessageId: null
       })
-      
+
       setIsTyping(false)  // Stop typing on error
-      
+
       if (onError) {
         onError(classified.userMessage)
       }
@@ -599,14 +661,14 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           'Content-Type': 'application/json',
         }),
       })
-      
+
       if (!response.ok) {
         throw new Error(`Failed to stop: ${response.statusText}`)
       }
-      
+
       const result = await response.json()
       console.log('Stop requested:', result.message)
-      
+
       updateState({
         streamingMessageId: null,
         connectionState: 'connected'
@@ -621,9 +683,9 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
         error: classified.userMessage,
         connectionState: 'error'
       })
-      
+
       setIsTyping(false)  // Stop typing on error
-      
+
       if (onError) {
         onError(classified.userMessage)
       }
@@ -638,7 +700,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       error: null,
       connectionState: 'connecting'
     })
-    
+
     // Create retry function with exponential backoff for network errors
     const retryFn = ErrorHandler.createRetryFunction(
       async () => {
@@ -662,7 +724,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
         }
       }
     )
-    
+
     retryFn().catch(error => {
       ErrorHandler.logError(error, 'retryConnection')
       const classified = ErrorHandler.classify(error)
@@ -740,6 +802,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     setIsTyping(false)
     setAnalysisState(undefined)
     setFormulationState(undefined)
+    setThinkingState(undefined)  // Clear thinking state on session change
     historyLoadedRef.current = false
     resumeStartedRef.current = false
   }, [sessionId, updateState])
@@ -755,6 +818,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     isTyping,  // Immediate responsive typing state
     analysisState,
     formulationState,
+    thinkingState,  // DeepSeek reasoning content state
     planLimitInfo,
 
     // Actions

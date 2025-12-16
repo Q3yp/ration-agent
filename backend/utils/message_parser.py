@@ -12,6 +12,7 @@ from models import (
     ParsedMessage,
     create_user_message,
     create_agent_message,
+    create_thinking_message,
     create_tool_call_message,
     create_tool_result_message,
     create_role_transition_message,
@@ -53,7 +54,7 @@ class UnifiedMessageParser:
         self.excel_tools = {"excel_metadata", "excel_query", "read_excel"}
         self.file_tools = {"write_file", "list_directory", "read_file"}
         self.bash_tools = {"bash_command"}
-        self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation", "list_feed_bases", "calculate_dairy_requirements", "evaluate_diet_with_nasem"}
+        self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation", "list_feed_bases", "predict_dairy_requirements", "evaluate_diet_with_nasem"}
         self.active_analysis = None  # {"message_id": str, "operations": [], "start_time": float}
         self.active_formulation = None  # {"message_id": str, "operations": [], "start_time": float, "results": {}}
         self.analysis_operation_counter = 0
@@ -414,21 +415,21 @@ class UnifiedMessageParser:
         if tool_name == "add_feed":
             name = tool_args.get("name", "饲料")
             feed_base_name = tool_args.get("feed_base_name", "")
-            dm_percent = tool_args.get("dm_percent", tool_args.get("dry_matter_percent", 0))
             cost = tool_args.get("cost_per_kg", 0)
             nutrients = tool_args.get("nutrients", {})
 
             operation_data = {
                 "feed_name": name,
                 "feed_base_name": feed_base_name,
-                "dry_matter": f"{dm_percent}%",
                 "cost_per_kg": f"¥{cost:.2f}",
                 "nutrients": nutrients
             }
+            # Note: DM% is not shown because it comes from the source feed in system feedbase,
+            # not from user input. The add_feed tool copies nutrients from the source feed.
             description = (
-                f"添加饲料 {name} 到饲料库 [{feed_base_name}] (干物质{dm_percent}%, ¥{cost:.2f}/kg)"
+                f"添加饲料 {name} 到饲料库 [{feed_base_name}] (¥{cost:.2f}/kg)"
                 if locale != "en-US"
-                else f"Add feed {name} to feedbase [{feed_base_name}] (DM {dm_percent}%, ¥{cost:.2f}/kg)"
+                else f"Add feed {name} to feedbase [{feed_base_name}] (¥{cost:.2f}/kg)"
             )
             return description, operation_data
             
@@ -465,7 +466,7 @@ class UnifiedMessageParser:
             description = "获取饲料基础库列表" if locale != "en-US" else "List feedbases"
             return description, operation_data
             
-        elif tool_name == "calculate_dairy_requirements":
+        elif tool_name == "predict_dairy_requirements":
             body_weight = tool_args.get("body_weight_kg", 0)
             target_milk = tool_args.get("target_milk_kg", 0)
             feedbase_name = tool_args.get("feedbase_name", "")
@@ -1029,7 +1030,25 @@ class UnifiedMessageParser:
             chunk = event["data"]["chunk"]
             chunk_content = chunk.content
             results = []
-
+            
+            # Handle DeepSeek thinking mode: stream reasoning_content as separate thinking message
+            # reasoning_content is available in additional_kwargs for ChatDeepSeek
+            reasoning_content = None
+            if hasattr(chunk, 'additional_kwargs'):
+                reasoning_content = chunk.additional_kwargs.get('reasoning_content')
+            
+            # Stream reasoning content (thinking) as a separate message type
+            if reasoning_content and self.current_agent_message_id:
+                # Use a separate message ID for reasoning content
+                reasoning_message_id = f"{self.current_agent_message_id}_thinking"
+                results.append(create_thinking_message(
+                    content=reasoning_content,
+                    message_id=reasoning_message_id,
+                    timestamp=timestamp,
+                    is_streaming=True
+                ))
+            
+            # Stream regular content (final answer)
             if chunk_content and self.current_agent_message_id:
                 results.append(create_agent_message(
                     content=chunk_content,

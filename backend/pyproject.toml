@@ -6,8 +6,9 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.35",
-    "langgraph>=0.2.74",
+    "langgraph>=1.0.5",
     "langchain-openai>=0.2.14",
+    "langchain-deepseek>=0.1.0",
     "langchain-core>=0.3.29",
     "langchain-community>=0.3.12",
     "langchain-postgres>=0.0.12",
@@ -36,7 +37,11 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "bcrypt==4.1.2",
     "google-auth[requests]>=2.43.0",
+    "nasem_dairy",
 ]
 
 [tool.uv]
 dev-dependencies = []
+
+[tool.uv.sources]
+nasem_dairy = { path = "./nasem_dairy", editable = true }

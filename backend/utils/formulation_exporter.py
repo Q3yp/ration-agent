@@ -132,8 +132,9 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
 
             filepath = workspace_path / filename
 
-            # Capture daily intake information if available
-            daily_intake_kg = current_formulation.get("daily_dm_intake_kg")
+            # Capture daily intake information if available (check both old and new key names)
+            daily_intake_kg = current_formulation.get("daily_dm_intake_kg") or current_formulation.get("predicted_dmi_kg")
+            predicted_mp_g = current_formulation.get("predicted_mp_g")  # MP supply from optimizer
             nutrient_analysis = current_formulation.get("nutrient_analysis", {})
             formulation_feeds = current_formulation.get("formulation", {})
 
@@ -189,6 +190,27 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                             result["condition"] = f"{texts['target']}: {target} ± {tolerance_percent}%"
                             result["actual"] = f"{target} ({texts['range']})"
                             result["satisfaction"] = texts["satisfied"]
+                        elif attribute == "mp":
+                            # Metabolizable Protein constraint - use predicted_mp_g from optimizer
+                            result["type"] = texts["con_daily"]
+                            result["nutrient"] = "MP"
+                            result["unit"] = "g/day"
+                            
+                            if predicted_mp_g is not None:
+                                achieved = predicted_mp_g
+                                result["actual"] = round(achieved, 0)
+                                
+                                tolerance_factor = tolerance_percent / 100.0
+                                target_min = target * (1 - tolerance_factor)
+                                target_max = target * (1 + tolerance_factor)
+                                result["condition"] = f"{texts['target']}: {target} ± {tolerance_percent}% ({target_min:.0f} - {target_max:.0f})"
+                                satisfied = target_min <= achieved <= target_max
+                            else:
+                                result["actual"] = texts["daily_intake_needed"]
+                                result["condition"] = texts["cannot_calculate"]
+                                satisfied = False
+                                
+                            result["satisfaction"] = texts["satisfied"] if satisfied else texts["unsatisfied"]
                         else:
                             # Nutrient daily total constraint
                             result["type"] = texts["con_daily"]
@@ -344,29 +366,36 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                     kg_per_day = feed_data.get("kg_per_day", 0)
                     percentage_dm = feed_data.get("percentage_dm", 0)
                     
-                    # Get price from feed database
+                    # Get price from feed database (field is 'cost_per_kg')
                     price_per_kg = 0.0
                     if feed_name in feed_database:
-                        price_per_kg = feed_database[feed_name].get("price", 0) or 0
+                        price_per_kg = feed_database[feed_name].get("cost_per_kg", 0) or 0
                     
+                    # Use placeholder for cost formula - will be =B*D in Excel
+                    # We still calculate for display/validation but use formula in Excel
                     cost_per_day = kg_per_day * price_per_kg if kg_per_day and price_per_kg else 0
                     total_cost += cost_per_day
                     
                     feed_rows.append([
                         sanitized_name,
-                        round(kg_per_day, 2) if kg_per_day else "N/A",
+                        round(kg_per_day, 2) if kg_per_day else 0,  # Use 0 instead of N/A for formula
                         round(percentage_dm, 1) if percentage_dm else "N/A",
-                        round(price_per_kg, 2) if price_per_kg else "-",
-                        round(cost_per_day, 2) if cost_per_day else "-"
+                        round(price_per_kg, 2) if price_per_kg else 0,  # Use 0 instead of - for formula
+                        "__COST_FORMULA__"  # Placeholder for =B*D formula
                     ])
                 
                 # Header row for feed table
+                feed_header_row = len(main_rows) + 1  # 1-indexed row number in Excel
                 main_rows.append([texts["feed_name"], texts["amount"], texts["dm_percent"], 
                                  texts["price_per_kg"], texts["cost_per_day"]])
-                main_rows.extend(feed_rows)
                 
-                # Total row
-                main_rows.append(["TOTAL", daily_intake_kg or "-", "100%", "", round(total_cost, 2)])
+                feed_data_start_row = len(main_rows) + 1  # First feed data row
+                main_rows.extend(feed_rows)
+                feed_data_end_row = len(main_rows)  # Last feed data row
+                
+                # Total row - use placeholders for SUM formulas (will be replaced with Excel formulas)
+                total_row = len(main_rows) + 1  # Row number for TOTAL
+                main_rows.append(["TOTAL", "__AMOUNT_SUM__", "100%", "", "__COST_SUM__"])
                 main_rows.append(["", "", "", "", ""])
                 
                 # Section 2: Key Nutrients
@@ -444,10 +473,10 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                 profit_rows.append([texts["milk_price"], 4.0])  # Default 4.0 yuan/kg
                 profit_rows.append(["", ""])
                 
-                # Cost metrics
-                cost_per_kg_dm = round(total_cost / daily_intake_kg, 2) if daily_intake_kg and daily_intake_kg > 0 else 0
-                profit_rows.append([texts["cost_per_kg_dm"], cost_per_kg_dm])
-                profit_rows.append([texts["cost_per_cow_day"], round(total_cost, 2)])
+                # Cost metrics - use placeholders for formulas that reference column E
+                # These will be replaced with Excel formulas during formatting
+                profit_rows.append([texts["cost_per_kg_dm"], "__COST_PER_KG_DM__"])  # Formula placeholder
+                profit_rows.append([texts["cost_per_cow_day"], "__COST_PER_COW__"])  # Formula placeholder
                 profit_rows.append([texts["nasem_predicted_milk"], round(predicted_milk, 2) if predicted_milk else 0])
                 profit_rows.append([texts["revenue_per_cow_day"], 0])  # Formula placeholder
                 profit_rows.append([texts["profit_per_cow_day"], 0])  # Formula placeholder
@@ -794,15 +823,30 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                                     cell.fill = header_fill
                                     cell.alignment = Alignment(horizontal="center")
 
-                        # TOTAL row
+                        # TOTAL row - apply formatting and insert SUM formulas for columns B and E
                         elif a_value == "TOTAL":
                             for col in range(1, 6):
                                 cell = ws.cell(row=row_num, column=col)
                                 cell.font = Font(bold=True)
+                            # Replace placeholder with SUM formula for amount (column B)
+                            b_cell_total = ws.cell(row=row_num, column=2)
+                            if str(b_cell_total.value) == "__AMOUNT_SUM__":
+                                b_cell_total.value = f"=SUM(B{feed_data_start_row}:B{feed_data_end_row})"
+                            # Replace placeholder with SUM formula for feed costs (column E)
+                            e_cell_total = ws.cell(row=row_num, column=5)
+                            if str(e_cell_total.value) == "__COST_SUM__":
+                                e_cell_total.value = f"=SUM(E{feed_data_start_row}:E{feed_data_end_row})"
 
                         # Label rows in main area (ending with :)
                         elif a_value.endswith(":"):
                             a_cell.font = label_font
+                        
+                        # Replace __COST_FORMULA__ placeholder with =B*D formula for feed cost rows
+                        e_cell = ws.cell(row=row_num, column=5)
+                        e_value = str(e_cell.value or "")
+                        if e_value == "__COST_FORMULA__":
+                            # Cost = Amount (B) × Price (D)
+                            e_cell.value = f"=B{row_num}*D{row_num}"
                         
                         # Satisfaction pass/fail coloring in column E
                         e_cell = ws.cell(row=row_num, column=5)
@@ -834,18 +878,39 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                         # Track cells for formulas
                         elif g_value == texts["nasem_predicted_milk"]:
                             predicted_milk_cell = f"H{row_num}"
+                        
+                        # Cost per kg DM - formula referencing E total / B total (DMI)
+                        elif g_value == texts["cost_per_kg_dm"]:
+                            h_cell_value = str(h_cell.value or "")
+                            if h_cell_value == "__COST_PER_KG_DM__":
+                                # Cost per kg DM = Total Cost (E{total_row}) / DMI (B{total_row})
+                                h_cell.value = f"=E{total_row}/B{total_row}"
+                        
+                        # Cost per cow per day - formula referencing E total
                         elif g_value == texts["cost_per_cow_day"]:
+                            h_cell_value = str(h_cell.value or "")
+                            if h_cell_value == "__COST_PER_COW__":
+                                # Cost per cow = Total Cost from column E
+                                h_cell.value = f"=E{total_row}"
                             cost_per_cow_cell = f"H{row_num}"
                         
-                        # Revenue formula
+                        # Revenue formula (always apply - cells should exist in expected positions)
                         elif g_value == texts["revenue_per_cow_day"]:
+                            # Revenue = Predicted Milk × Milk Price
                             if predicted_milk_cell and milk_price_cell:
                                 h_cell.value = f"={predicted_milk_cell}*{milk_price_cell}"
+                            else:
+                                # Fallback: use relative row references if cell tracking failed
+                                h_cell.value = f"=H{row_num-1}*H{row_num-5}"
                         
-                        # Profit per cow formula
+                        # Profit per cow formula (always apply)
                         elif g_value == texts["profit_per_cow_day"]:
+                            # Profit = Revenue - Feed Cost = (Predicted Milk × Milk Price) - Cost per Cow
                             if predicted_milk_cell and milk_price_cell and cost_per_cow_cell:
                                 h_cell.value = f"={predicted_milk_cell}*{milk_price_cell}-{cost_per_cow_cell}"
+                            else:
+                                # Fallback: Revenue cell is one row above, cost is 3 rows above
+                                h_cell.value = f"=H{row_num-1}-H{row_num-3}"
                             profit_row = row_num
                         
                         # Herd profit/day formula

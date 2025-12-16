@@ -94,6 +94,7 @@ from typing import Dict, Any, Optional, Literal, List
 MessageType = Literal[
     "user",           # User input message
     "agent",          # Agent response content (streamable)
+    "thinking",       # DeepSeek reasoning content (streamable, collapsible)
     "tool_call",      # Tool execution indicator
     "tool_result",    # Tool execution result
     "role_transition", # Agent handoff/routing (single expandable bubble)
@@ -147,12 +148,44 @@ def create_user_message(content: str, message_id: str, timestamp: float) -> Pars
         timestamp=timestamp
     )
 
-def create_agent_message(content: str, message_id: str, timestamp: float, is_streaming: bool = False) -> ParsedMessage:
-    """Agent response - streamable in real-time, complete in history"""
+def create_agent_message(content: str, message_id: str, timestamp: float, is_streaming: bool = False, metadata: Dict[str, Any] = None) -> ParsedMessage:
+    """Agent response - streamable in real-time, complete in history
+    
+    Args:
+        content: The message content
+        message_id: Unique message identifier
+        timestamp: Unix timestamp
+        is_streaming: Whether this is a streaming chunk
+        metadata: Optional additional metadata (e.g., is_thinking for DeepSeek reasoning)
+    """
+    # Build metadata dict
+    msg_metadata = {}
+    if is_streaming:
+        msg_metadata["is_streaming"] = True
+    if metadata:
+        msg_metadata.update(metadata)
+    
     return ParsedMessage(
         id=message_id,
         type="agent",
         content=content, 
+        timestamp=timestamp,
+        metadata=msg_metadata if msg_metadata else None
+    )
+
+def create_thinking_message(content: str, message_id: str, timestamp: float, is_streaming: bool = False) -> ParsedMessage:
+    """DeepSeek reasoning content - streamable, displayed in collapsible indicator
+    
+    Args:
+        content: The reasoning/thinking content
+        message_id: Unique message identifier
+        timestamp: Unix timestamp
+        is_streaming: Whether this is a streaming chunk
+    """
+    return ParsedMessage(
+        id=message_id,
+        type="thinking",
+        content=content,
         timestamp=timestamp,
         metadata={"is_streaming": is_streaming} if is_streaming else None
     )

@@ -81,7 +81,7 @@ TRANSLATIONS = {
         "export.denom_zero": "分母为零",
         "export.error_no_formulation": "未找到成功的配方。请先运行配方优化。",
         "export.error_no_db": "未找到饲料数据库。导出可能不包含完整的饲料信息。",
-        "export.success": "✅ 成功导出 {filename}。",
+        "export.success": "✅ 成功导出 {filename}。[INSTRUCTION: Excel文件已包含完整的配方结果和NASEM分析。请简短回复用户,只需告知导出成功并询问是否需要调整,切勿重复描述Excel中的内容。]",
         "export.fail": "导出配方时出错: {error}",
         # NASEM sheet translations
         "export.sheet_nasem": "NASEM分析",
@@ -163,7 +163,7 @@ TRANSLATIONS = {
         "tool.bash.run_shell": "执行命令",
         "tool.execute": "执行 {tool_name}",
         # Formulation tools
-        "tool.formulation.add_feed": "添加饲料 {name} 到饲料库 [{feedbase}] (干物质{dm}%, ¥{cost}/kg)",
+        "tool.formulation.add_feed": "添加饲料 {name} 到饲料库 [{feedbase}] (¥{cost}/kg)",
         "tool.formulation.optimize": "进行配方优化",
         "tool.formulation.check_feeds": "检查可用饲料库",
         "tool.formulation.export": "导出配方为 {format} 格式",
@@ -228,7 +228,7 @@ TRANSLATIONS = {
         "export.denom_zero": "Denominator zero",
         "export.error_no_formulation": "No successful formulation found. Please run optimization first.",
         "export.error_no_db": "Feed database not found. Export may not include complete feed information.",
-        "export.success": "✅ Successfully exported {filename}.",
+        "export.success": "✅ Successfully exported {filename}. [INSTRUCTION: The Excel file contains complete formulation results and NASEM analysis. Respond briefly - just confirm the export and ask if adjustments are needed. Do NOT summarize or reiterate the Excel content.]",
         "export.fail": "Error exporting formulation: {error}",
         # NASEM sheet translations
         "export.sheet_nasem": "NASEM Analysis",
@@ -310,7 +310,7 @@ TRANSLATIONS = {
         "tool.bash.run_shell": "Run shell command",
         "tool.execute": "Execute {tool_name}",
         # Formulation tools
-        "tool.formulation.add_feed": "Add feed {name} to feedbase [{feedbase}] (DM {dm}%, ¥{cost}/kg)",
+        "tool.formulation.add_feed": "Add feed {name} to feedbase [{feedbase}] (¥{cost}/kg)",
         "tool.formulation.optimize": "Run ration optimization",
         "tool.formulation.check_feeds": "Check available feeds",
         "tool.formulation.export": "Export formulation as {format}",

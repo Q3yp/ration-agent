@@ -92,93 +92,191 @@ async def _get_feedbase(user_id: str, feedbase_name: str) -> Optional[Dict[str, 
 
 
 @tool
-async def calculate_dairy_requirements(
-    feedbase_name: str,
+async def predict_dairy_requirements(
     body_weight_kg: float,
     days_in_milk: int,
     parity: int,
     target_milk_kg: float,
-    reference_diet: Optional[Dict[str, float]] = None,
     milk_fat_percent: float = 3.5,
     milk_protein_percent: float = 3.2,
+    body_condition_score: float = 3.0,
     days_pregnant: int = 0,
     breed: str = "Holstein",
-    target_dmi_kg: Optional[float] = None,
     state: Annotated[dict, InjectedState] = None,
     config: RunnableConfig = None
 ) -> str:
-    """Calculate NASEM nutrient requirements for a dairy cow.
+    """Predict NASEM nutrient requirements for a dairy cow based on animal parameters.
     
-    Use this tool to get NASEM 2021 requirements before formulation.
-    No need to specify feeds - a reference diet is auto-selected if not provided.
+    This tool calculates factorial requirements WITHOUT needing a diet. Use this to 
+    get NASEM 2021 requirements BEFORE formulation. The predicted values are derived
+    from animal parameters only using NASEM equations:
+    
+    - DMI prediction: Uses NASEM equation 8 (Lact1) - animal factors only
+    - NE requirements: Maintenance + milk production + gestation + reserves
+    - MP requirements: Maintenance + milk protein + gestation + growth
+    - Mineral requirements: Ca, P, Mg based on production level
+    
+    Note: Actual DMI and nutrient supply depend on diet composition. Use 
+    formulate_ration with animal_params to get optimized diet with predicted DMI,
+    then evaluate_diet_with_nasem for final validation.
     
     Args:
-        feedbase_name: Name of feedbase to use (e.g., "default_dairy_cow")
         body_weight_kg: Animal body weight in kg
         days_in_milk: Days since calving (DIM)
         parity: Number of lactations (1 = first calf heifer)
         target_milk_kg: Target milk production in kg/day
-        reference_diet: OPTIONAL - Dict of {feed_key: kg_dm_per_day}. 
-                       If omitted, auto-selects common feeds from feedbase
-                       (corn silage, alfalfa, soybean meal, corn grain)
         milk_fat_percent: Target milk fat percentage (default 3.5)
         milk_protein_percent: Target milk protein percentage (default 3.2)
+        body_condition_score: BCS on 1-5 scale (default 3.0)
         days_pregnant: Days of gestation (default 0)
         breed: "Holstein", "Jersey", or "Other"
-        target_dmi_kg: Optional target DMI, estimated if not provided
     
     Returns:
-        JSON with NASEM predictions including:
-        - predicted_milk_kg: Actual milk limited by MP or NE
-        - limiting_factor: "MP (protein)", "NE (energy)", or "balanced"
-        - mp_allowable_milk_kg, ne_allowable_milk_kg: Milk allowed by each nutrient
-        - me_intake_mcal, me_required_mcal: Energy balance
-        - mp_intake_g, mp_required_g, rdp_intake_g: Protein balance
-        - dmi_kg, lys_percent_mp, met_percent_mp, dcad_meq
+        JSON with factorial requirements:
+        - predicted_dmi_kg: Predicted DMI (animal-only, equation 8)
+        - ne_required_mcal: Total NE requirement (maintenance + milk + gestation)
+        - mp_required_g: Total MP requirement (g/day)
+        - ca_required_g, p_required_g, mg_required_g: Mineral requirements
+        - target_lys_percent_mp, target_met_percent_mp: Amino acid targets
+        - formulation_constraints: Ready-to-use constraints for formulate_ration
     """
+    import math
+    
     try:
-        user_id = config["configurable"].get("user_id") if config else None
-        if not user_id:
-            return json.dumps({"status": "error", "error": "User ID not found"})
+        # === DMI Prediction (NASEM Equation 8 - Lact1) ===
+        # DMI = (3.7 + 5.7*(parity-1) + 0.305*NE_milk + 0.022*BW 
+        #        + (-0.689 - 1.87*(parity-1))*BCS) 
+        #       * (1 - (0.212 + 0.136*(parity-1)) * exp(-0.053*DIM))
         
-        # Load feedbase
-        feedbase = await _get_feedbase(user_id, feedbase_name)
-        if not feedbase:
-            return json.dumps({"status": "error", "error": f"Feedbase '{feedbase_name}' not found"})
+        # Calculate NE of milk (Mcal/kg)
+        milk_lac_pct = 4.85  # Standard lactose
+        ne_milk_per_kg = 0.0929 * milk_fat_percent + 0.0547 * milk_protein_percent + 0.0395 * milk_lac_pct
+        ne_milk_output = ne_milk_per_kg * target_milk_kg
         
-        # Auto-select reference diet if not provided
-        if not reference_diet:
-            estimated_dmi = target_dmi_kg if target_dmi_kg else (body_weight_kg * 0.035 + target_milk_kg * 0.1)
-            reference_diet = _build_default_reference_diet(feedbase, estimated_dmi)
-            if not reference_diet:
-                return json.dumps({"status": "error", "error": "Could not build default reference diet from feedbase"})
+        parity_adj = parity - 1
+        parity_factor = min(parity_adj, 1)  # Cap at 1 for equation
         
-        service = get_nasem_service()
+        predicted_dmi = ((3.7 + 5.7 * parity_factor + 0.305 * ne_milk_output + 0.022 * body_weight_kg + 
+                         (-0.689 - 1.87 * parity_factor) * body_condition_score) * 
+                        (1 - (0.212 + 0.136 * parity_factor) * math.exp(-0.053 * days_in_milk)))
+        predicted_dmi = max(predicted_dmi, 12.0)  # Minimum 12 kg for lactating cows
         
-        # Build animal input
-        animal_input = service.build_animal_input(
-            body_weight_kg=body_weight_kg,
-            days_in_milk=days_in_milk,
-            parity=parity,
-            target_milk_kg=target_milk_kg,
-            milk_fat_percent=milk_fat_percent,
-            milk_protein_percent=milk_protein_percent,
-            days_pregnant=days_pregnant,
-            breed=breed,
-            target_dmi_kg=target_dmi_kg
-        )
+        # === NE Requirements ===
+        # NE maintenance (Mcal/day) - NASEM approximation
+        ne_maintenance = 0.08 * (body_weight_kg ** 0.75)
         
-        # Calculate requirements
-        result = service.calculate_requirements(
-            feedbase=feedbase,
-            reference_diet=reference_diet,
-            animal_input=animal_input
-        )
+        # NE for milk
+        ne_lactation = ne_milk_output
         
-        return json.dumps(result, indent=2, default=str)
+        # NE for gestation (if pregnant)
+        ne_gestation = 0.0
+        if days_pregnant > 190:
+            # Exponential increase in late gestation
+            ne_gestation = 0.00159 * math.exp(0.0231 * days_pregnant)
+        
+        ne_total = ne_maintenance + ne_lactation + ne_gestation
+        
+        # === MP Requirements ===
+        # MP maintenance (g/day)
+        # Scurf + endogenous urinary + fecal metabolic
+        mp_maintenance = 4.1 * (body_weight_kg ** 0.75)
+        
+        # MP for milk protein (efficiency ~0.67)
+        milk_protein_kg = target_milk_kg * (milk_protein_percent / 100)
+        mp_lactation = (milk_protein_kg * 1000) / 0.67
+        
+        # MP for gestation
+        mp_gestation = 0.0
+        if days_pregnant > 190:
+            mp_gestation = 0.69 * math.exp(0.0156 * days_pregnant)
+        
+        # MP for growth (heifers only)
+        mp_growth = 0.0
+        if parity == 1:
+            # First lactation cows still growing
+            mature_bw = body_weight_kg * 1.10  # Assume 10% growth to mature
+            mp_growth = 30.0  # Approximate g/day for growing heifers
+        
+        mp_total = mp_maintenance + mp_lactation + mp_gestation + mp_growth
+        
+        # === Mineral Requirements ===
+        # Calcium (g/day) - maintenance + milk
+        ca_maintenance = 0.0154 * body_weight_kg
+        ca_milk = target_milk_kg * 1.22  # ~1.22g Ca per kg milk
+        ca_required = ca_maintenance + ca_milk
+        
+        # Phosphorus (g/day)
+        p_maintenance = 0.0143 * body_weight_kg
+        p_milk = target_milk_kg * 0.95  # ~0.95g P per kg milk
+        p_required = p_maintenance + p_milk
+        
+        # Magnesium (g/day)
+        mg_maintenance = 0.003 * body_weight_kg
+        mg_milk = target_milk_kg * 0.15
+        mg_required = mg_maintenance + mg_milk
+        
+        # === Amino Acid Targets ===
+        target_lys_pct = 7.2  # % of MP
+        target_met_pct = 2.5  # % of MP
+        
+        # === Build Formulation Constraints ===
+        # These can be passed directly to formulate_ration
+        me_required = ne_total / 0.64  # Approximate ME from NE (km~0.64)
+        
+        # Only include calculated constraints based on actual requirements
+        # CP, NDF, ADF are not included - these should be set by the nutritionist
+        # based on specific formulation goals, not auto-calculated
+        formulation_constraints = [
+            {"type": "concentration", "nutrient": "Fd_Ca", "min": round(ca_required / predicted_dmi / 10, 2)},  # g/kg DM / 10 = % DM
+            {"type": "concentration", "nutrient": "Fd_P", "min": round(p_required / predicted_dmi / 10, 2)},   # g/kg DM / 10 = % DM
+        ]
+        
+        result = {
+            "status": "success",
+            "animal_info": {
+                "body_weight_kg": body_weight_kg,
+                "days_in_milk": days_in_milk,
+                "parity": parity,
+                "target_milk_kg": target_milk_kg,
+                "milk_fat_percent": milk_fat_percent,
+                "milk_protein_percent": milk_protein_percent,
+                "bcs": body_condition_score,
+                "breed": breed
+            },
+            "requirements": {
+                "predicted_dmi_kg": round(predicted_dmi, 1),
+                "ne_required_mcal": round(ne_total, 1),
+                "ne_maintenance_mcal": round(ne_maintenance, 1),
+                "ne_lactation_mcal": round(ne_lactation, 1),
+                "mp_required_g": round(mp_total, 0),
+                "mp_maintenance_g": round(mp_maintenance, 0),
+                "mp_lactation_g": round(mp_lactation, 0),
+                "ca_required_g_per_day": round(ca_required, 1),
+                "p_required_g_per_day": round(p_required, 1),
+                "mg_required_g_per_day": round(mg_required, 1),
+                "target_lys_percent_mp": target_lys_pct,
+                "target_met_percent_mp": target_met_pct
+            },
+            "units": {
+                "dmi": "kg/day",
+                "ne": "Mcal/day",
+                "mp": "g/day",
+                "minerals (Ca, P, Mg)": "g/day",
+                "amino_acids": "% of MP"
+            },
+            "formulation_constraints": formulation_constraints,
+            "notes": [
+                "DMI predicted using NASEM equation 8 (animal factors only)",
+                "Actual DMI will vary based on diet NDF content",
+                "Use formulate_ration with animal_params for diet-adjusted DMI",
+                "Use evaluate_diet_with_nasem for final validation after formulation"
+            ]
+        }
+        
+        return json.dumps(result, indent=2)
         
     except Exception as e:
-        logger.error(f"Error in calculate_dairy_requirements: {e}")
+        logger.error(f"Error in predict_dairy_requirements: {e}")
         return json.dumps({"status": "error", "error": str(e)})
 
 
@@ -221,7 +319,7 @@ async def evaluate_diet_with_nasem(
         - me_intake_mcal, me_required_mcal: Energy balance
         - mp_intake_g, mp_required_g, rdp_intake_g: Protein balance
         - dmi_kg, lys_percent_mp, met_percent_mp, dcad_meq
-        - diet_summary: {total_dmi_kg, feed_count}
+        - diet_summary: {total_fresh_intake_kg, feed_count}
     """
     try:
         # Check for successful formulation in state
@@ -253,6 +351,9 @@ async def evaluate_diet_with_nasem(
             return json.dumps({"status": "error", "error": f"Feedbase '{feedbase_name}' not found"})
         
         # Build diet composition from formulation result
+        # Note: kg_per_day from formulation is fresh (as-fed) weight, but NASEM only
+        # uses kg_user for PROPORTIONS (Fd_DMInp = kg_user / kg_user.sum()).
+        # The actual DM intake comes from Trg_Dt_DMIn in animal_input.
         formulation_feeds = current_formulation.get("formulation", {})
         diet_composition = {}
         for feed_name, feed_data in formulation_feeds.items():
@@ -291,6 +392,39 @@ async def evaluate_diet_with_nasem(
         if result.get("status") == "success":
             result["diet_used"] = diet_composition
             result["feedbase_used"] = feedbase_name
+            
+            # Check if predicted yields are constraint factors (>5% below target)
+            warnings = []
+            snapshot = result.get("snapshot", "")
+            
+            # Parse predicted milk values from snapshot
+            import re
+            mp_alow_match = re.search(r'Mlk_Prod_MPalow\):\s*([\d.]+)', snapshot)
+            ne_alow_match = re.search(r'Mlk_Prod_NEalow\):\s*([\d.]+)', snapshot)
+            pred_match = re.search(r'Mlk_Prod_comp\):\s*([\d.]+)', snapshot)
+            
+            threshold_pct = 5.0  # 5% threshold
+            
+            if mp_alow_match:
+                mp_alow = float(mp_alow_match.group(1))
+                deficit_pct = (target_milk_kg - mp_alow) / target_milk_kg * 100
+                if deficit_pct > threshold_pct:
+                    warnings.append(f"⚠️ MP (metabolizable protein) is limiting: MP-allowable milk = {mp_alow:.1f} kg is {deficit_pct:.1f}% below target {target_milk_kg:.1f} kg. Consider increasing RUP sources or rumen-protected amino acids.")
+            
+            if ne_alow_match:
+                ne_alow = float(ne_alow_match.group(1))
+                deficit_pct = (target_milk_kg - ne_alow) / target_milk_kg * 100
+                if deficit_pct > threshold_pct:
+                    warnings.append(f"⚠️ ME (metabolizable energy) is limiting: NE-allowable milk = {ne_alow:.1f} kg is {deficit_pct:.1f}% below target {target_milk_kg:.1f} kg. Consider increasing energy density with more grain or fat supplements.")
+            
+            if pred_match:
+                pred = float(pred_match.group(1))
+                deficit_pct = (target_milk_kg - pred) / target_milk_kg * 100
+                if deficit_pct > threshold_pct:
+                    warnings.append(f"⚠️ Predicted milk production = {pred:.1f} kg is {deficit_pct:.1f}% below target {target_milk_kg:.1f} kg. Review limiting factors above.")
+            
+            if warnings:
+                result["yield_constraint_warnings"] = warnings
         
         return json.dumps(result, indent=2, default=str)
         
@@ -302,6 +436,7 @@ async def evaluate_diet_with_nasem(
 def get_nasem_tools():
     """Return the list of NASEM tools for agent registration."""
     return [
-        calculate_dairy_requirements,
+        predict_dairy_requirements,
         evaluate_diet_with_nasem
     ]
+

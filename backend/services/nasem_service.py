@@ -227,7 +227,7 @@ class NASEMService:
                 "status": "success",
                 "snapshot": str(output),
                 "diet_summary": {
-                    "total_dmi_kg": sum(diet_composition.values()),
+                    "total_fresh_intake_kg": sum(diet_composition.values()),  # Fresh (as-fed) weight from formulation
                     "feed_count": len(diet_composition),
                 }
             }

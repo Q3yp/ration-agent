@@ -277,11 +277,15 @@ class SchemaManager:
         if result.scalar() == 0:
             logger.info("Creating default admin user...")
             try:
-                from passlib.context import CryptContext
-                pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-                admin_password = pwd_context.hash("admin123")
+                # Use FastAPI-Users' PasswordHelper (argon2id) for consistency
+                from fastapi_users.password import PasswordHelper
+                password_helper = PasswordHelper()
+                admin_password = password_helper.hash("admin123")
             except ImportError:
-                admin_password = "admin123" # Fallback, though unlikely in this env
+                # Fallback to passlib with same argon2id scheme
+                from passlib.context import CryptContext
+                pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+                admin_password = pwd_context.hash("admin123")
             
             admin_id = uuid.uuid4()
             now = datetime.utcnow()
