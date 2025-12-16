@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV UV_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV UV_PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
 # Install uv to system-wide location (accessible by all users)
 RUN curl -LsSf https://astral.sh/uv/install.sh | env CARGO_HOME=/usr/local UV_INSTALL_DIR=/usr/local/bin sh
@@ -28,7 +28,7 @@ ENV HOME="/home/appuser"
 COPY --chown=appuser:appuser . .
 
 # Install dependencies using uv (nasem_dairy is a local editable dependency)
-RUN uv sync --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+RUN uv sync --index-url https://mirrors.aliyun.com/pypi/simple/
 
 # Ensure files directory exists
 RUN mkdir -p /app/files
