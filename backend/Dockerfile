@@ -12,9 +12,8 @@ RUN apt-get update && apt-get install -y \
 
 ENV UV_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
-# Install uv using official standalone installer (more reliable than pip)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+# Install uv to system-wide location (accessible by all users)
+RUN curl -LsSf https://astral.sh/uv/install.sh | env CARGO_HOME=/usr/local UV_INSTALL_DIR=/usr/local/bin sh
 
 # Create non-root user for security and home directory
 RUN groupadd -r appuser && useradd -r -g appuser appuser
