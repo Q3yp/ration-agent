@@ -1,7 +1,7 @@
 # Backend Dockerfile for Ration Agent
 # Single-stage build for production image
 
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 # Install system dependencies for building and runtime
 RUN apt-get update && apt-get install -y \
