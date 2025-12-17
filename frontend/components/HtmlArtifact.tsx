@@ -82,13 +82,12 @@ export default function HtmlArtifact({ title, description, htmlContent, onClose 
         </div>
       </CardHeader>
       <CardContent className="p-0 flex-1 min-h-0">
-        <div className={`relative bg-gray-50 overflow-hidden h-full ${
-          isExpanded ? '' : 'rounded-b-lg'
-        }`}>
+        <div className={`relative bg-gray-50 overflow-hidden h-full ${isExpanded ? '' : 'rounded-b-lg'
+          }`}>
           <iframe
             ref={iframeRef}
             className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-forms"
+            sandbox="allow-scripts allow-forms"
             title={displayTitle}
           />
         </div>
