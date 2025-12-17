@@ -2,7 +2,7 @@
 # Multi-stage build for optimized Next.js production image
 
 # Stage 1: Dependencies and build
-FROM docker.1ms.run/node:20-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Metadata
 LABEL maintainer="Kouprey POC Team"
@@ -36,7 +36,7 @@ ENV BACKEND_URL=$BACKEND_URL
 RUN npm run build
 
 # Stage 2: Production runtime
-FROM docker.1ms.run/node:20-alpine AS runtime
+FROM node:20-alpine AS runtime
 
 # Install dumb-init for proper signal handling and wget for healthcheck
 RUN apk add --no-cache dumb-init wget
