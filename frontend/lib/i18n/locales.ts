@@ -121,6 +121,7 @@ export const translations: Record<Locale, TranslationTree> = {
       tokenUsageLabel: '对话长度',
       inputPlaceholder: '输入您的消息...',
       thinking: '思考中...',
+      thinkingStopped: '思考内容',
       responding: '正在输入...',
       tierLabel: '账户等级',
       tierBadges: {
@@ -373,6 +374,7 @@ export const translations: Record<Locale, TranslationTree> = {
       tokenUsageLabel: 'Tokens used',
       inputPlaceholder: 'Type your message...',
       thinking: 'Thinking...',
+      thinkingStopped: 'Thinking (Stopped)',
       responding: 'Responding...',
       tierLabel: 'Plan',
       tierBadges: {

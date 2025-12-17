@@ -72,6 +72,7 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
             current_formulation = state.get("current_formulation", {})
             formulation_constraints = state.get("formulation_constraints", [])
             feed_constraints = state.get("feed_constraints", {})
+            animal_params = state.get("animal_params", {})
 
             # Get feedbase references from state
             feedbase_name = state.get("current_feedbase_name", "")
@@ -135,6 +136,7 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
             # Capture daily intake information if available (check both old and new key names)
             daily_intake_kg = current_formulation.get("daily_dm_intake_kg") or current_formulation.get("predicted_dmi_kg")
             predicted_mp_g = current_formulation.get("predicted_mp_g")  # MP supply from optimizer
+            predicted_me_mcal = current_formulation.get("predicted_me_mcal")  # ME supply from optimizer
             nutrient_analysis = current_formulation.get("nutrient_analysis", {})
             formulation_feeds = current_formulation.get("formulation", {})
 
@@ -204,6 +206,27 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                                 target_min = target * (1 - tolerance_factor)
                                 target_max = target * (1 + tolerance_factor)
                                 result["condition"] = f"{texts['target']}: {target} ± {tolerance_percent}% ({target_min:.0f} - {target_max:.0f})"
+                                satisfied = target_min <= achieved <= target_max
+                            else:
+                                result["actual"] = texts["daily_intake_needed"]
+                                result["condition"] = texts["cannot_calculate"]
+                                satisfied = False
+                                
+                            result["satisfaction"] = texts["satisfied"] if satisfied else texts["unsatisfied"]
+                        elif attribute == "me":
+                            # Metabolizable Energy constraint - use predicted_me_mcal from optimizer
+                            result["type"] = texts["con_daily"]
+                            result["nutrient"] = "ME"
+                            result["unit"] = "Mcal/day"
+                            
+                            if predicted_me_mcal is not None:
+                                achieved = predicted_me_mcal
+                                result["actual"] = round(achieved, 2)
+                                
+                                tolerance_factor = tolerance_percent / 100.0
+                                target_min = target * (1 - tolerance_factor)
+                                target_max = target * (1 + tolerance_factor)
+                                result["condition"] = f"{texts['target']}: {target} ± {tolerance_percent}% ({target_min:.1f} - {target_max:.1f})"
                                 satisfied = target_min <= achieved <= target_max
                             else:
                                 result["actual"] = texts["daily_intake_needed"]
@@ -297,15 +320,18 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                     
                     nasem_service = get_nasem_service()
                     
-                    # Build diet composition from formulation
-                    diet_composition = {}
-                    for feed_name, feed_data in formulation_feeds.items():
-                        kg_per_day = feed_data.get("kg_per_day", 0)
-                        if kg_per_day and kg_per_day > 0:
-                            diet_composition[feed_name] = kg_per_day
+                    # Build diet composition using centralized helper (single source of truth)
+                    try:
+                        from services.nasem_service import NASEMService
+                        diet_composition, predicted_dmi_kg_for_nasem = NASEMService.build_diet_from_formulation(current_formulation)
+                    except ValueError as e:
+                        nasem_warning = f"Diet conversion failed: {e}"
+                        logger.warning(nasem_warning)
+                        model_output = None
+                        predicted_milk = 0.0
                     
                     if diet_composition and feed_database:
-                        # Build animal input for NASEM
+                        # Build animal input for NASEM with correct DMI
                         nasem_animal_input = nasem_service.build_animal_input(
                             body_weight_kg=animal_input.get("body_weight_kg", 650),
                             days_in_milk=animal_input.get("days_in_milk", 100),
@@ -314,7 +340,8 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                             milk_fat_percent=animal_input.get("milk_fat_percent", 3.5),
                             milk_protein_percent=animal_input.get("milk_protein_percent", 3.2),
                             days_pregnant=animal_input.get("days_pregnant", 0),
-                            breed=animal_input.get("breed", "Holstein")
+                            breed=animal_input.get("breed", "Holstein"),
+                            target_dmi_kg=predicted_dmi_kg_for_nasem  # Use optimizer's DMI
                         )
                         
                         # Build feedbase dict for NASEM
@@ -470,7 +497,9 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                 profit_rows.append([texts["profitability"], ""])
                 profit_rows.append([texts["input_section"], ""])
                 profit_rows.append([texts["herd_size"], 100])  # Default 100
-                profit_rows.append([texts["milk_price"], 4.0])  # Default 4.0 yuan/kg
+                # Use milk_price from animal_params if available, otherwise default to 4.0
+                milk_price_default = animal_params.get("milk_price_per_kg", 4.0)
+                profit_rows.append([texts["milk_price"], milk_price_default])
                 profit_rows.append(["", ""])
                 
                 # Cost metrics - use placeholders for formulas that reference column E

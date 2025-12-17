@@ -142,6 +142,49 @@ class NASEMService:
             "An_AgeConcept1st": 480,
         }
     
+    @staticmethod
+    def build_diet_from_formulation(formulation_result: Dict[str, Any]) -> tuple[Dict[str, float], float]:
+        """Build diet composition from optimizer formulation result.
+        
+        This is the SINGLE SOURCE OF TRUTH for converting formulation results to
+        NASEM diet format. All callers should use this function to prevent
+        mismatches between diet composition and DMI.
+        
+        Args:
+            formulation_result: The full formulation result dict from optimizer,
+                containing 'formulation' (dict of feeds) and 'predicted_dmi_kg'
+        
+        Returns:
+            Tuple of (diet_composition, predicted_dmi_kg):
+            - diet_composition: {feed_key: kg_dm_per_day} for NASEM
+            - predicted_dmi_kg: Total DMI in kg/day (matches sum of diet)
+        
+        Raises:
+            ValueError if formulation is missing or incomplete
+        """
+        if not formulation_result or formulation_result.get("status") != "success":
+            raise ValueError("Invalid or unsuccessful formulation result")
+        
+        formulation_feeds = formulation_result.get("formulation", {})
+        if not formulation_feeds:
+            raise ValueError("No formulation feeds found")
+        
+        predicted_dmi_kg = formulation_result.get("predicted_dmi_kg")
+        if not predicted_dmi_kg:
+            raise ValueError("No predicted_dmi_kg found in formulation")
+        
+        # Build diet using kg_dm_per_day (DM weight) - MUST match Trg_Dt_DMIn
+        diet_composition = {}
+        for feed_name, feed_data in formulation_feeds.items():
+            kg_dm_per_day = feed_data.get("kg_dm_per_day", 0)
+            if kg_dm_per_day and kg_dm_per_day > 0:
+                diet_composition[feed_name] = kg_dm_per_day
+        
+        if not diet_composition:
+            raise ValueError("No valid kg_dm_per_day values in formulation")
+        
+        return diet_composition, float(predicted_dmi_kg)
+    
     def calculate_requirements(
         self,
         feedbase: Dict[str, Any],
@@ -241,6 +284,92 @@ class NASEMService:
         except Exception as e:
             logger.error(f"Error evaluating diet: {e}")
             return {"status": "error", "error": str(e)}
+    
+    def calculate_values(
+        self,
+        feedbase: Dict[str, Any],
+        diet_composition: Dict[str, float],
+        animal_input: Dict[str, Any],
+        param_names: List[str]
+    ) -> Dict[str, float]:
+        """Calculate multiple NASEM values in a single model run.
+        
+        Generalized method that runs NASEM once and extracts requested parameters.
+        More efficient than calling separate methods when multiple values are needed.
+        
+        Args:
+            feedbase: Feedbase dict with structure {"feeds": {feed_key: {...}}}
+                     OR just the feeds dict {feed_key: {...}} - will be wrapped
+            diet_composition: {feed_key: kg_dm_per_day}
+            animal_input: Animal input dict (from build_animal_input)
+            param_names: List of NASEM parameter names to extract, e.g.:
+                        ["An_MPIn_g", "An_MEIn", "Mlk_Prod_comp"]
+        
+        Returns:
+            Dict of {param_name: value} for each requested parameter.
+            Missing/error values are set to 0.0
+        """
+        result = {name: 0.0 for name in param_names}
+        
+        try:
+            # Handle both feedbase format and direct feeds dict
+            if "feeds" in feedbase:
+                feeds = feedbase["feeds"]
+            else:
+                # Direct feeds dict passed - wrap it
+                feeds = feedbase
+                feedbase = {"feeds": feeds}
+            
+            # Build user diet DataFrame
+            user_diet = pd.DataFrame({
+                "Feedstuff": [feeds[k].get("nasem_name", k) for k in diet_composition.keys()],
+                "kg_user": list(diet_composition.values())
+            })
+            
+            # Build feed library for these feeds only
+            feed_library = self.build_feed_library(feedbase, list(diet_composition.keys()))
+            
+            # Run NASEM once
+            output = nasem(
+                user_diet=user_diet,
+                animal_input=animal_input,
+                equation_selection=self.DEFAULT_EQUATION_SELECTION,
+                feed_library=feed_library,
+                infusion_input=self.DEFAULT_INFUSION_INPUT
+            )
+            
+            # Extract all requested values
+            for param_name in param_names:
+                value = output.get_value(param_name)
+                if value is not None:
+                    result[param_name] = float(value)
+            
+            return result
+            
+        except Exception as e:
+            logger.warning(f"Error calculating NASEM values: {e}")
+            return result
+    
+    # Convenience wrappers for common cases
+    def calculate_mp(
+        self,
+        feedbase: Dict[str, Any],
+        diet_composition: Dict[str, float],
+        animal_input: Dict[str, Any]
+    ) -> float:
+        """Calculate MP supply using full NASEM model. Returns An_MPIn_g in g/day."""
+        result = self.calculate_values(feedbase, diet_composition, animal_input, ["An_MPIn_g"])
+        return result.get("An_MPIn_g", 0.0)
+    
+    def calculate_me(
+        self,
+        feedbase: Dict[str, Any],
+        diet_composition: Dict[str, float],
+        animal_input: Dict[str, Any]
+    ) -> float:
+        """Calculate ME supply using full NASEM model. Returns An_MEIn in Mcal/day."""
+        result = self.calculate_values(feedbase, diet_composition, animal_input, ["An_MEIn"])
+        return result.get("An_MEIn", 0.0)
     
 
 

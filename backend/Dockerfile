@@ -27,11 +27,18 @@ RUN chown appuser:appuser /app
 USER appuser
 ENV HOME="/home/appuser"
 
-# Copy all source code (including nasem_dairy local package)
-COPY --chown=appuser:appuser . .
+# Copy pyproject.toml and uv.lock first for better layer caching
+COPY --chown=appuser:appuser pyproject.toml uv.lock ./
 
-# Install dependencies using uv (nasem_dairy is a local editable dependency)
-RUN uv sync --index-url https://mirrors.aliyun.com/pypi/simple/
+# Copy nasem_dairy package (local dependency)
+COPY --chown=appuser:appuser nasem_dairy/ ./nasem_dairy/
+
+# Install dependencies and build nasem_dairy during Docker build (not at runtime)
+# Use --frozen to ensure uv doesn't try to update lockfile
+RUN uv sync --frozen --index-url https://mirrors.aliyun.com/pypi/simple/
+
+# Copy remaining source code
+COPY --chown=appuser:appuser . .
 
 # Ensure files directory exists
 RUN mkdir -p /app/files
@@ -43,5 +50,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=10)" || exit 1
 
-# Start the application
-ENTRYPOINT ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start the application using the pre-built virtual environment
+ENTRYPOINT ["uv", "run", "--frozen", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

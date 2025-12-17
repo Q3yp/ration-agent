@@ -62,6 +62,9 @@ class FormulationState(AgentState):
     current_feedbase_name: Annotated[str, replace_string] = ""  # Current feedbase used
     current_user_id: Annotated[str, replace_string] = ""  # User ID for store access
     
+    # Animal parameters for NASEM predictions (dairy cow)
+    animal_params: Annotated[dict, replace_dict] = {}  # body_weight, milk_prod, dim, parity, bcs, etc.
+    
     # Task delegation context for swarm agents
     task_description: Annotated[str, replace_string] = ""
 
@@ -77,6 +80,9 @@ class FormulationSwarmState(SwarmState):
     # Feedbase references for export tool (store coordination)
     current_feedbase_name: Annotated[str, replace_string] = ""  # Current feedbase used
     current_user_id: Annotated[str, replace_string] = ""  # User ID for store access
+    
+    # Animal parameters for NASEM predictions (dairy cow)
+    animal_params: Annotated[dict, replace_dict] = {}  # body_weight, milk_prod, dim, parity, bcs, etc.
 
 class SharedConnectionManager:
     """Manages a single shared connection pool for all agent operations"""

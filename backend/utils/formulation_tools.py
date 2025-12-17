@@ -21,6 +21,18 @@ from services.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
 
+# Lock manager for feedbase write operations to prevent race conditions
+# when multiple parallel add_feed calls try to modify the same feedbase
+_feedbase_locks: Dict[str, asyncio.Lock] = {}
+_locks_lock = asyncio.Lock()
+
+async def get_feedbase_lock(namespace_key: str) -> asyncio.Lock:
+    """Get or create a lock for a specific feedbase namespace."""
+    async with _locks_lock:
+        if namespace_key not in _feedbase_locks:
+            _feedbase_locks[namespace_key] = asyncio.Lock()
+        return _feedbase_locks[namespace_key]
+
 
 def numpy_to_python(obj: Any) -> Any:
     """Recursively convert numpy types to native Python types.
@@ -174,7 +186,28 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             
             # Check if the feed exists in the default feedbase
             if sanitized_name not in system_feeds:
-                # Try to find a close match for better error message
+                # Use semantic search to find best matching feeds
+                try:
+                    embedding_service = get_embedding_service()
+                    if embedding_service.has_embeddings():
+                        search_results = await embedding_service.search(
+                            query=name,  # Use original name for better semantic matching
+                            feedbase_name=default_feedbase_name,
+                            limit=2
+                        )
+                        if search_results:
+                            # Format suggestions (just feed names)
+                            suggestions = [fn for fn, _ in search_results]
+                            return Command(
+                                update={"messages": [ToolMessage(
+                                    f"Feed '{sanitized_name}' not found. Did you mean: {', '.join(suggestions)}?",
+                                    tool_call_id=tool_call_id
+                                )]}
+                            )
+                except Exception as e:
+                    logger.warning(f"Semantic search failed during add_feed: {e}")
+                
+                # Fallback to showing random sample feeds if semantic search unavailable
                 available_feeds = list(system_feeds.keys())[:10]
                 return Command(
                     update={"messages": [ToolMessage(
@@ -200,25 +233,30 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                     feed_data["nutrients"][nutrient_key] = nutrient_value
             
             # Get or create user's custom feedbase
+            # Use lock to prevent race conditions with parallel add_feed calls
             namespace = ("feedbases", user_id, feed_base_name)
-            existing_feedbase = await store.aget(namespace, "data")
-            if existing_feedbase:
-                feedbase_data = existing_feedbase.value
-            else:
-                # Create new feedbase with animal_type metadata
-                feedbase_data = {
-                    "animal_type": animal_type,
-                    "feeds": {}
-                }
+            namespace_key = f"{user_id}:{feed_base_name}"
+            feedbase_lock = await get_feedbase_lock(namespace_key)
             
-            # Determine if this is an add or update
-            is_update = sanitized_name in feedbase_data.get("feeds", {})
-            
-            # Add/update feed in feedbase
-            feedbase_data["feeds"][sanitized_name] = feed_data
-            
-            # Store updated feedbase
-            await store.aput(namespace, "data", feedbase_data)
+            async with feedbase_lock:
+                existing_feedbase = await store.aget(namespace, "data")
+                if existing_feedbase:
+                    feedbase_data = existing_feedbase.value
+                else:
+                    # Create new feedbase with animal_type metadata
+                    feedbase_data = {
+                        "animal_type": animal_type,
+                        "feeds": {}
+                    }
+                
+                # Determine if this is an add or update
+                is_update = sanitized_name in feedbase_data.get("feeds", {})
+                
+                # Add/update feed in feedbase
+                feedbase_data["feeds"][sanitized_name] = feed_data
+                
+                # Store updated feedbase
+                await store.aput(namespace, "data", feedbase_data)
             
             # Build success message
             action = "Updated" if is_update else "Added"
@@ -346,6 +384,85 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             )
     
     @tool
+    async def set_animal_params(
+        body_weight: float,
+        milk_prod: float,
+        dim: int = 90,
+        parity: int = 2,
+        bcs: float = 3.0,
+        milk_fat_pct: float = 3.5,
+        milk_protein_pct: float = 3.2,
+        days_pregnant: int = 0,
+        breed: str = "Holstein",
+        milk_price_per_kg: float = 3.0,
+        state: Annotated[dict, InjectedState] = None,
+        tool_call_id: Annotated[str, InjectedToolCallId] = None,
+    ) -> Command:
+        """Store animal parameters in session state for reuse across tools.
+        
+        Once set, these parameters will be used as defaults by:
+        - formulate_ration (if animal_params not explicitly provided)
+        - predict_dairy_requirements (if individual params not provided)  
+        - evaluate_diet_with_nasem (if individual params not provided)
+        
+        This avoids needing to re-input the same animal data for each tool call.
+        Explicit parameters passed to individual tools will override these defaults.
+        
+        Args:
+            body_weight: Animal body weight in kg
+            milk_prod: Target milk production in kg/day
+            dim: Days in milk (default 90)
+            parity: Number of lactations, 1=first calf heifer (default 2)
+            bcs: Body condition score 1-5 scale (default 3.0)
+            milk_fat_pct: Target milk fat percentage (default 3.5)
+            milk_protein_pct: Target milk protein percentage (default 3.2)
+            days_pregnant: Days of gestation (default 0)
+            breed: "Holstein", "Jersey", or "Other" (default "Holstein")
+            milk_price_per_kg: Milk price per kg (default 3.0, used for maximize_profit optimization)
+        
+        Returns:
+            Confirmation with stored parameter summary
+        """
+        try:
+            animal_params = {
+                "body_weight": float(body_weight),
+                "milk_prod": float(milk_prod),
+                "dim": int(dim),
+                "parity": int(parity),
+                "bcs": float(bcs),
+                "milk_fat_pct": float(milk_fat_pct),
+                "milk_protein_pct": float(milk_protein_pct),
+                "days_pregnant": int(days_pregnant),
+                "breed": str(breed),
+                "milk_price_per_kg": float(milk_price_per_kg)
+            }
+            
+            summary = (
+                f"✓ Animal parameters stored for this session:\n"
+                f"  Body weight: {body_weight} kg\n"
+                f"  Target milk: {milk_prod} kg/day\n"
+                f"  DIM: {dim}, Parity: {parity}, BCS: {bcs}\n"
+                f"  Milk fat: {milk_fat_pct}%, Milk protein: {milk_protein_pct}%\n"
+                f"  Days pregnant: {days_pregnant}, Breed: {breed}\n"
+                f"  Milk price: {milk_price_per_kg} yuan/kg\n\n"
+                f"These will be used as defaults for formulate_ration, "
+                f"predict_dairy_requirements, and evaluate_diet_with_nasem."
+            )
+            
+            return Command(
+                update={
+                    "animal_params": animal_params,
+                    "messages": [ToolMessage(summary, tool_call_id=tool_call_id)]
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Set animal params error: {e}")
+            return Command(
+                update={"messages": [ToolMessage(f"Error setting animal parameters: {str(e)}", tool_call_id=tool_call_id)]}
+            )
+    
+    @tool
     async def formulate_ration(
         feed_base_name: str,
         nutritional_constraints: List[Dict[str, Any]],
@@ -360,11 +477,14 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         """
         Formulate optimal ration using linear/non-linear programming optimization.
         
-        For DAIRY COWS: If animal_params is provided, uses NASEM DMI prediction model
-        (equation 9) to automatically calculate DMI from diet composition. MP supply
-        is also calculated automatically from diet composition.
+        For DAIRY COWS: Uses NASEM DMI prediction model (equation 9) to automatically 
+        calculate DMI from diet composition. MP and ME supply are also calculated 
+        automatically from diet composition using full NASEM.
         
-        IMPORTANT: Use check_feeds(feedbase, "nutrients") to get exact nutrient column names.
+        IMPORTANT: 
+        - Use check_feeds(feedbase, "nutrients") to get exact nutrient column names.
+        - If set_animal_params was called earlier, those parameters are AUTOMATICALLY USED.
+          You do NOT need to provide animal_params again unless you want to override.
         
         Args:
             feed_base_name: Name of the feedbase to use for formulation
@@ -376,9 +496,10 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 "daily_total" - Set target daily intake amount with tolerance
                     Required: attribute (str), target (float)
                     Optional: tolerance_percent (default 10%)
-                    Special attributes:
+                    Special attributes (dairy cow only):
                       - "dmi": Sets fixed DMI (overrides prediction)
-                      - "mp": Metabolizable protein target (g/day, calculated from diet)
+                      - "mp": Metabolizable protein target (g/day, uses NASEM)
+                      - "me": Metabolizable energy target (Mcal/day, uses NASEM)
                     
                 "ratio" - Set min/max ratio between two nutrients
                     Required: numerator (str), denominator (str), min/max (float)
@@ -388,14 +509,16 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             optimization_goal: Optimization objective:
                 - "minimize_cost" (default): Find least-cost ration
                 - "feasibility": Find any ration satisfying constraints (no cost optimization)
-            animal_params: Optional dict for NASEM predictions (dairy cows):
-                - milk_prod: Target milk production kg/day (REQUIRED)
-                - body_weight, dim, parity, bcs, milk_fat_pct, milk_protein_pct
+                - "maximize_profit": Maximize milk_revenue - feed_cost (requires milk_price_per_kg)
+            animal_params: Optional. For dairy cows, NASEM model parameters.
+                AUTOMATICALLY loaded from session state if set_animal_params was called.
+                Only provide if you need to override stored values.
+                Keys: milk_prod, body_weight, dim, parity, bcs, milk_fat_pct, milk_protein_pct, milk_price_per_kg
             
         Returns:
             Formulation result with:
             - formulation: feed percentages and kg/day
-            - predicted_dmi_kg, predicted_mp_g: from diet composition
+            - predicted_dmi_kg, predicted_mp_g, predicted_me_mcal: from diet composition
             - nutrient_analysis, cost_per_kg_dm
         """
         try:
@@ -488,17 +611,23 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             optimizer.set_feeds(feed_database)
             
             # Set animal params for DMI prediction if applicable (dairy cows)
-            if animal_type == "dairy_cow" and animal_params is not None:
-                milk_prod = animal_params.get("milk_prod")
+            # Use explicit animal_params if provided, otherwise fall back to state
+            effective_animal_params = animal_params
+            if animal_type == "dairy_cow" and effective_animal_params is None:
+                effective_animal_params = state.get("animal_params") if state else None
+            
+            if animal_type == "dairy_cow" and effective_animal_params is not None:
+                milk_prod = effective_animal_params.get("milk_prod")
                 if milk_prod is not None:
                     optimizer.set_animal_params(
-                        body_weight=animal_params.get("body_weight", 650.0),
-                        dim=animal_params.get("dim", 90),
-                        parity=animal_params.get("parity", 2),
+                        body_weight=effective_animal_params.get("body_weight", 650.0),
+                        dim=effective_animal_params.get("dim", 90),
+                        parity=effective_animal_params.get("parity", 2),
                         milk_prod=milk_prod,
-                        bcs=animal_params.get("bcs", 3.0),
-                        milk_fat_pct=animal_params.get("milk_fat_pct", 3.5),
-                        milk_protein_pct=animal_params.get("milk_protein_pct", 3.2)
+                        bcs=effective_animal_params.get("bcs", 3.0),
+                        milk_fat_pct=effective_animal_params.get("milk_fat_pct", 3.5),
+                        milk_protein_pct=effective_animal_params.get("milk_protein_pct", 3.2),
+                        milk_price_per_kg=effective_animal_params.get("milk_price_per_kg", 3.0)
                     )
             
             # Run SLSQP optimization
@@ -512,8 +641,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             )
             
             # Add animal params to result for reference
-            if animal_params and optimization_result.get("status") == "success":
-                optimization_result["animal_params_used"] = animal_params
+            if effective_animal_params and optimization_result.get("status") == "success":
+                optimization_result["animal_params_used"] = effective_animal_params
             
             # Convert numpy types to Python types for msgpack serialization
             optimization_result = numpy_to_python(optimization_result)
@@ -531,6 +660,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             if optimization_result.get("status") == "success":
                 state_update["formulation_constraints"] = nutritional_constraints
                 state_update["feed_constraints"] = feed_constraints or {}
+                # Only update animal_params if explicit params were passed (don't re-store state values)
                 if animal_params:
                     state_update["animal_params"] = animal_params
             
@@ -968,4 +1098,4 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
     # Create export tool from separate module
     export_formulation = create_export_formulation_tool(animal_type)
 
-    return [add_feed, formulate_ration, check_feeds, list_feed_bases, export_formulation]
+    return [add_feed, set_animal_params, formulate_ration, check_feeds, list_feed_bases, export_formulation]

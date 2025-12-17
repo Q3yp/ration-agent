@@ -44,7 +44,7 @@ export default function TypingIndicator({ analysisState, formulationState, think
 
   const isAnalyzing = analysisState?.isActive || analysisState?.isComplete
   const isFormulating = formulationState?.isActive || formulationState?.isComplete
-  const isThinking = thinkingState?.isActive
+  const isThinking = thinkingState?.isActive || thinkingState?.isComplete
 
   // Auto-expand while thinking, collapse when done
   useEffect(() => {
@@ -84,11 +84,13 @@ export default function TypingIndicator({ analysisState, formulationState, think
 
     const thinkingContent = thinkingState?.content || ''
     const hasContent = thinkingContent.length > 0
+    const isActivelyThinking = thinkingState?.isActive
+    const isStopped = thinkingState?.isComplete && !thinkingState?.isActive
 
     return (
       <div className="flex justify-start items-start gap-2 mb-2">
         <div className="w-8 h-8 flex items-center justify-center">
-          <Brain className="h-5 w-5 text-purple-500 animate-pulse" />
+          <Brain className={`h-5 w-5 text-purple-500 ${isActivelyThinking ? 'animate-pulse' : ''}`} />
         </div>
 
         <Card className="min-w-[200px] sm:min-w-[400px] max-w-[600px] bg-purple-50 border-purple-200">
@@ -100,11 +102,11 @@ export default function TypingIndicator({ analysisState, formulationState, think
               >
                 <div className="flex items-center space-x-2">
                   <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
-                    <Sparkles className="w-4 h-4 text-purple-500 animate-pulse" />
+                    <div className={`w-2 h-2 bg-purple-400 rounded-full ${isActivelyThinking ? 'animate-pulse' : ''}`}></div>
+                    <Sparkles className={`w-4 h-4 text-purple-500 ${isActivelyThinking ? 'animate-pulse' : ''}`} />
                   </div>
                   <span className="text-purple-700 text-sm font-medium">
-                    {t('chat.thinking') || '思考中...'}
+                    {isStopped ? (t('chat.thinkingStopped') || '思考内容') : (t('chat.thinking') || '思考中...')}
                   </span>
                 </div>
                 {hasContent && (

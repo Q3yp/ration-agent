@@ -54,7 +54,7 @@ class UnifiedMessageParser:
         self.excel_tools = {"excel_metadata", "excel_query", "read_excel"}
         self.file_tools = {"write_file", "list_directory", "read_file"}
         self.bash_tools = {"bash_command"}
-        self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation", "list_feed_bases", "predict_dairy_requirements", "evaluate_diet_with_nasem"}
+        self.formulation_tools = {"add_feed", "formulate_ration", "check_feeds", "export_formulation", "list_feed_bases", "predict_dairy_requirements", "evaluate_diet_with_nasem", "set_animal_params"}
         self.active_analysis = None  # {"message_id": str, "operations": [], "start_time": float}
         self.active_formulation = None  # {"message_id": str, "operations": [], "start_time": float, "results": {}}
         self.analysis_operation_counter = 0
@@ -467,19 +467,27 @@ class UnifiedMessageParser:
             return description, operation_data
             
         elif tool_name == "predict_dairy_requirements":
-            body_weight = tool_args.get("body_weight_kg", 0)
-            target_milk = tool_args.get("target_milk_kg", 0)
+            body_weight = tool_args.get("body_weight_kg")
+            target_milk = tool_args.get("target_milk_kg")
             feedbase_name = tool_args.get("feedbase_name", "")
             operation_data = {
                 "body_weight_kg": body_weight,
                 "target_milk_kg": target_milk,
                 "feedbase_name": feedbase_name
             }
-            description = (
-                f"计算营养需求 (体重{body_weight}kg, 目标产奶{target_milk}kg)"
-                if locale != "en-US"
-                else f"Calculate nutrition requirements (BW {body_weight}kg, target milk {target_milk}kg)"
-            )
+            # If params not provided, the tool uses stored animal_params
+            if body_weight is None or target_milk is None:
+                description = (
+                    "计算营养需求 (使用已存储参数)"
+                    if locale != "en-US"
+                    else "Calculate nutrition requirements (using stored params)"
+                )
+            else:
+                description = (
+                    f"计算营养需求 (体重{body_weight}kg, 目标产奶{target_milk}kg)"
+                    if locale != "en-US"
+                    else f"Calculate nutrition requirements (BW {body_weight}kg, target milk {target_milk}kg)"
+                )
             return description, operation_data
             
         elif tool_name == "evaluate_diet_with_nasem":
@@ -493,6 +501,37 @@ class UnifiedMessageParser:
                 f"使用NASEM模型评估日粮 (目标产奶{target_milk}kg)"
                 if locale != "en-US"
                 else f"Evaluate diet with NASEM (target milk {target_milk}kg)"
+            )
+            return description, operation_data
+        
+        elif tool_name == "set_animal_params":
+            body_weight = tool_args.get("body_weight", 0)
+            milk_prod = tool_args.get("milk_prod", 0)
+            dim = tool_args.get("dim", 90)
+            parity = tool_args.get("parity", 2)
+            bcs = tool_args.get("bcs", 3.0)
+            milk_fat_pct = tool_args.get("milk_fat_pct", 3.5)
+            milk_protein_pct = tool_args.get("milk_protein_pct", 3.2)
+            days_pregnant = tool_args.get("days_pregnant", 0)
+            breed = tool_args.get("breed", "Holstein")
+            milk_price = tool_args.get("milk_price_per_kg", 3.0)
+            
+            operation_data = {
+                "body_weight": f"{body_weight}kg",
+                "milk_prod": f"{milk_prod}kg/d",
+                "dim": dim,
+                "parity": parity,
+                "bcs": bcs,
+                "milk_fat_pct": f"{milk_fat_pct}%",
+                "milk_protein_pct": f"{milk_protein_pct}%",
+                "days_pregnant": days_pregnant,
+                "breed": breed,
+                "milk_price": f"¥{milk_price}/kg"
+            }
+            description = (
+                f"设置动物参数 (体重{body_weight}kg, 产奶{milk_prod}kg, DIM{dim}, 胎次{parity})"
+                if locale != "en-US"
+                else f"Set animal params (BW {body_weight}kg, milk {milk_prod}kg, DIM{dim}, parity {parity})"
             )
             return description, operation_data
             

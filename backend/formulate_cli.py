@@ -179,29 +179,26 @@ def formulate(
 
 def evaluate_with_nasem(
     feedbase: Dict[str, Any],
-    formulation: Dict[str, Dict],
+    formulation_result: Dict[str, Any],
     milk_prod: float = 40.0,
     body_weight: float = 650.0,
     dim: int = 90,
     parity: int = 2,
 ) -> Dict[str, Any]:
-    """Evaluate formulation using NASEM dairy model."""
+    """Evaluate formulation using NASEM dairy model.
+    
+    Args:
+        feedbase: Feedbase dict with feeds
+        formulation_result: Complete formulation result dict from optimizer  
+        milk_prod, body_weight, dim, parity: Animal params
+    """
+    from services.nasem_service import NASEMService
     nasem_service = get_nasem_service()
     
-    # Convert formulation to diet: {feed_key: kg_dm_per_day}
-    diet = {}
-    for feed_key, data in formulation.items():
-        # kg_per_day in formulation is fresh weight, need to convert to DM
-        # Actually, the formulation optimizer outputs in DM percentage
-        # kg_per_day = percentage_dm / 100 * daily_dm_intake
-        kg_dm = data.get("kg_per_day", 0)
-        # Convert fresh to DM using feed's DM%
-        feed_data = feedbase.get("feeds", {}).get(feed_key, {})
-        dm_pct = feed_data.get("dm_percent", 90.0) / 100.0
-        kg_dm_actual = kg_dm * dm_pct
-        diet[feed_key] = kg_dm_actual
+    # Build diet using centralized helper (single source of truth)
+    diet, predicted_dmi_kg = NASEMService.build_diet_from_formulation(formulation_result)
     
-    # Build animal input
+    # Build animal input with optimizer's predicted DMI
     animal_input = nasem_service.build_animal_input(
         body_weight_kg=body_weight,
         days_in_milk=dim,
@@ -209,6 +206,7 @@ def evaluate_with_nasem(
         target_milk_kg=milk_prod,
         milk_fat_percent=3.5,
         milk_protein_percent=3.2,
+        target_dmi_kg=predicted_dmi_kg  # Use optimizer's DMI
     )
     
     # Evaluate
@@ -343,7 +341,7 @@ def main():
         print("\n⚙️  Running NASEM evaluation...")
         nasem_result = evaluate_with_nasem(
             feedbase=feedbase,
-            formulation=result.get("formulation", {}),
+            formulation_result=result,  # Pass full result for centralized diet extraction
             milk_prod=args.milk,
             body_weight=args.bw,
             dim=args.dim,

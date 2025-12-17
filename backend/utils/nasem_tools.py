@@ -93,15 +93,15 @@ async def _get_feedbase(user_id: str, feedbase_name: str) -> Optional[Dict[str, 
 
 @tool
 async def predict_dairy_requirements(
-    body_weight_kg: float,
-    days_in_milk: int,
-    parity: int,
-    target_milk_kg: float,
-    milk_fat_percent: float = 3.5,
-    milk_protein_percent: float = 3.2,
-    body_condition_score: float = 3.0,
-    days_pregnant: int = 0,
-    breed: str = "Holstein",
+    body_weight_kg: Optional[float] = None,
+    days_in_milk: Optional[int] = None,
+    parity: Optional[int] = None,
+    target_milk_kg: Optional[float] = None,
+    milk_fat_percent: Optional[float] = None,
+    milk_protein_percent: Optional[float] = None,
+    body_condition_score: Optional[float] = None,
+    days_pregnant: Optional[int] = None,
+    breed: Optional[str] = None,
     state: Annotated[dict, InjectedState] = None,
     config: RunnableConfig = None
 ) -> str:
@@ -116,15 +116,18 @@ async def predict_dairy_requirements(
     - MP requirements: Maintenance + milk protein + gestation + growth
     - Mineral requirements: Ca, P, Mg based on production level
     
+    If animal parameters were previously set via set_animal_params, they will be used
+    as defaults. Explicit parameters passed here will override stored values.
+    
     Note: Actual DMI and nutrient supply depend on diet composition. Use 
     formulate_ration with animal_params to get optimized diet with predicted DMI,
     then evaluate_diet_with_nasem for final validation.
     
     Args:
-        body_weight_kg: Animal body weight in kg
-        days_in_milk: Days since calving (DIM)
-        parity: Number of lactations (1 = first calf heifer)
-        target_milk_kg: Target milk production in kg/day
+        body_weight_kg: Animal body weight in kg (uses stored value if not provided)
+        days_in_milk: Days since calving (DIM) (uses stored value if not provided)
+        parity: Number of lactations (1 = first calf heifer) (uses stored value if not provided)
+        target_milk_kg: Target milk production in kg/day (uses stored value if not provided)
         milk_fat_percent: Target milk fat percentage (default 3.5)
         milk_protein_percent: Target milk protein percentage (default 3.2)
         body_condition_score: BCS on 1-5 scale (default 3.0)
@@ -135,6 +138,7 @@ async def predict_dairy_requirements(
         JSON with factorial requirements:
         - predicted_dmi_kg: Predicted DMI (animal-only, equation 8)
         - ne_required_mcal: Total NE requirement (maintenance + milk + gestation)
+        - me_required_mcal: Total ME requirement (NE/0.64)
         - mp_required_g: Total MP requirement (g/day)
         - ca_required_g, p_required_g, mg_required_g: Mineral requirements
         - target_lys_percent_mp, target_met_percent_mp: Amino acid targets
@@ -143,6 +147,32 @@ async def predict_dairy_requirements(
     import math
     
     try:
+        # Get stored animal params from state as fallback
+        stored_params = state.get("animal_params", {}) if state else {}
+        
+        # Resolve parameters: explicit > stored > defaults
+        body_weight_kg = body_weight_kg if body_weight_kg is not None else stored_params.get("body_weight")
+        days_in_milk = days_in_milk if days_in_milk is not None else stored_params.get("dim")
+        parity = parity if parity is not None else stored_params.get("parity")
+        target_milk_kg = target_milk_kg if target_milk_kg is not None else stored_params.get("milk_prod")
+        milk_fat_percent = milk_fat_percent if milk_fat_percent is not None else stored_params.get("milk_fat_pct", 3.5)
+        milk_protein_percent = milk_protein_percent if milk_protein_percent is not None else stored_params.get("milk_protein_pct", 3.2)
+        body_condition_score = body_condition_score if body_condition_score is not None else stored_params.get("bcs", 3.0)
+        days_pregnant = days_pregnant if days_pregnant is not None else stored_params.get("days_pregnant", 0)
+        breed = breed if breed is not None else stored_params.get("breed", "Holstein")
+        
+        # Check required parameters
+        if body_weight_kg is None or days_in_milk is None or parity is None or target_milk_kg is None:
+            missing = []
+            if body_weight_kg is None: missing.append("body_weight_kg")
+            if days_in_milk is None: missing.append("days_in_milk")
+            if parity is None: missing.append("parity")
+            if target_milk_kg is None: missing.append("target_milk_kg")
+            return json.dumps({
+                "status": "error",
+                "error": f"Missing required parameters: {', '.join(missing)}. Either provide them explicitly or use set_animal_params first."
+            })
+        
         # === DMI Prediction (NASEM Equation 8 - Lact1) ===
         # DMI = (3.7 + 5.7*(parity-1) + 0.305*NE_milk + 0.022*BW 
         #        + (-0.689 - 1.87*(parity-1))*BCS) 
@@ -248,6 +278,7 @@ async def predict_dairy_requirements(
                 "ne_required_mcal": round(ne_total, 1),
                 "ne_maintenance_mcal": round(ne_maintenance, 1),
                 "ne_lactation_mcal": round(ne_lactation, 1),
+                "me_required_mcal": round(me_required, 1),
                 "mp_required_g": round(mp_total, 0),
                 "mp_maintenance_g": round(mp_maintenance, 0),
                 "mp_lactation_g": round(mp_lactation, 0),
@@ -282,14 +313,14 @@ async def predict_dairy_requirements(
 
 @tool
 async def evaluate_diet_with_nasem(
-    body_weight_kg: float,
-    days_in_milk: int,
-    parity: int,
-    target_milk_kg: float,
-    milk_fat_percent: float = 3.5,
-    milk_protein_percent: float = 3.2,
-    days_pregnant: int = 0,
-    breed: str = "Holstein",
+    body_weight_kg: Optional[float] = None,
+    days_in_milk: Optional[int] = None,
+    parity: Optional[int] = None,
+    target_milk_kg: Optional[float] = None,
+    milk_fat_percent: Optional[float] = None,
+    milk_protein_percent: Optional[float] = None,
+    days_pregnant: Optional[int] = None,
+    breed: Optional[str] = None,
     state: Annotated[dict, InjectedState] = None,
     config: RunnableConfig = None
 ) -> str:
@@ -299,13 +330,16 @@ async def evaluate_diet_with_nasem(
     This tool automatically uses the current formulation from state - do NOT 
     provide diet composition manually.
     
+    If animal parameters were previously set via set_animal_params, they will be used
+    as defaults. Explicit parameters passed here will override stored values.
+    
     Use this AFTER formulate_ration to predict actual cow performance.
     
     Args:
-        body_weight_kg: Animal body weight in kg
-        days_in_milk: Days since calving
-        parity: Number of lactations
-        target_milk_kg: Target milk production for comparison
+        body_weight_kg: Animal body weight in kg (uses stored value if not provided)
+        days_in_milk: Days since calving (uses stored value if not provided)
+        parity: Number of lactations (uses stored value if not provided)
+        target_milk_kg: Target milk production for comparison (uses stored value if not provided)
         milk_fat_percent: Target milk fat percentage
         milk_protein_percent: Target milk protein percentage
         days_pregnant: Days of gestation
@@ -330,6 +364,31 @@ async def evaluate_diet_with_nasem(
                 "error": "No successful formulation found. Please run formulate_ration first."
             })
         
+        # Get stored animal params from state as fallback
+        stored_params = state.get("animal_params", {}) if state else {}
+        
+        # Resolve parameters: explicit > stored > defaults
+        body_weight_kg = body_weight_kg if body_weight_kg is not None else stored_params.get("body_weight")
+        days_in_milk = days_in_milk if days_in_milk is not None else stored_params.get("dim")
+        parity = parity if parity is not None else stored_params.get("parity")
+        target_milk_kg = target_milk_kg if target_milk_kg is not None else stored_params.get("milk_prod")
+        milk_fat_percent = milk_fat_percent if milk_fat_percent is not None else stored_params.get("milk_fat_pct", 3.5)
+        milk_protein_percent = milk_protein_percent if milk_protein_percent is not None else stored_params.get("milk_protein_pct", 3.2)
+        days_pregnant = days_pregnant if days_pregnant is not None else stored_params.get("days_pregnant", 0)
+        breed = breed if breed is not None else stored_params.get("breed", "Holstein")
+        
+        # Check required parameters
+        if body_weight_kg is None or days_in_milk is None or parity is None or target_milk_kg is None:
+            missing = []
+            if body_weight_kg is None: missing.append("body_weight_kg")
+            if days_in_milk is None: missing.append("days_in_milk")
+            if parity is None: missing.append("parity")
+            if target_milk_kg is None: missing.append("target_milk_kg")
+            return json.dumps({
+                "status": "error",
+                "error": f"Missing required parameters: {', '.join(missing)}. Either provide them explicitly or use set_animal_params first."
+            })
+        
         # Get feedbase reference from state
         feedbase_name = state.get("current_feedbase_name", "")
         user_id = state.get("current_user_id", "")
@@ -350,26 +409,17 @@ async def evaluate_diet_with_nasem(
         if not feedbase:
             return json.dumps({"status": "error", "error": f"Feedbase '{feedbase_name}' not found"})
         
-        # Build diet composition from formulation result
-        # Note: kg_per_day from formulation is fresh (as-fed) weight, but NASEM only
-        # uses kg_user for PROPORTIONS (Fd_DMInp = kg_user / kg_user.sum()).
-        # The actual DM intake comes from Trg_Dt_DMIn in animal_input.
-        formulation_feeds = current_formulation.get("formulation", {})
-        diet_composition = {}
-        for feed_name, feed_data in formulation_feeds.items():
-            kg_per_day = feed_data.get("kg_per_day", 0)
-            if kg_per_day and kg_per_day > 0:
-                diet_composition[feed_name] = kg_per_day
-        
-        if not diet_composition:
-            return json.dumps({
-                "status": "error", 
-                "error": "No valid diet composition found in formulation. Check that formulation has kg_per_day values."
-            })
+        # Build diet composition using centralized helper (single source of truth)
+        # This ensures diet composition and DMI are always consistent
+        try:
+            from services.nasem_service import NASEMService
+            diet_composition, predicted_dmi_kg = NASEMService.build_diet_from_formulation(current_formulation)
+        except ValueError as e:
+            return json.dumps({"status": "error", "error": str(e)})
         
         service = get_nasem_service()
         
-        # Build animal input
+        # Build animal input using optimizer's predicted DMI
         animal_input = service.build_animal_input(
             body_weight_kg=body_weight_kg,
             days_in_milk=days_in_milk,
@@ -378,7 +428,8 @@ async def evaluate_diet_with_nasem(
             milk_fat_percent=milk_fat_percent,
             milk_protein_percent=milk_protein_percent,
             days_pregnant=days_pregnant,
-            breed=breed
+            breed=breed,
+            target_dmi_kg=predicted_dmi_kg  # Use optimizer's DMI
         )
         
         # Evaluate diet

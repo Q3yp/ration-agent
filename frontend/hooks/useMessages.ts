@@ -561,10 +561,11 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
 
       // Set typing immediately for responsive UX
       setIsTyping(true)
-      // Clear any previous analysis, formulation, and thinking state when starting new message
-      setAnalysisState(undefined)
-      setFormulationState(undefined)
-      setThinkingState(undefined)
+      // Mark previous states as stopped instead of clearing them
+      // This preserves the status blocks for user visibility
+      setAnalysisState(prev => prev?.isActive ? { ...prev, isActive: false, isComplete: true } : prev)
+      setFormulationState(prev => prev?.isActive ? { ...prev, isActive: false, isComplete: true } : prev)
+      setThinkingState(prev => prev?.isActive ? { ...prev, isActive: false, isComplete: true } : prev)
 
       // Create new abort controller for this request
       abortControllerRef.current = new AbortController()
@@ -675,6 +676,10 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       })
 
       setIsTyping(false)  // Stop typing when stopped
+      // Mark states as stopped to preserve visibility
+      setAnalysisState(prev => prev?.isActive ? { ...prev, isActive: false, isComplete: true } : prev)
+      setFormulationState(prev => prev?.isActive ? { ...prev, isActive: false, isComplete: true } : prev)
+      setThinkingState(prev => prev?.isActive ? { ...prev, isActive: false, isComplete: true } : prev)
 
     } catch (error: any) {
       ErrorHandler.logError(error, 'stopMessage')

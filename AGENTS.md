@@ -45,7 +45,7 @@ ration-agent/
 │   │   └── archive/            # Old migration scripts
 │   ├── prompts/                # Agent system prompts (Markdown)
 │   │   ├── nutritionist.md     # Base nutritionist prompt
-│   │   ├── nutritionist_dairy_cow.md  # Dairy cattle expertise (uses NASEM tools for requirements)
+│   │   ├── nutritionist_dairy_cow.md  # Dairy cattle expertise (NASEM model dynamics, no hardcoded values)
 │   │   ├── nutritionist_beef_cow.md   # NRC 2021 beef cattle expertise
 │   │   ├── nutritionist_cat.md        # FEDIAF feline nutrition
 │   │   ├── nutritionist_dog.md        # FEDIAF canine nutrition
@@ -211,6 +211,7 @@ add_feed("my_farm", "soybean_meal_48", cost_per_kg=0.45, nutrients={"Fd_CP": 50.
 - `cost_per_kg` optional (defaults to 0)
 - `nutrients` dict merges/overrides specific values only
 - Same call adds or updates existing feed in target feedbase
+- **Error handling with semantic search**: If the feed name is not found, returns best matching feed names via semantic search (with similarity scores), enabling the agent to auto-correct without a separate `check_feeds` call
 
 ### Formulation Constraints (formulate_ration)
 
@@ -219,21 +220,56 @@ The `formulate_ration` tool uses linear programming with three constraint types:
 | Type | Purpose | Required Fields |
 |------|---------|-----------------|
 | `concentration` | Min/max % of nutrient in final ration (DM basis) | `nutrient`, at least one of `min`/`max` |
-| `daily_total` | Target daily intake amount with tolerance | `attribute`, `target`, optional `tolerance_percent` (default 10%) |
+| `daily_total` | Target daily intake amount with tolerance | `attribute`, `target`, optional `tolerance_percent` (default 3%) |
 | `ratio` | Min/max ratio between two nutrients | `numerator`, `denominator`, at least one of `min`/`max` |
 
 **Critical: `dmi` is a special attribute** for `daily_total` type. When used, it sets the total dry matter intake target and enables `kg_per_day` calculations. **Must be specified first** if other `daily_total` nutrient constraints are used.
+
+**Special attributes for `daily_total` (dairy cow only):**
+- `mp`: Metabolizable Protein target in g/day (uses full NASEM model for calculation)
+- `me`: Metabolizable Energy target in Mcal/day (uses full NASEM model for calculation)
 
 **Optimization Goals** (`optimization_goal` parameter):
 | Goal | Description |
 |------|-------------|
 | `minimize_cost` | (Default) Find the least-cost ration that satisfies all constraints |
 | `feasibility` | Find any ration that satisfies constraints without optimizing for cost |
+| `maximize_profit` | Maximize `milk_revenue - feed_cost` using NASEM milk prediction (requires `milk_price_per_kg` in animal_params, default 3.0) |
+
+### Animal Parameters State (set_animal_params)
+
+The `set_animal_params` tool stores animal parameters in session state for reuse across multiple tools:
+
+```python
+set_animal_params(body_weight=650, milk_prod=35, dim=90, parity=2, bcs=3.0, milk_price_per_kg=4.0)
+```
+
+**Parameters stored:**
+- `body_weight`: Animal body weight in kg
+- `milk_prod`: Target milk production in kg/day
+- `dim`: Days in milk
+- `parity`: Number of lactations
+- `bcs`: Body condition score (1-5)
+- `milk_fat_pct`, `milk_protein_pct`: Milk composition
+- `days_pregnant`, `breed`: Additional parameters
+
+**Tools that use stored parameters:**
+| Tool | Behavior |
+|------|----------|
+| `formulate_ration` | Uses stored params if `animal_params` not explicitly provided |
+| `predict_dairy_requirements` | All params optional, falls back to stored values |
+| `evaluate_diet_with_nasem` | All params optional, falls back to stored values |
+
+> [!TIP]
+> Call `set_animal_params` once at the start of a formulation workflow. Subsequent tool calls will automatically use the stored values, reducing redundant parameter input.
 
 > [!WARNING]
 > **Nutrient names must exactly match feedbase columns** (use `check_feeds(feedbase, "nutrients")` to list them).
 > For dairy cows, nutrients use NASEM `Fd_*` prefixes: `Fd_CP`, `Fd_NDF`, `Fd_Ca`, `Fd_DE_Base`, etc.
 > Using incorrect names like `CP` instead of `Fd_CP` returns 0 for all feeds → **infeasible optimization**.
+
+> [!IMPORTANT]
+> **Optimizer Tolerance Behavior**: With `minimize_cost`, protein sources are nearly always MORE EXPENSIVE than energy sources. The optimizer will push MP/CP constraints to the **minimum acceptable bound**. Use `tolerance_percent: 0` when you want the requirement to be a floor, not a target with downside flexibility.
 
 
 ## StopManager & Message Caching (Critical)
@@ -336,16 +372,16 @@ GET /sessions/{id}/history?stream=true&skip_cache=true
 | `core/agent.py` | `SharedConnectionManager` (DB pool), `AgentRegistry` (caches compiled graphs per animal type), `FormulationState`/`FormulationSwarmState` (LangGraph state schemas) |
 | `agents/nodes.py` | `create_agent_swarm_for_type()` builds the 3-agent swarm with handoff tools |
 | `services/session_manager.py` | `SessionManager` class: session CRUD, feedbase storage (PostgreSQL store), conversation streaming |
-| `services/nasem_service.py` | `NASEMService`: NASEM 2021 Dairy Model wrapper. Builds feed library from structured feedbase data (LangGraph store) or CSV. Key methods: `build_feed_library_from_feedbase()`, `calculate_requirements()`, `evaluate_diet()` |
+| `services/nasem_service.py` | `NASEMService`: NASEM 2021 Dairy Model wrapper. **Key methods**: `build_diet_from_formulation()` (centralized diet extraction), `calculate_values(param_names)` (runs NASEM once, returns dict of requested values), convenience wrappers `calculate_mp()`, `calculate_me()` |
 | `api/routes.py` | REST endpoints: `/sessions/*`, `/chat/stream/*`, `/files/*` |
 | `utils/tools.py` | Agent tools: file listing, reading, web search, artifact creation |
 | `utils/formulation_tools.py` | Core formulation tools: `add_feed`, `formulate_ration`, `check_feeds`, `list_feed_bases`. Export tool imported from `formulation_exporter.py` |
-| `utils/formulation_exporter.py` | `export_formulation` tool (~900 lines): Creates unified Summary tab with 3 sections separated by borders: A-E (ingredients, key nutrients using Fd_* fields, constraints), F (notes with header + merged text), G-H (profitability with editable inputs + NASEM predictions). Also creates NASEM category tabs for dairy |
+| `utils/formulation_exporter.py` | `export_formulation` tool (~900 lines): Creates unified Summary tab with 3 sections. Uses `NASEMService.build_diet_from_formulation()` for NASEM evaluation to ensure consistency. Also creates NASEM category tabs for dairy |
 | `utils/language.py` | Centralized i18n: `normalize_locale()`, `t(key, locale)` helper for type-safe translations, `get_export_texts(locale)` for Excel export strings. ~160 translation keys for zh-CN/en-US. Uses `[INSTRUCTION: ...]` blocks in some tool result messages to guide agent response behavior (e.g., export success instructs agent to be brief) |
-| `utils/nasem_tools.py` | `predict_dairy_requirements`, `evaluate_diet_with_nasem` tools for dairy cow nutritionist. Uses NASEM equations for factorial requirements (eq 8) and diet evaluation. `formulate_ration` now supports `animal_params` for embedded DMI prediction (eq 9). **Yield constraint warnings**: `evaluate_diet_with_nasem` emits warnings in `yield_constraint_warnings` when MP-allowable, NE-allowable, or predicted milk are >5% below target |
+| `utils/nasem_tools.py` | `predict_dairy_requirements`, `evaluate_diet_with_nasem` tools for dairy cow nutritionist. Uses NASEM equations for factorial requirements (eq 8) and diet evaluation. `formulate_ration` now supports `animal_params` for embedded DMI prediction (eq 9). **Critical**: Uses `NASEMService.build_diet_from_formulation()` for consistent diet conversion. Emits `yield_constraint_warnings` when MP-allowable, NE-allowable, or predicted milk are >5% below target |
 | `utils/prompt_loader.py` | Loads agent prompts with Jinja2 templating. Implements **Anthropic prompt caching** via OpenRouter: system prompt + conversation history messages get `cache_control: ephemeral` for ~87% cost reduction on multi-tool-call chains |
 | `utils/system_feedbases.py` | Loads system feedbase definitions. For dairy cow, uses NASEM feedbase JSON with full `Fd_*` nutrient columns extracted from NASEM feed library |
-| `formulation/optimizer.py` | `RationOptimizer`: scipy-based least-cost formulation solver |
+| `formulation/optimizer.py` | `FormulationOptimizer`: scipy-based least-cost formulation solver. Uses full NASEM model for MP/ME constraints via `_get_nasem_mp()` and `_get_nasem_me()` internal methods |
 
 ### Frontend Core
 
@@ -353,7 +389,7 @@ GET /sessions/{id}/history?stream=true&skip_cache=true
 |------|---------|
 | `app/page.tsx` | Landing page with session creation flow |
 | `components/ChatInterface.tsx` | Main chat container with SSE streaming. Implements **smart auto-scroll**: only scrolls to bottom when user is already at or near the bottom, allowing users to scroll up to read previous messages without interruption |
-| `components/TypingIndicator.tsx` | Agent thinking/typing animation. Thinking block content also uses smart auto-scroll for the reasoning content panel |
+| `components/TypingIndicator.tsx` | Agent thinking/typing animation. Thinking, analysis, and formulation states now persist when stopped (marked as complete rather than cleared), showing a static summary of interrupted work |
 | `hooks/useSSEChat.ts` | EventSource connection, message parsing, stop handling |
 | `hooks/useMessages.ts` | Message state, optimistic updates, history loading |
 | `components/MessageBubble.tsx` | Message rendering: markdown, artifacts, tool calls |
