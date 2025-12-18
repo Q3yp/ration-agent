@@ -41,11 +41,13 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
         config: RunnableConfig,
-        filename: Optional[str] = None,
-        animal_input: Optional[Dict[str, Any]] = None
+        filename: Optional[str] = None
     ) -> Command:
         """
         Export current formulation to Excel with multi-tab layout.
+
+        Uses stored animal_params from set_animal_params for NASEM evaluation.
+        No need to re-enter animal parameters - they are retrieved from session state.
 
         Creates Excel with tabs:
         - Summary: Feed formula, key nutrients, constraints, profitability, NASEM summary
@@ -54,10 +56,6 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
         Args:
             description: Detailed formulation description and recommendations (supports multi-line text)
             filename: Optional custom filename (default: formulation_export_TIMESTAMP.xlsx)
-            animal_input: Animal parameters for NASEM evaluation.
-                         REQUIRED for dairy_cow exports.
-                         Required keys: body_weight_kg, days_in_milk, parity, target_milk_kg
-                         Optional: milk_fat_percent, milk_protein_percent, days_pregnant, breed
 
         Returns:
             Excel file with feeding information
@@ -305,16 +303,16 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
             predicted_milk = 0.0
             nasem_warning = None  # Track NASEM errors for agent feedback
             
-            # Require animal_input for dairy_cow exports (needed for NASEM evaluation)
-            if animal_type == "dairy_cow" and not animal_input:
+            # Use stored animal_params from state for NASEM evaluation
+            if animal_type == "dairy_cow" and not animal_params:
                 return Command(
                     update={"messages": [ToolMessage(
-                        "animal_input is required for dairy cow exports. Please provide: body_weight_kg, days_in_milk, parity, target_milk_kg.",
+                        "No animal parameters found in session. Please use set_animal_params first to set: body_weight, milk_prod, dim, parity.",
                         tool_call_id=tool_call_id
                     )]}
                 )
             
-            if animal_type == "dairy_cow" and animal_input:
+            if animal_type == "dairy_cow" and animal_params:
                 try:
                     from services.nasem_service import get_nasem_service
                     
@@ -331,16 +329,16 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                         predicted_milk = 0.0
                     
                     if diet_composition and feed_database:
-                        # Build animal input for NASEM with correct DMI
+                        # Build animal input for NASEM using stored animal_params
                         nasem_animal_input = nasem_service.build_animal_input(
-                            body_weight_kg=animal_input.get("body_weight_kg", 650),
-                            days_in_milk=animal_input.get("days_in_milk", 100),
-                            parity=animal_input.get("parity", 2),
-                            target_milk_kg=animal_input.get("target_milk_kg", 35),
-                            milk_fat_percent=animal_input.get("milk_fat_percent", 3.5),
-                            milk_protein_percent=animal_input.get("milk_protein_percent", 3.2),
-                            days_pregnant=animal_input.get("days_pregnant", 0),
-                            breed=animal_input.get("breed", "Holstein"),
+                            body_weight_kg=animal_params.get("body_weight", 650),
+                            days_in_milk=animal_params.get("dim", 100),
+                            parity=animal_params.get("parity", 2),
+                            target_milk_kg=animal_params.get("milk_prod", 35),
+                            milk_fat_percent=animal_params.get("milk_fat_pct", 3.5),
+                            milk_protein_percent=animal_params.get("milk_protein_pct", 3.2),
+                            days_pregnant=animal_params.get("days_pregnant", 0),
+                            breed=animal_params.get("breed", "Holstein"),
                             target_dmi_kg=predicted_dmi_kg_for_nasem  # Use optimizer's DMI
                         )
                         

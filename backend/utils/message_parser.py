@@ -468,15 +468,13 @@ class UnifiedMessageParser:
             
         elif tool_name == "predict_dairy_requirements":
             body_weight = tool_args.get("body_weight_kg")
-            target_milk = tool_args.get("target_milk_kg")
             feedbase_name = tool_args.get("feedbase_name", "")
             operation_data = {
                 "body_weight_kg": body_weight,
-                "target_milk_kg": target_milk,
                 "feedbase_name": feedbase_name
             }
-            # If params not provided, the tool uses stored animal_params
-            if body_weight is None or target_milk is None:
+            # Agent typically uses stored animal_params from set_animal_params
+            if body_weight is None:
                 description = (
                     "计算营养需求 (使用已存储参数)"
                     if locale != "en-US"
@@ -484,23 +482,19 @@ class UnifiedMessageParser:
                 )
             else:
                 description = (
-                    f"计算营养需求 (体重{body_weight}kg, 目标产奶{target_milk}kg)"
+                    f"计算营养需求 (体重{body_weight}kg)"
                     if locale != "en-US"
-                    else f"Calculate nutrition requirements (BW {body_weight}kg, target milk {target_milk}kg)"
+                    else f"Calculate nutrition requirements (BW {body_weight}kg)"
                 )
             return description, operation_data
             
         elif tool_name == "evaluate_diet_with_nasem":
-            body_weight = tool_args.get("body_weight_kg", 0)
-            target_milk = tool_args.get("target_milk_kg", 0)
-            operation_data = {
-                "body_weight_kg": body_weight,
-                "target_milk_kg": target_milk
-            }
+            # Agent uses stored animal_params from set_animal_params
+            operation_data = {}
             description = (
-                f"使用NASEM模型评估日粮 (目标产奶{target_milk}kg)"
+                "使用NASEM模型评估日粮 (使用已存储参数)"
                 if locale != "en-US"
-                else f"Evaluate diet with NASEM (target milk {target_milk}kg)"
+                else "Evaluate diet with NASEM (using stored params)"
             )
             return description, operation_data
         

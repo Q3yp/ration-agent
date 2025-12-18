@@ -62,14 +62,14 @@ The tools handle all calculations - your role is to interpret results and iterat
 
 ### Formulation Tools
 - `set_animal_params` - Store animal parameters in session for reuse across tools
-- `check_feeds` - Semantic search feedbase (always search in English). Use empty query for category summary, "nutrients" for column names.
+- `check_feeds` - Semantic search feedbase (always search in English). Use empty query for category summary, "nutrients" for column names. System feedbase is named default_dairy_cow
 - `formulate_ration` - Optimize ration with constraints. Pass `animal_params` for NASEM DMI prediction. Supports MP/ME as special daily_total attributes.
 - `add_feed` - Create custom feedbase with cost/nutrient overrides. Feed must exist in default feedbase.
 - `list_feed_bases` - List available feedbases
-- `export_formulation` - Generate Excel report with full analysis
+- `export_formulation` - Generate Excel report with full analysis, this only export the last successful formulation, if you want to export previous formulation you need to re-run `formulate_ration`
 
 ### Parallel Tool Use
-When querying feedbase or adding feeds, **favor multiple parallel tool calls** for efficiency:
+When querying feedbase or adding feeds, **Use multiple parallel tool calls** for efficiency:
 - Multiple `check_feeds` calls for different search queries can run simultaneously
 - Multiple `add_feed` calls to add several feeds to a custom feedbase can run in parallel
 - This reduces round-trips and speeds up the workflow
@@ -137,6 +137,9 @@ When querying feedbase or adding feeds, **favor multiple parallel tool calls** f
 - A constraint `{"type": "daily_total", "attribute": "mp", "target": 2400, "tolerance_percent": 3}` allows 2328-2472g
 - The optimizer will choose **~2328g** (lower bound) because protein feeds cost more
 - Default tolerance is **3%** - tight enough for proper formulation while allowing minor flexibility
+
+**How tolerances work with `maximize_profit`:**
+- Allow more tolarence for the optimizer to explore different solutions
 
 **Strategies for proper formulation:**
 

@@ -93,12 +93,18 @@ def formulate(
     cp_max: float = 18.0,
     ndf_min: float = 28.0,
     ndf_max: float = 38.0,
+    mp_target: Optional[float] = None,
+    me_target: Optional[float] = None,
+    optimization_goal: str = "minimize_cost",
+    milk_price: float = 3.0,
 ) -> Dict[str, Any]:
     """
     Run ration formulation with given constraints.
     
     Returns formulation result dict.
     """
+    import time
+    
     # Filter to feeds that exist in feedbase
     available_feeds = []
     feed_data = {}
@@ -127,7 +133,8 @@ def formulate(
         milk_prod=milk_prod,
         bcs=3.0,
         milk_fat_pct=3.5,
-        milk_protein_pct=3.2
+        milk_protein_pct=3.2,
+        milk_price_per_kg=milk_price
     )
     
     # Build constraints
@@ -139,6 +146,24 @@ def formulate(
         {"type": "concentration", "nutrient": "Fd_Ca", "min": 0.6, "max": 1.2},
         {"type": "concentration", "nutrient": "Fd_P", "min": 0.35, "max": 0.55},
     ]
+    
+    # Add MP constraint if provided
+    if mp_target is not None:
+        constraints.append({
+            "type": "daily_total", 
+            "attribute": "mp", 
+            "target": mp_target,
+            "tolerance_percent": 5.0
+        })
+    
+    # Add ME constraint if provided
+    if me_target is not None:
+        constraints.append({
+            "type": "daily_total", 
+            "attribute": "me", 
+            "target": me_target,
+            "tolerance_percent": 5.0
+        })
     
     # Feed constraints: ensure some forage
     feed_constraints = {
@@ -165,14 +190,25 @@ def formulate(
     print(f"   NDF: {ndf_min}-{ndf_max}% DM")
     print(f"   ADF: 17-28% DM")
     print(f"   Starch: 20-35% DM")
+    if mp_target:
+        print(f"   MP: {mp_target} g/day (NASEM)")
+    if me_target:
+        print(f"   ME: {me_target} Mcal/day (NASEM)")
+    print(f"\n🎯 Optimization goal: {optimization_goal}")
+    if optimization_goal == "maximize_profit":
+        print(f"   Milk price: ${milk_price}/kg")
     
-    # Optimize
+    # Optimize with timing
+    start_time = time.perf_counter()
     result = optimizer.optimize(
         nutritional_constraints=constraints,
         selected_feeds=available_feeds,
         feed_constraints=feed_constraints,
-        optimization_goal="minimize_cost"
+        optimization_goal=optimization_goal
     )
+    elapsed = time.perf_counter() - start_time
+    
+    print(f"\n⏱️  Optimization time: {elapsed:.3f}s")
     
     return result
 
@@ -287,10 +323,16 @@ def main():
     parser.add_argument("--bw", type=float, default=650.0, help="Body weight (kg)")
     parser.add_argument("--dim", type=int, default=90, help="Days in milk")
     parser.add_argument("--parity", type=int, default=2, help="Parity (lactation number)")
-    parser.add_argument("--cp-min", type=float, default=16.0, help="Min CP (%)")
-    parser.add_argument("--cp-max", type=float, default=18.0, help="Max CP (%)")
-    parser.add_argument("--ndf-min", type=float, default=28.0, help="Min NDF (%)")
-    parser.add_argument("--ndf-max", type=float, default=38.0, help="Max NDF (%)")
+    parser.add_argument("--cp-min", type=float, default=16.0, help="Min CP (%%)")
+    parser.add_argument("--cp-max", type=float, default=18.0, help="Max CP (%%)")
+    parser.add_argument("--ndf-min", type=float, default=28.0, help="Min NDF (%%)")
+    parser.add_argument("--ndf-max", type=float, default=38.0, help="Max NDF (%%)")
+    parser.add_argument("--mp-target", type=float, help="MP target (g/day) - uses NASEM constraint")
+    parser.add_argument("--me-target", type=float, help="ME target (Mcal/day) - uses NASEM constraint")
+    parser.add_argument("--goal", type=str, default="minimize_cost", 
+                       choices=["minimize_cost", "feasibility", "maximize_profit"],
+                       help="Optimization goal")
+    parser.add_argument("--milk-price", type=float, default=3.0, help="Milk price ($/kg) for maximize_profit")
     parser.add_argument("--evaluate", action="store_true", help="Run NASEM evaluation")
     parser.add_argument("--feeds", type=str, help="Comma-separated list of feeds to use")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
@@ -332,6 +374,10 @@ def main():
         cp_max=args.cp_max,
         ndf_min=args.ndf_min,
         ndf_max=args.ndf_max,
+        mp_target=args.mp_target,
+        me_target=args.me_target,
+        optimization_goal=args.goal,
+        milk_price=args.milk_price,
     )
     
     print_formulation_result(result)
@@ -352,3 +398,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

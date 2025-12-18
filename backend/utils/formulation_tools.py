@@ -569,6 +569,30 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                             update={"messages": [ToolMessage(f"Error: Daily total constraint {i} missing 'target' field", tool_call_id=tool_call_id)]}
                         )
             
+            # Check if animal_params required for dairy cow MP/ME constraints or maximize_profit
+            if animal_type == "dairy_cow":
+                has_mp_me_constraint = any(
+                    c.get("type") == "daily_total" and c.get("attribute") in ("mp", "me")
+                    for c in nutritional_constraints
+                )
+                needs_milk_prod = optimization_goal == "maximize_profit"
+                
+                if has_mp_me_constraint or needs_milk_prod:
+                    # Check if animal_params is available (explicit or from state)
+                    effective_params = animal_params
+                    if not effective_params:
+                        state_params = state.get("animal_params") if state else None
+                        if state_params and state_params.get("milk_prod") is not None:
+                            effective_params = state_params
+                    
+                    if not effective_params or effective_params.get("milk_prod") is None:
+                        return Command(
+                            update={"messages": [ToolMessage(
+                                "Error: Animal parameters not set. Use set_animal_params tool first.",
+                                tool_call_id=tool_call_id
+                            )]}
+                        )
+            
             # Get user_id from config and access store
             user_id = config["configurable"].get("user_id")
             if not user_id:
@@ -612,9 +636,13 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             
             # Set animal params for DMI prediction if applicable (dairy cows)
             # Use explicit animal_params if provided, otherwise fall back to state
+            # Note: state.get("animal_params") may return {} (empty dict) if not set
             effective_animal_params = animal_params
-            if animal_type == "dairy_cow" and effective_animal_params is None:
-                effective_animal_params = state.get("animal_params") if state else None
+            if animal_type == "dairy_cow" and not effective_animal_params:
+                state_params = state.get("animal_params") if state else None
+                # Only use state params if they're not empty
+                if state_params and state_params.get("milk_prod") is not None:
+                    effective_animal_params = state_params
             
             if animal_type == "dairy_cow" and effective_animal_params is not None:
                 milk_prod = effective_animal_params.get("milk_prod")
@@ -992,12 +1020,11 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                         if parsed["return_full"]:
                             for feed_name, feed_data in filtered_feeds:
                                 output_lines.append(format_feed_full(feed_name, feed_data))
-                                output_lines.append(f"  Similarity: {feed_data.get('_similarity', 'N/A')}")
                                 output_lines.append("")
                         else:
-                            # Names with similarity scores
-                            for feed_name, feed_data in filtered_feeds:
-                                output_lines.append(f"  {feed_name} ({feed_data.get('_similarity', 'N/A')})")
+                            # Just feed names (no similarity scores - agent uses names directly)
+                            feed_names = [fn for fn, _ in filtered_feeds]
+                            output_lines.append(format_feed_names(feed_names))
                         
                         result = "\n".join(output_lines)
                         

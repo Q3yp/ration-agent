@@ -49,7 +49,7 @@ export default function MessageList({ messages, isTyping, analysisState, formula
           sessionId={sessionId}
         />
       ))}
-      {(isTyping || analysisState?.isActive || analysisState?.isComplete || formulationState?.isActive || formulationState?.isComplete || thinkingState?.isActive) && (
+      {(isTyping || analysisState?.isActive || analysisState?.isComplete || formulationState?.isActive || formulationState?.isComplete || thinkingState?.isActive || thinkingState?.isComplete) && (
         <TypingIndicator
           analysisState={analysisState}
           formulationState={formulationState}

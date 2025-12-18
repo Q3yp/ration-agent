@@ -1,11 +1,52 @@
 import numpy as np
 from scipy.optimize import minimize
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
+from functools import lru_cache
 import json
 import logging
 import math
 
 logger = logging.getLogger(__name__)
+
+# Profiling counters for cache performance monitoring
+class NASEMCacheStats:
+    """Track NASEM cache hit/miss statistics."""
+    hits: int = 0
+    misses: int = 0
+    
+    @classmethod
+    def reset(cls):
+        cls.hits = 0
+        cls.misses = 0
+    
+    @classmethod
+    def hit(cls):
+        cls.hits += 1
+    
+    @classmethod
+    def miss(cls):
+        cls.misses += 1
+    
+    @classmethod
+    def get_stats(cls) -> Dict[str, Any]:
+        total = cls.hits + cls.misses
+        return {
+            "cache_hits": cls.hits,
+            "cache_misses": cls.misses,
+            "total_lookups": total,
+            "hit_rate": cls.hits / max(total, 1) * 100
+        }
+
+
+def _make_cache_key(feed_percentages: np.ndarray) -> Tuple[float, ...]:
+    """Create a hashable cache key from feed percentages.
+    
+    Uses exact values (no rounding) to ensure cache hits ONLY for identical
+    compositions within the same optimizer iteration. This preserves gradient
+    accuracy across iterations while consolidating multiple constraint 
+    evaluations within a single iteration.
+    """
+    return tuple(float(x) for x in feed_percentages)
 
 
 def calculate_predicted_dmi_lact2(
@@ -78,176 +119,6 @@ def calculate_predicted_dmi_lact2(
     return max(dmi, 10.0)  # Minimum 10 kg DMI for safety
 
 
-def calculate_mp_supply(
-    feed_percentages: np.ndarray,
-    feeds: Dict[str, Dict],
-    selected_feeds: List[str],
-    dmi_kg: float
-) -> float:
-    """
-    Calculate MP supply using NASEM 2021 kinetic CP fractionation model.
-    
-    An_MPIn = Dt_idRUPIn + Du_idMiTP
-    
-    Where:
-    - Dt_idRUPIn: Intestinally digestible RUP using kinetic model
-    - Du_idMiTP: Duodenal intestinally digestible microbial true protein
-    
-    RUP calculation uses NASEM CP fractionation (A, B, C) with passage rates:
-    - Fd_RUPBIn = CPBIn * (For * KpFor/(Kd+KpFor) + Conc * KpConc/(Kd+KpConc))
-    - Fd_RUPIn = (CPAIn - NPNCPIn) * fCPAdu + RUPBIn + CPCIn + IntRUP/refCPIn * CPIn
-    
-    NASEM coefficients from constants.py:
-    - KpFor = 4.87, KpConc = 5.28 (passage rates %/h)
-    - fCPAdu = 0.064, IntRUP = -0.086, refCPIn = 3.39 (RUP equation)
-    - fMiTP_MiCP = 0.824, SI_dcMiCP = 0.80 (microbial protein)
-    - VmMiNInt = 100.8, VmMiNRDPSlp = 81.56 (Vm equation)
-    - KmMiNRDNDF = 0.0939, KmMiNRDSt = 0.0274 (Km constants)
-    
-    Args:
-        feed_percentages: Array of feed inclusion percentages (sum to 100)
-        feeds: Feed database with nutrient compositions
-        selected_feeds: List of feed names in same order as percentages
-        dmi_kg: Dry matter intake in kg/day
-        
-    Returns:
-        Estimated MP supply in g/day
-    """
-    # NASEM coefficients for RUP kinetics
-    KpFor = 4.87        # Passage rate for forage (%/h)
-    KpConc = 5.28       # Passage rate for concentrate (%/h)
-    fCPAdu = 0.064      # Fraction of CPA that escapes to duodenum
-    IntRUP = -0.086     # RUP intercept (kg/d)
-    refCPIn = 3.39      # Reference CP intake (kg/d)
-    
-    # NASEM coefficients for microbial protein
-    fMiTP_MiCP = 0.824  # Fraction of MiCP that is true protein
-    SI_dcMiCP = 0.80    # Small intestine digestibility of MiCP
-    VmMiNInt = 100.8    # Vm intercept for MiN equation
-    VmMiNRDPSlp = 81.56 # Vm slope for RDP
-    KmMiNRDNDF = 0.0939 # Km for rumen digestible NDF
-    KmMiNRDSt = 0.0274  # Km for rumen digestible starch
-    
-    # Accumulate diet components
-    total_idrup_kg = 0.0    # Intestinally digestible RUP (kg/day)
-    total_rdp_kg = 0.0      # Rumen degradable protein (kg/day)
-    total_cp_kg = 0.0       # Total CP intake for intercept adjustment
-    rum_dig_ndf = 0.0       # Rumen digestible NDF (kg/day)
-    rum_dig_st = 0.0        # Rumen digestible starch (kg/day)
-    
-    for i, feed_name in enumerate(selected_feeds):
-        pct = feed_percentages[i]
-        nutrients = feeds[feed_name].get("nutrients", {})
-        
-        # Feed DM intake for this feed (kg/day)
-        feed_dm_kg = dmi_kg * (pct / 100)
-        
-        # === CP fractionation (% of CP) - use 0 if missing (no assumptions) ===
-        fd_cp = nutrients.get("Fd_CP", 0.0)           # Crude protein % DM
-        fd_cparu = nutrients.get("Fd_CPARU", 0.0)     # A fraction (soluble, undegradable)
-        fd_cpbru = nutrients.get("Fd_CPBRU", 0.0)     # B fraction (potentially degradable)
-        fd_cpcru = nutrients.get("Fd_CPCRU", 0.0)     # C fraction (bound, unavailable)
-        fd_npn_cp = nutrients.get("Fd_NPN_CP", 0.0)   # NPN as % of CP
-        fd_kd_rup = nutrients.get("Fd_KdRUP", 0.0)    # Degradation rate of B fraction (%/h)
-        fd_dc_rup = nutrients.get("Fd_dcRUP", 0.0)    # Intestinal digestibility of RUP (%)
-        
-        # Feed type for passage rate selection
-        fd_conc = nutrients.get("Fd_Conc", 0.0)       # 0=forage, 100=concentrate
-        fd_for = 100.0 - fd_conc                      # Forage fraction
-        
-        # CP intake from this feed (kg/day)
-        cp_intake_kg = feed_dm_kg * (fd_cp / 100)
-        total_cp_kg += cp_intake_kg
-        
-        # === Calculate CP fraction intakes (kg/day) ===
-        cpa_in = cp_intake_kg * (fd_cparu / 100)      # A fraction intake
-        cpb_in = cp_intake_kg * (fd_cpbru / 100)      # B fraction intake
-        cpc_in = cp_intake_kg * (fd_cpcru / 100)      # C fraction intake
-        npncp_in = cp_intake_kg * (fd_npn_cp / 100)   # NPN-CP intake
-        
-        # === Calculate RUP from B fraction using kinetic model ===
-        # Fd_RUPBIn = CPBIn * (For/100 * Kp_For/(Kd + Kp_For) + Conc/100 * Kp_Conc/(Kd + Kp_Conc))
-        rup_b_in = 0.0
-        if cpb_in > 0:
-            # Forage contribution
-            if fd_for > 0 and (fd_kd_rup + KpFor) > 0:
-                rup_b_in += cpb_in * (fd_for / 100) * KpFor / (fd_kd_rup + KpFor)
-            # Concentrate contribution  
-            if fd_conc > 0 and (fd_kd_rup + KpConc) > 0:
-                rup_b_in += cpb_in * (fd_conc / 100) * KpConc / (fd_kd_rup + KpConc)
-        
-        # === Calculate total RUP intake (NASEM equation) ===
-        # Fd_RUPIn = (CPA - NPNCP) * fCPAdu + RUPBIn + CPCIn + IntRUP/refCPIn * CPIn
-        rup_in = ((cpa_in - npncp_in) * fCPAdu + 
-                  rup_b_in + 
-                  cpc_in + 
-                  IntRUP / refCPIn * cp_intake_kg)
-        
-        # Ensure RUP is non-negative
-        rup_in = max(rup_in, 0.0)
-        
-        # === Calculate intestinally digestible RUP ===
-        idrup_kg = rup_in * (fd_dc_rup / 100)
-        total_idrup_kg += idrup_kg
-        
-        # === Calculate RDP (CP - RUP) ===
-        rdp_kg = cp_intake_kg - rup_in
-        rdp_kg = max(rdp_kg, 0.0)  # Ensure non-negative
-        total_rdp_kg += rdp_kg
-        
-        # === Rumen digestible NDF ===
-        fd_ndf = nutrients.get("Fd_NDF", 0.0)
-        fd_dndf48 = nutrients.get("Fd_DNDF48_NDF", 0.0)  # Use 0 if missing
-        # Rumen NDF digestibility (~85% of 48h in vitro occurs in rumen)
-        rum_dc_ndf = fd_dndf48 * 0.85 / 100
-        ndf_intake_kg = feed_dm_kg * (fd_ndf / 100)
-        rum_dig_ndf += ndf_intake_kg * rum_dc_ndf
-        
-        # === Rumen digestible starch ===
-        fd_st = nutrients.get("Fd_St", 0.0)
-        fd_dc_st = nutrients.get("Fd_dcSt", 0.0)  # Use 0 if missing
-        # Rumen starch digestibility varies by source
-        if fd_conc > 50:  # Concentrate
-            rum_dc_st = min(fd_dc_st, 85.0) / 100
-        else:  # Forage
-            rum_dc_st = min(fd_dc_st, 95.0) / 100
-        st_intake_kg = feed_dm_kg * (fd_st / 100)
-        rum_dig_st += st_intake_kg * rum_dc_st
-    
-    # Ensure non-zero values for Michaelis-Menten (prevent division issues)
-    rum_dig_ndf = max(rum_dig_ndf, 0.01)  # Minimum 10g
-    rum_dig_st = max(rum_dig_st, 0.01)    # Minimum 10g
-    
-    # === Calculate microbial protein ===
-    # RDP-limited Vm: RDPIn_MiNmax = min(RDPIn, DMI × 0.12) when RDP% > 12%
-    an_rdp_pct = (total_rdp_kg / dmi_kg) * 100 if dmi_kg > 0 else 12.0
-    if an_rdp_pct <= 12:
-        rdpin_minmax = total_rdp_kg
-    else:
-        rdpin_minmax = dmi_kg * 0.12
-    
-    # Vm = VmMiNInt + VmMiNRDPSlp × RDPIn_MiNmax
-    min_vm = VmMiNInt + VmMiNRDPSlp * rdpin_minmax
-    
-    # Duodenal microbial N (NRC2021 equation) in g/day
-    # Du_MiN = Vm / (1 + Km_NDF/Rum_DigNDF + Km_St/Rum_DigSt)
-    du_min_g = min_vm / (1 + KmMiNRDNDF / rum_dig_ndf + KmMiNRDSt / rum_dig_st)
-    
-    # Limit MiN by RDP availability (MiN cannot exceed RDP/6.25)
-    rdp_n_limit = total_rdp_kg * 1000 / 6.25  # g N from RDP
-    du_min_g = min(du_min_g, rdp_n_limit)
-    
-    # Convert MiN to intestinally digestible MiTP
-    du_micp_g = du_min_g * 6.25
-    du_mitp_g = du_micp_g * fMiTP_MiCP
-    du_id_mitp_g = du_mitp_g * SI_dcMiCP
-    
-    # Total MP supply = idRUP + idMiTP (both in g/day)
-    total_idrup_g = total_idrup_kg * 1000  # Convert kg to g
-    total_mp = total_idrup_g + du_id_mitp_g
-    
-    return total_mp
-
 
 class FormulationOptimizer:
     """
@@ -271,6 +142,9 @@ class FormulationOptimizer:
         self.optimization_goal = "minimize_cost"
         self.animal_params = None
         self.dmi_override = None  # Optional DMI override value
+        # Cache for NASEM values - keyed by rounded feed percentages
+        # Dramatically reduces redundant NASEM calls during optimization
+        self._nasem_cache: Dict[Tuple[float, ...], Dict[str, float]] = {}
     
     def set_feeds(self, feeds: Dict[str, Dict[str, Any]]):
         """Set available feeds with their nutrient composition and costs."""
@@ -360,9 +234,11 @@ class FormulationOptimizer:
         selected_feeds: List[str],
         param_names: List[str]
     ) -> Dict[str, float]:
-        """Calculate multiple NASEM values in a single model run.
+        """Calculate multiple NASEM values in a single model run with caching.
         
-        More efficient than separate calls when multiple values are needed.
+        Uses per-iteration caching: when the same feed_percentages are encountered
+        (within rounding tolerance), returns cached values. This consolidates
+        multiple constraint evaluations into a single NASEM call per iteration.
         
         Args:
             feed_percentages: Feed percentages array
@@ -377,6 +253,32 @@ class FormulationOptimizer:
         
         if self.animal_params is None:
             return result
+        
+        # Create cache key from exact feed percentages
+        # No rounding = cache hits ONLY for identical x within same iteration
+        cache_key = _make_cache_key(feed_percentages)
+        
+        # Check if we have cached values for this composition
+        if cache_key in self._nasem_cache:
+            cached = self._nasem_cache[cache_key]
+            NASEMCacheStats.hit()
+            # Extract requested values from cache
+            for name in param_names:
+                if name in cached:
+                    result[name] = cached[name]
+            return result
+        
+        # Cache miss - call NASEM with ALL commonly needed params
+        # This ensures subsequent calls for other params can use the cache
+        NASEMCacheStats.miss()
+        
+        # Request all params we might need during optimization
+        all_params = [
+            "An_MPIn_g",          # MP supply
+            "An_MEIn",            # ME supply  
+            "Mlk_Prod_MPalow",    # MP-allowable milk
+            "Mlk_Prod_NEalow",    # NE-allowable milk
+        ]
         
         try:
             from services.nasem_service import get_nasem_service
@@ -394,10 +296,19 @@ class FormulationOptimizer:
                 target_dmi_kg=dmi
             )
             
-            # Call NASEM once for all values
-            result = nasem_service.calculate_values(
-                self.feeds, diet, animal_input, param_names
+            # Call NASEM once for ALL values
+            full_result = nasem_service.calculate_values(
+                self.feeds, diet, animal_input, all_params
             )
+            
+            # Cache the full result for future lookups
+            self._nasem_cache[cache_key] = full_result
+            
+            # Return only the requested values
+            for name in param_names:
+                if name in full_result:
+                    result[name] = full_result[name]
+            
             return result
             
         except Exception as e:
@@ -469,6 +380,10 @@ class FormulationOptimizer:
             missing_feeds = [f for f in selected_feeds if f not in self.feeds]
             if missing_feeds:
                 return {"error": f"Missing feeds in database: {missing_feeds}"}
+            
+            # Clear caches for this optimization run
+            self._nasem_cache.clear()
+            NASEMCacheStats.reset()
             
             n_feeds = len(selected_feeds)
             
