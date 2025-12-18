@@ -10,7 +10,8 @@ import {
   User,
   File,
   CornerDownRight,
-  Calculator
+  Calculator,
+  MessageSquare
 } from 'lucide-react'
 import Image from 'next/image'
 import { formatTimestamp } from '@/utils/formatTime'
@@ -32,6 +33,7 @@ interface MessageBubbleProps {
 
 export default function MessageBubble({ message, onArtifactOpen, onFileDownload, sessionId }: MessageBubbleProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isUserInputExpanded, setIsUserInputExpanded] = useState(false)
   const { t } = useI18n()
 
   // Parse file upload tags from user message content
@@ -93,6 +95,107 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
         <Avatar className="w-8 h-8">
           <AvatarFallback>
             <User className="h-4 w-4" />
+          </AvatarFallback>
+        </Avatar>
+      </div>
+    )
+  }
+
+  // Render user input response (from ask_user tool) with questions context
+  const renderUserInput = () => {
+    const questions = (message.metadata?.questions || []) as string[]
+    const description = message.metadata?.description as string | undefined
+
+    // Parse answers from message.content
+    // Format is either single answer, or "Question1: answer1\nQuestion2: answer2"
+    const parseAnswers = (): string[] => {
+      if (questions.length === 1) {
+        return [message.content]
+      }
+      // Try to parse "Question: answer" format
+      const lines = message.content.split('\n')
+      const answers: string[] = []
+      for (const line of lines) {
+        // Find the question that matches this line's prefix
+        const matchedQ = questions.find(q => line.startsWith(q + ':'))
+        if (matchedQ) {
+          answers.push(line.substring(matchedQ.length + 1).trim())
+        }
+      }
+      // Fallback: if parsing failed, just use full content for first question
+      return answers.length === questions.length ? answers : questions.map(() => message.content)
+    }
+    const answers = parseAnswers()
+
+    // Create a short summary of the response for collapsed state
+    const responseSummary = message.content.length > 50
+      ? message.content.substring(0, 50) + '...'
+      : message.content
+
+    return (
+      <div className="flex justify-end items-start gap-2">
+        <Card className="min-w-[200px] sm:min-w-[400px] max-w-[600px] bg-amber-50 border-amber-200">
+          <CardContent className="p-3">
+            {/* Collapsible header */}
+            <button
+              onClick={() => setIsUserInputExpanded(!isUserInputExpanded)}
+              className="w-full flex items-center justify-between gap-2 text-left"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-2 h-2 rounded-full bg-green-400" />
+                <span className="text-sm font-medium text-amber-700">
+                  {isUserInputExpanded ? t('chat.userResponse') : `${t('chat.userInputPrefix')}: ${responseSummary}`}
+                </span>
+              </div>
+              {isUserInputExpanded ? (
+                <ChevronUp className="h-4 w-4 text-amber-500 flex-shrink-0" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-amber-500 flex-shrink-0" />
+              )}
+            </button>
+
+            {/* Expanded content - matches UserInputRequest submitted state */}
+            {isUserInputExpanded && (
+              <div className="mt-3 pt-3 border-t border-amber-200 space-y-3">
+                {/* Description text if available */}
+                {description && (
+                  <div className="text-sm text-gray-700 leading-snug whitespace-pre-wrap pb-1">
+                    {description}
+                  </div>
+                )}
+
+                {/* Question + Answer pairs - same grid layout as UserInputRequest */}
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_220px] gap-x-6 gap-y-4 items-start">
+                  {questions.map((question, index) => (
+                    <div key={index} className="contents">
+                      <div className="text-sm text-gray-700 pt-1 leading-snug whitespace-pre-wrap">
+                        {question}
+                      </div>
+                      {/* Answer as styled static text matching Input appearance */}
+                      <div className="w-full h-8 px-3 py-1 text-sm bg-amber-50 border border-amber-200 rounded-md flex items-center text-amber-900 truncate">
+                        {answers[index] || '-'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Submitted indicator + timestamp */}
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-green-600 flex items-center gap-1">
+                    <span>✓</span>
+                    <span>{t('chat.userResponse')}</span>
+                  </div>
+                  <div className="text-xs text-amber-600 opacity-70">
+                    {formatTimestamp(message.timestamp)}
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <Avatar className="w-8 h-8">
+          <AvatarFallback className="bg-amber-100">
+            <User className="h-4 w-4 text-amber-600" />
           </AvatarFallback>
         </Avatar>
       </div>
@@ -684,6 +787,8 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
   switch (message.type) {
     case 'user':
       return renderUserMessage()
+    case 'user_input':
+      return renderUserInput()
     case 'agent':
       return renderAgentMessage()
     case 'tool_call':

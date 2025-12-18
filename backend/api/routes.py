@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from langchain_core.messages import HumanMessage, SystemMessage
 import pandas as pd
 from models import (
-    ChatRequest, FileUploadResponse, FileDeleteResponse,
+    ChatRequest, ResumeRequest, FileUploadResponse, FileDeleteResponse,
     SessionCreateRequest, SessionCreateResponse, SessionStatsResponse,
     ParsedMessage, FeedbaseListResponse, FeedbaseResponse,
     FeedbaseUpdateRequest, FeedbaseDeleteResponse, FeedbaseData,
@@ -19,7 +19,7 @@ from services.session_manager import session_manager, MAX_SESSION_PROMPT_TOKENS
 from services.chat_history_service import chat_history_service
 from utils.model_config import get_model_config
 from utils.prompt_loader import env
-from utils.stop_manager import StopManager
+from utils.stop_manager import StopManager, RequestSource
 from auth.config import current_active_user
 from auth.models import User
 from utils.language import get_language_label, normalize_locale
@@ -355,7 +355,7 @@ async def get_session_history(
         logger.info(f"HISTORY_SSE: Active stream detected for session {session_id}, tailing cache")
 
         # Use StopManager's unified replay logic
-        async for sse_event in stop_manager.replay_and_tail_cache(session_id, preferred_language=preferred_language):
+        async for sse_event in stop_manager.replay_and_tail_cache(session_id, preferred_language=preferred_language, source=RequestSource.HISTORY):
             yield sse_event
 
     return StreamingResponse(
@@ -449,6 +449,78 @@ async def stop_chat(
     except Exception as e:
         logger.error(f"STOP: Failed to stop session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop session: {str(e)}")
+
+
+@router.post("/chat/resume/{session_id}")
+async def resume_chat(
+    session_id: str,
+    request: ResumeRequest,
+    current_user: User = Depends(current_active_user)
+):
+    """Resume interrupted agent with user response (for ask_user tool)"""
+    logger.info(f"RESUME: Resuming session {session_id} with user response")
+
+    session_context = await session_manager.get_session(session_id)
+    if not session_context:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    preferred_language = normalize_locale(getattr(current_user, "preferred_language", "zh-CN"))
+
+    try:
+        session_agent = await session_manager.get_agent_for_session(session_id)
+    except RuntimeError as e:
+        logger.error(f"Failed to get agent for session {session_id}: {e}")
+        raise HTTPException(status_code=503, detail=str(e))
+
+    async def generate_resume_stream():
+        """Resume graph with user's response"""
+        from langgraph.types import Command
+        from utils.model_config import get_agent_config
+
+        agent_config = get_agent_config()
+        config = {
+            "configurable": {
+                "thread_id": session_id,
+                "user_id": str(current_user.id),
+                "preferred_language": preferred_language,
+                "account_tier": getattr(current_user, "tier", FREE_TIER),
+            },
+            "recursion_limit": agent_config["recursion_limit"]
+        }
+
+        # Resume with user's response using Command(resume=...)
+        agent_input = Command(resume=request.response)
+
+        stop_manager = StopManager.get_instance()
+        try:
+            async for event in stop_manager.stream_to_frontend(
+                session_id,
+                session_agent,
+                agent_input,
+                config,
+                preferred_language=preferred_language,
+                source=RequestSource.RESUME,
+            ):
+                yield event
+        except Exception as e:
+            logger.error(f"RESUME: Error in SSE stream: {e}")
+            error_data = {
+                "type": "error",
+                "content": f"Error resuming: {str(e)}",
+                "timestamp": time.time()
+            }
+            yield f"event: error\ndata: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate_resume_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @router.post("/chat/stream/{session_id}")

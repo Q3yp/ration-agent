@@ -339,7 +339,8 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                             milk_protein_percent=animal_params.get("milk_protein_pct", 3.2),
                             days_pregnant=animal_params.get("days_pregnant", 0),
                             breed=animal_params.get("breed", "Holstein"),
-                            target_dmi_kg=predicted_dmi_kg_for_nasem  # Use optimizer's DMI
+                            target_dmi_kg=predicted_dmi_kg_for_nasem,  # Use optimizer's DMI
+                            bcs=animal_params.get("bcs", 3.0)
                         )
                         
                         # Build feedbase dict for NASEM

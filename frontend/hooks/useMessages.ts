@@ -59,6 +59,12 @@ interface PlanLimitInfo {
   promptTokens?: number
 }
 
+interface AskUserState {
+  isActive: boolean
+  description?: string | null
+  questions: string[]
+}
+
 interface UseMessagesReturn {
   // Core state
   messages: Message[]
@@ -72,10 +78,12 @@ interface UseMessagesReturn {
   formulationState?: FormulationState
   thinkingState?: ThinkingState  // DeepSeek reasoning content state
   planLimitInfo: PlanLimitInfo | null
+  askUserState?: AskUserState  // Ask user for more info state
 
   // Actions
   sendMessage: (message: string, filesToShow?: AttachedFile[]) => Promise<void>
   stopMessage: () => Promise<void>
+  resumeChat: (response: string) => Promise<void>  // Resume after ask_user
   loadHistory: () => Promise<void>
   retryConnection: () => void
   clearError: () => void
@@ -114,6 +122,7 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
   const [formulationState, setFormulationState] = useState<FormulationState | undefined>(undefined)
   const [thinkingState, setThinkingState] = useState<ThinkingState | undefined>(undefined)
   const [planLimitInfo, setPlanLimitInfo] = useState<PlanLimitInfo | null>(null)
+  const [askUserState, setAskUserState] = useState<AskUserState | undefined>(undefined)
   const abortControllerRef = useRef<AbortController | null>(null)
   const historyLoadedRef = useRef(false)
   const resumeStartedRef = useRef(false)
@@ -415,6 +424,16 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
             }, 3000)
           }
           break
+
+        case 'ask_user':
+          // Agent is requesting more information from user
+          setAskUserState({
+            isActive: true,
+            description: event.data.description || null,
+            questions: event.data.questions || []
+          })
+          setIsTyping(false)
+          break
       }
     }
   }, [updateState, onTitleUpdate, onArtifactUpdate, onConnectionChange, onError, onTokenUsageUpdate, state, analysisState, thinkingState, isTyping])
@@ -698,6 +717,96 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
   }, [endpoint, sessionId, updateState])
 
   /**
+   * Resume chat after ask_user interrupt with user's response
+   */
+  const resumeChat = useCallback(async (response: string) => {
+    if (!response.trim() || !sessionId) {
+      return
+    }
+
+    try {
+      // Clear ask user state
+      setAskUserState(undefined)
+      setIsTyping(true)
+
+      // Create new abort controller for this request
+      abortControllerRef.current = new AbortController()
+
+      // Send response to resume endpoint
+      const fetchResponse = await fetch(`${endpoint}/chat/resume/${sessionId}`, {
+        method: 'POST',
+        headers: getAuthHeadersWithDefaults({
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        }),
+        body: JSON.stringify({ response: response.trim() }),
+        signal: abortControllerRef.current.signal,
+      })
+
+      if (!fetchResponse.ok) {
+        throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`)
+      }
+
+      if (!fetchResponse.body) {
+        throw new Error('No response body for streaming')
+      }
+
+      // Process SSE stream (same as sendMessage)
+      const reader = fetchResponse.body.getReader()
+      const decoder = new TextDecoder()
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value, { stream: true })
+          const lines = chunk.split('\n')
+
+          let eventType = 'message'
+          let eventData = ''
+
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              eventType = line.slice(6).trim()
+            } else if (line.startsWith('data:')) {
+              eventData = line.slice(5).trim()
+            } else if (line === '' && eventData) {
+              const events = MessageProcessor.processSSEEvent(eventType, eventData)
+              processEvents(events)
+              eventType = 'message'
+              eventData = ''
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
+
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Resume stream aborted')
+        return
+      }
+
+      ErrorHandler.logError(error, 'resumeChat')
+      const classified = ErrorHandler.classify(error)
+      updateState({
+        error: classified.userMessage,
+        connectionState: 'error',
+        streamingMessageId: null
+      })
+
+      setIsTyping(false)
+      setAskUserState(undefined)
+
+      if (onError) {
+        onError(classified.userMessage)
+      }
+    }
+  }, [sessionId, endpoint, updateState, processEvents])
+
+  /**
    * Retry connection after error with intelligent retry logic
    */
   const retryConnection = useCallback(() => {
@@ -825,10 +934,12 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
     formulationState,
     thinkingState,  // DeepSeek reasoning content state
     planLimitInfo,
+    askUserState,  // Ask user for more info state
 
     // Actions
     sendMessage,
     stopMessage,
+    resumeChat,
     loadHistory,
     retryConnection,
     clearError,

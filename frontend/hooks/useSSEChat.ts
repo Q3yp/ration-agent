@@ -49,7 +49,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
   const [isConnected, setIsConnected] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
-  
+
   const abortControllerRef = useRef<AbortController | null>(null)
   const currentStreamingMessageRef = useRef<string | null>(null)
 
@@ -93,7 +93,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
             setMessages(prev => {
               // Find existing message with same ID
               const existingIndex = prev.findIndex(msg => msg.id === message.id)
-              
+
               if (existingIndex >= 0) {
                 // Update existing message with same ID
                 const updated = [...prev]
@@ -110,7 +110,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
           } else {
             // Non-streaming message - add directly
             setMessages(prev => [...prev, message])
-            
+
             // Handle artifact messages
             if (message.type === 'artifact' && message.metadata && onArtifactUpdate) {
               const artifactData: ArtifactData = {
@@ -133,9 +133,9 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
           if (data.type === 'artifact_loading') {
             const copy = getLoadingText()
             const locale = getLocale()
-            onArtifactUpdate?.({ 
-              title: copy.title, 
-              description: copy.description, 
+            onArtifactUpdate?.({
+              title: copy.title,
+              description: copy.description,
               html_content: `
                 <!DOCTYPE html>
                 <html lang="${locale}">
@@ -191,7 +191,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
                 </body>
                 </html>
               `,
-              isLoading: true 
+              isLoading: true
             })
           }
           break
@@ -199,7 +199,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
         case 'complete':
           if (data.type === 'agent_complete') {
             // Mark streaming message as complete
-            setMessages(prev => prev.map(msg => 
+            setMessages(prev => prev.map(msg =>
               msg.id === currentStreamingMessageRef.current
                 ? { ...msg, metadata: { ...msg.metadata, is_streaming: false } }
                 : msg
@@ -242,8 +242,10 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
           currentStreamingMessageRef.current = null
           break
 
+        // ask_user events are handled by useMessages hook, not useSSEChat
+
         default:
-          // Ignore unknown event types
+        // Ignore unknown event types
       }
     } catch (error) {
       console.error('Error parsing SSE message:', error, 'Raw data:', event.data)
@@ -287,7 +289,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
       // Create EventSource-like reader for the stream
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
-      
+
       let buffer = ''
       let currentEventType = 'message'
       let currentEventData = ''
@@ -299,13 +301,13 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
 
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
-          
+
           // Keep the last line in the buffer as it might be incomplete
           buffer = lines.pop() || ''
 
           for (const line of lines) {
             const trimmedLine = line.trim()
-            
+
             if (trimmedLine.startsWith('event:')) {
               currentEventType = trimmedLine.slice(6).trim()
             } else if (trimmedLine.startsWith('data:')) {
@@ -317,7 +319,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
               // End of event (empty line), process it
               const mockEvent = { data: currentEventData } as MessageEvent
               handleSSEMessage(mockEvent, currentEventType)
-              
+
               // Reset state for next event
               currentEventType = 'message'
               currentEventData = ''
@@ -333,7 +335,7 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
         console.log('Stream aborted (stop button clicked)')
         return
       }
-      
+
       console.error('Error sending message:', error)
       setConnectionError(`Failed to send message: ${error.message}`)
       setIsTyping(false)
@@ -346,10 +348,10 @@ export function useSSEChat({ sessionId, endpoint = '/api', onTitleUpdate, onArti
       // Send stop request to backend
       const result = await backendClient.postJson(`/chat/stop/${sessionId}`)
       console.log('Stop requested:', result.message)
-      
+
       setIsTyping(false)
       currentStreamingMessageRef.current = null
-      
+
     } catch (error: any) {
       console.error('Error stopping message:', error)
       setConnectionError(`Failed to stop: ${error.message}`)

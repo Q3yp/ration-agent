@@ -316,6 +316,8 @@ LangGraph's `AsyncPostgresSaver` checkpointer **only persists state when a graph
 2. **Cache survives disconnects**: Frontend can reconnect and get all events since last handoff
 3. **Cache prunes on handoff**: When a handoff event occurs, cache is pruned (LangGraph persisted that point)
 4. **Natural completion clears cache**: When graph finishes normally, cache is cleared after a delay
+5. **Interrupt Persistence**: If a turn ends in an `ask_user` interrupt, the cache is **preserved** rather than cleared. This allows the interactive question box to survive page refreshes and reconnections.
+6. **Fresh Turn Clears Stale Cache**: Starting a brand-new turn (`STREAM` or `RESUME`) clears any previous turn's cached events to ensure a clean start.
 
 ### The `skip_history` Flag
 
@@ -363,6 +365,63 @@ GET /sessions/{id}/history?stream=true&skip_cache=true
 | `stop_stream()` | Cancels stream but preserves cache for resume |
 | `_cleanup_session()` | Clears cache (called on natural completion) |
 
+## Ask User Tool Flow
+
+The `ask_user` tool allows the agent to pause execution and request information from the user. This uses LangGraph's `interrupt()` mechanism.
+
+### Tool Signature
+
+```python
+ask_user(description: Optional[str], questions: List[str]) -> str
+```
+
+- **`description`**: Optional context explaining why these questions are being asked. Displayed as header text above the questions.
+- **`questions`**: List of individual questions. Each should be a separate item, not combined into one string.
+
+### Architecture
+
+```
+Agent calls ask_user(description, questions)
+    │
+    ▼
+LangGraph interrupt() pauses execution
+    │
+    ▼
+StopManager sends 'ask_user' SSE event with description + questions
+    │
+    ▼
+Frontend shows UserInputRequest component (description as header, each question with input field)
+    │
+    ▼
+User submits response → POST /chat/resume/{session_id}
+    │
+    ▼
+LangGraph resumes with Command(resume=user_response)
+    │
+    ▼
+Agent receives response and continues execution
+```
+
+### Message Rendering
+
+| Stage | Message Type | Rendering |
+|-------|--------------|-----------|
+| Tool call (suppressed) | - | Not shown to user |
+| Tool result (user response) | `user_input` | Amber collapsible bubble with questions context |
+
+The tool call/result are parsed specially in `message_parser.py`:
+- `on_tool_start` for `ask_user`: Stores `{description, questions}` in `pending_ask_user[tool_id]`, returns empty (suppressed)
+- `on_tool_end` for `ask_user`: Creates `user_input` message with description and questions from `pending_ask_user`
+
+### Usage Guidelines (in Agent Prompts)
+
+| Situation | Action |
+|-----------|--------|
+| Missing critical parameters (body weight, milk production, DIM, parity, breed for dairy) | Use `ask_user` |
+| Non-critical details (exact age if not parity-related, locale) | Assume and document |
+| Confirming approach or asking permission | **Never ask** - just proceed |
+| Clarifying ambiguous user requirements | Use `ask_user` |
+
 ## Key Files Reference
 
 ### Backend Core
@@ -373,8 +432,9 @@ GET /sessions/{id}/history?stream=true&skip_cache=true
 | `agents/nodes.py` | `create_agent_swarm_for_type()` builds the 3-agent swarm with handoff tools |
 | `services/session_manager.py` | `SessionManager` class: session CRUD, feedbase storage (PostgreSQL store), conversation streaming |
 | `services/nasem_service.py` | `NASEMService`: NASEM 2021 Dairy Model wrapper. **Key methods**: `build_diet_from_formulation()` (centralized diet extraction), `calculate_values(param_names)` (runs NASEM once, returns dict of requested values), convenience wrappers `calculate_mp()`, `calculate_me()` |
-| `api/routes.py` | REST endpoints: `/sessions/*`, `/chat/stream/*`, `/files/*` |
+| `api/routes.py` | REST endpoints: `/sessions/*`, `/chat/stream/*`, `/chat/resume/*`, `/files/*` |
 | `utils/tools.py` | Agent tools: file listing, reading, web search, artifact creation |
+| `utils/ask_user_tool.py` | `ask_user` tool: Uses LangGraph `interrupt()` to pause and request user input. Accepts `description` (context) and `questions` (list of individual items). Frontend shows `UserInputRequest` component; response resumes via `/chat/resume` endpoint |
 | `utils/formulation_tools.py` | Core formulation tools: `add_feed`, `formulate_ration`, `check_feeds`, `list_feed_bases`, `set_animal_params`. **Critical**: `formulate_ration` checks if state `animal_params` is non-empty (has `milk_prod`) before using, since state defaults to `{}`. Returns clear error if MP/ME constraints used without animal_params. Export tool imported from `formulation_exporter.py` |
 | `utils/formulation_exporter.py` | `export_formulation` tool (~900 lines): Creates unified Summary tab with 3 sections. Uses stored `animal_params` from state for NASEM evaluation (no need to re-input). Uses `NASEMService.build_diet_from_formulation()` for consistency. Also creates NASEM category tabs for dairy |
 | `utils/language.py` | Centralized i18n: `normalize_locale()`, `t(key, locale)` helper for type-safe translations, `get_export_texts(locale)` for Excel export strings. ~160 translation keys for zh-CN/en-US. Uses `[INSTRUCTION: ...]` blocks in some tool result messages to guide agent response behavior (e.g., export success instructs agent to be brief) |
@@ -391,8 +451,9 @@ GET /sessions/{id}/history?stream=true&skip_cache=true
 | `components/ChatInterface.tsx` | Main chat container with SSE streaming. Implements **smart auto-scroll**: only scrolls to bottom when user is already at or near the bottom, allowing users to scroll up to read previous messages without interruption |
 | `components/TypingIndicator.tsx` | Agent thinking/typing animation. Thinking, analysis, and formulation states now persist when stopped (marked as complete rather than cleared), showing a static summary of interrupted work |
 | `hooks/useSSEChat.ts` | EventSource connection, message parsing, stop handling |
-| `hooks/useMessages.ts` | Message state, optimistic updates, history loading |
-| `components/MessageBubble.tsx` | Message rendering: markdown, artifacts, tool calls |
+| `hooks/useMessages.ts` | Message state, optimistic updates, history loading, `resumeChat()` for ask_user response. `AskUserState` includes `description?: string \| null` for context |
+| `components/MessageBubble.tsx` | Message rendering: markdown, artifacts, tool calls. Includes `user_input` type with collapsible amber bubble showing questions context and response preview |
+| `components/UserInputRequest.tsx` | Amber-themed card for `ask_user` tool: displays `description` as context text above questions, per-question input fields, combines answers as \"Q1: answer1\\nQ2: answer2\" format. Collapsed header shows truncated description. Uses a responsive grid layout (`sm:grid-cols-[1fr_220px]`) for alignment. |
 
 ---
 
@@ -521,6 +582,41 @@ TITLE_GENERATION_MODEL=deepseek-chat
 1. Define in `utils/tools.py` or `utils/formulation_tools.py`
 2. Add to appropriate `get_*_tools()` function
 3. Update agent prompt in `prompts/` if needed
+4. Follow docstring guidelines below
+
+### Tool Docstring Guidelines
+
+Tool docstrings must be **neutral and descriptive**. The agent should decide when/how to use tools based on its prompt and reasoning, not embedded instructions in docstrings.
+
+**✅ Include:**
+| Category | Example |
+|----------|---------|
+| What the tool does | "Create an HTML artifact displayed in the frontend" |
+| What it produces/returns | "Creates interactive HTML content, charts, visualizations" |
+| Parameter descriptions | "body_weight: Animal body weight in kg" |
+| Technical behavior/preconditions | "Requires a successful formulation in state" |
+| Format requirements | "Expression formats: single, multi-line, variables" |
+
+**❌ Avoid:**
+| Category | Bad Example | Why |
+|----------|-------------|-----|
+| Usage incentives | "Use this tool when you want to..." | Tells agent when to use |
+| Workflow instructions | "Use this BEFORE formulation, then use X for validation" | Prescribes workflow |
+| Behavior directives | "(REQUIRED - ask user if not provided)" | Instructs agent behavior |
+| Emphasis markers | "IMPORTANT:", "CRITICAL:", "You MUST..." | Biases agent decisions |
+| Auto-loading notes | "AUTOMATICALLY loaded from state" | Emphasis, not description |
+
+**Neutral reframing examples:**
+```python
+# ❌ Bad: "Use this to get requirements BEFORE formulation"
+# ✅ Good: "Calculates factorial requirements from animal parameters (no diet needed)"
+
+# ❌ Bad: "body_weight: Animal body weight in kg (REQUIRED - ask user if not provided)"
+# ✅ Good: "body_weight: Animal body weight in kg"
+
+# ❌ Bad: "IMPORTANT: If set_animal_params was called, those parameters are AUTOMATICALLY USED"
+# ✅ Good: "If not provided, uses parameters from session state (set via set_animal_params)"
+```
 
 ### Adding a New Animal Type
 1. Create `prompts/nutritionist_<animal>.md`

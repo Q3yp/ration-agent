@@ -242,7 +242,8 @@ def evaluate_with_nasem(
         target_milk_kg=milk_prod,
         milk_fat_percent=3.5,
         milk_protein_percent=3.2,
-        target_dmi_kg=predicted_dmi_kg  # Use optimizer's DMI
+        target_dmi_kg=predicted_dmi_kg,  # Use optimizer's DMI
+        bcs=3.0  # Default BCS for CLI
     )
     
     # Evaluate

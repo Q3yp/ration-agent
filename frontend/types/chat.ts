@@ -1,5 +1,6 @@
 export type MessageType =
   | 'user'           // User input message
+  | 'user_input'     // User response to ask_user tool (orange, with questions context)
   | 'agent'          // Agent response content (streamable)
   | 'thinking'       // DeepSeek reasoning content (streamable, collapsible)
   | 'tool_call'      // Tool execution indicator

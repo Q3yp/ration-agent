@@ -3,10 +3,18 @@ import asyncio
 import json
 import time
 import logging
+from enum import Enum
 from typing import Dict, List, Any, AsyncIterator, Optional
 from services.session_manager import session_manager
 
 logger = logging.getLogger(__name__)
+
+
+class RequestSource(str, Enum):
+    """Source of the streaming request - determines cache replay behavior"""
+    STREAM = "stream"    # New message request - skip existing cache
+    RESUME = "resume"    # Resume from ask_user - skip existing cache
+    HISTORY = "history"  # Reconnect/history tailing - replay full cache
 
 
 class TokenTrackingState:
@@ -171,6 +179,7 @@ class StopManager:
     ):
         """Producer: Background task that caches LangGraph events (no queue communication)"""
         completed_naturally = False
+        is_interrupted = False
         try:
             # Token tracking state for this run
             token_state = TokenTrackingState()
@@ -204,6 +213,29 @@ class StopManager:
                 except Exception as e:
                     logger.error(f"STOP_MANAGER: Error processing live event: {e}")
                     continue
+
+            # Check for interrupt state after stream completes
+            # LangGraph interrupt() pauses the graph and stores interrupt info in state
+            try:
+                current_state = await agent.aget_state(config)
+                if hasattr(current_state, 'tasks') and current_state.tasks:
+                    for task in current_state.tasks:
+                        if hasattr(task, 'interrupts') and task.interrupts:
+                            for interrupt_info in task.interrupts:
+                                interrupt_value = interrupt_info.value if hasattr(interrupt_info, 'value') else interrupt_info
+                                if isinstance(interrupt_value, dict) and 'questions' in interrupt_value:
+                                    ask_user_event = {
+                                        "_event_type": "ask_user",
+                                        "description": interrupt_value.get("description"),
+                                        "questions": interrupt_value.get("questions", []),
+                                        "session_id": session_id,
+                                        "timestamp": time.time(),
+                                    }
+                                    self.active_sessions[session_id].append(ask_user_event)
+                                    is_interrupted = True
+                                    logger.info(f"STOP_MANAGER: Detected ask_user interrupt for session {session_id}")
+            except Exception as e:
+                logger.debug(f"STOP_MANAGER: Could not check interrupt state: {e}")
 
             # Persist accumulated usage to DB (for billing)
             if token_state.run_total_tokens > 0:
@@ -253,16 +285,19 @@ class StopManager:
             raise
 
         finally:
-            # Only cleanup cache if task completed naturally (not cancelled)
-            if completed_naturally:
+            # Only cleanup cache if task completed naturally (not cancelled) 
+            # AND it's not an interrupt (ask_user) - we want interrupts to survive reloads
+            if completed_naturally and not is_interrupted:
                 await asyncio.sleep(0.5)
                 await self._cleanup_session(session_id)
                 logger.info(f"STOP_MANAGER: Natural completion, cache cleared for session {session_id}")
             else:
-                # Just remove producer task tracking, keep cache
+                # Interrupted or Cancelled -> preserve cache
                 if session_id in self.producer_tasks:
-                    self.producer_tasks.pop(session_id)
-                logger.info(f"STOP_MANAGER: Cache preserved for session {session_id}")
+                    self.producer_tasks.pop(session_id, None)
+                
+                reason = "Interrupted (Ask User)" if is_interrupted else "Cancelled/Manual Stop"
+                logger.info(f"STOP_MANAGER: Cache preserved for session {session_id} (Reason: {reason})")
 
     async def stream_to_frontend(
         self,
@@ -272,9 +307,16 @@ class StopManager:
         config: Dict[str, Any],
         title_queue: Optional[Any] = None,
         preferred_language: str = "zh-CN",
+        source: RequestSource = RequestSource.STREAM,
     ) -> AsyncIterator[str]:
         """Start producer and stream cached events to frontend (unified with reconnection)"""
         try:
+            # If starting a brand new turn (Stream or Resume), we must clear 
+            # any previous turn's cached events (like an old ask_user prompt)
+            if session_id in self.active_sessions:
+                logger.info(f"STOP_MANAGER: Fresh turn start for {session_id}, clearing stale cache")
+                self.active_sessions[session_id] = []
+
             # Start producer in background
             producer_task = asyncio.create_task(self._producer(session_id, agent, agent_input, config))
             self.producer_tasks[session_id] = producer_task
@@ -285,12 +327,12 @@ class StopManager:
                 self.stream_tasks[session_id] = current_task
 
             # Delegate to unified replay+tail logic
-            # skip_history=True because this is a NEW stream request, we only want new events
+            # Use the provided source (STREAM or RESUME)
             async for sse_event in self.replay_and_tail_cache(
                 session_id, 
                 title_queue, 
                 preferred_language=preferred_language,
-                skip_history=True
+                source=source
             ):
                 yield sse_event
 
@@ -383,13 +425,16 @@ class StopManager:
         session_id: str,
         title_queue: Optional[asyncio.Queue] = None,
         preferred_language: str = "zh-CN",
-        skip_history: bool = False,
+        source: RequestSource = RequestSource.HISTORY,
     ) -> AsyncIterator[str]:
         """
         Unified cache-based streaming: replay cached events then tail new ones.
 
-        Used by all streaming endpoints (/stream, /history SSE mode).
+        Used by all streaming endpoints (/stream, /history SSE mode, /resume).
         Producer must be started separately before calling this.
+
+        Args:
+            source: Request source - STREAM/RESUME skip cache, HISTORY replays full cache
 
         Yields SSE-formatted events from cache (handles both raw LangGraph events and token events).
         """
@@ -406,8 +451,10 @@ class StopManager:
             artifact_loading_sent = False
 
             # Replay all cached events
-            # If skip_history is True (new stream), start at end of current cache
-            cursor = len(self.active_sessions.get(session_id, [])) if skip_history else 0
+            # STREAM/RESUME: start at end of current cache (skip existing)
+            # HISTORY: replay full cache from start
+            skip_cache = source in (RequestSource.STREAM, RequestSource.RESUME)
+            cursor = len(self.active_sessions.get(session_id, [])) if skip_cache else 0
             idle_heartbeats = 0
 
             while True:
@@ -436,6 +483,11 @@ class StopManager:
                 events = self.active_sessions.get(session_id, [])
 
                 # Process new events since last cursor
+                if cursor > len(events):
+                    # Cache was reset/cleared (new turn started) - reset cursor to 0
+                    logger.debug(f"STOP_MANAGER: Cache reset detected for {session_id}, cursor={cursor} > len={len(events)}")
+                    cursor = 0
+
                 if cursor < len(events):
                     pruned = False
                     for idx, ev in enumerate(events[cursor:], start=cursor):
@@ -460,6 +512,18 @@ class StopManager:
                                     "timestamp": ev["timestamp"]
                                 }
                                 yield f"event: error\ndata: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+                                continue
+
+                            # Handle ask_user events (agent requesting user input)
+                            if isinstance(ev, dict) and ev.get("_event_type") == "ask_user":
+                                ask_user_data = {
+                                    "type": "ask_user",
+                                    "description": ev.get("description"),
+                                    "questions": ev.get("questions", []),
+                                    "session_id": ev["session_id"],
+                                    "timestamp": ev["timestamp"]
+                                }
+                                yield f"event: ask_user\ndata: {json.dumps(ask_user_data, ensure_ascii=False)}\n\n"
                                 continue
 
                             # Handle regular LangGraph events - parse them

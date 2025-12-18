@@ -11,6 +11,7 @@ from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, ToolMe
 from models import (
     ParsedMessage,
     create_user_message,
+    create_user_input_message,
     create_agent_message,
     create_thinking_message,
     create_tool_call_message,
@@ -47,6 +48,7 @@ class UnifiedMessageParser:
         }
         self.pending_delegations = {}  # tool_id -> (tool_name, tool_args, timestamp)
         self.pending_calculations = {}  # tool_id -> (expression, timestamp)
+        self.pending_ask_user = {}  # tool_id -> {"description": str, "questions": list}
         self.agent_message_counter = 0
         self.current_agent_message_id = None
 
@@ -563,149 +565,6 @@ class UnifiedMessageParser:
             return f"{label}: {operation_count} operations completed"
         return f"{label}: {operation_count}项操作 已完成"
     
-    def parse_message(self, message: BaseMessage, context: str = "history") -> List[ParsedMessage]:
-        """
-        Parse a single message. Context can be 'streaming' or 'history'.
-        Returns list of ParsedMessages.
-        """
-        timestamp = getattr(message, 'timestamp', message.additional_kwargs.get('timestamp', 0))
-        if timestamp == 0:
-            timestamp = message.additional_kwargs.get('created_at', 0)
-        
-        msg_id = getattr(message, 'id', None) or f"msg_{hash(str(message.content))}_{int(timestamp * 1000000)}"
-        
-        if isinstance(message, HumanMessage):
-            return [create_user_message(
-                content=message.content,
-                message_id=msg_id,
-                timestamp=timestamp
-            )]
-        
-        elif isinstance(message, AIMessage):
-            result = []
-            
-            # Add agent content if present
-            if message.content.strip():
-                is_streaming = context == "streaming"
-                result.append(create_agent_message(
-                    content=message.content,
-                    message_id=msg_id,
-                    timestamp=timestamp,
-                    is_streaming=is_streaming
-                ))
-            
-            # Process tool calls
-            if hasattr(message, 'tool_calls') and message.tool_calls:
-                for tool_call in message.tool_calls:
-                    tool_name = tool_call.get("name", "")
-                    tool_id = tool_call.get("id", f"tool_{int(timestamp * 1000000)}")
-                    tool_args = tool_call.get("args", {})
-                    
-                    if tool_name in self.delegation_tools:
-                        # Store delegation for later combination with result
-                        self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
-                    elif tool_name == "calculate":
-                        # Store calculator expression for later combination with result
-                        expression = tool_args.get('expression', '')
-                        self.pending_calculations[tool_id] = (expression, timestamp)
-                    elif tool_name == "create_artifact":
-                        # Create artifact message directly from tool args
-                        result.append(create_artifact_message(
-                            title=tool_args.get('title', ''),
-                            description=tool_args.get('description', ''),
-                            html_content=tool_args.get('html_content', ''),
-                            message_id=f"{tool_id}_artifact",
-                            timestamp=timestamp
-                        ))
-                    else:
-                        # Regular tool call
-                        result.append(create_tool_call_message(
-                            tool_name=tool_name,
-                            tool_args=tool_args,
-                            tool_id=tool_id,
-                            timestamp=timestamp,
-                            preferred_language=self.preferred_language,
-                        ))
-            
-            return result
-        
-        elif isinstance(message, ToolMessage):
-            tool_id = getattr(message, 'tool_call_id', msg_id)
-
-            # Check if this is a delegation tool result
-            if tool_id in self.pending_delegations:
-                tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
-                to_role = self._get_delegation_role(tool_name)
-
-                # Create single role transition bubble
-                return [create_role_transition_message(
-                    to_role=to_role,
-                    message_id=f"{tool_id}_transition",
-                    timestamp=timestamp,
-                    preferred_language=self.preferred_language,
-                )]
-
-            # Check if this is a calculator tool result
-            if tool_id in self.pending_calculations:
-                expression, call_timestamp = self.pending_calculations.pop(tool_id)
-                all_results = self._extract_all_results(message.content)
-
-                if all_results:
-                    # Create calculation message with all results
-                    return [create_calculation_message(
-                        expression=expression,
-                        result=all_results[-1],  # Keep for backward compatibility
-                        message_id=f"{tool_id}_calc",
-                        timestamp=timestamp,
-                        preferred_language=self.preferred_language,
-                        all_results=all_results,
-                    )]
-
-            # First, extract any special data and create events
-            result = []
-            tool_name = getattr(message, 'name', message.additional_kwargs.get('tool_name', 'unknown'))
-            
-            # Check for file export data and create file export event
-            file_export_data = self._extract_file_export_data(message.content)
-            if file_export_data:
-                result.append(create_file_export_message(
-                    filename=file_export_data['filename'],
-                    file_type=file_export_data['file_type'],
-                    filepath=file_export_data['filepath'],
-                    message_id=f"{tool_id}_export",
-                    timestamp=timestamp,
-                    preferred_language=self.preferred_language,
-                    description=file_export_data.get('description'),
-                ))
-            
-            # Check for legacy artifact data and create artifact event
-            artifact_data = self._extract_artifact_data(message.content)
-            if artifact_data:
-                result.append(create_artifact_message(
-                    title=artifact_data['title'],
-                    description=artifact_data['description'],
-                    html_content=artifact_data['html_content'],
-                    message_id=f"{tool_id}_artifact",
-                    timestamp=timestamp
-                ))
-            
-            # Then decide whether to include the raw tool result message
-            if tool_name in ["create_artifact", "calculate"]:
-                # Don't include raw tool result for these tools (already handled above as special messages)
-                return result
-            else:
-                # Include the tool result message for other tools
-                result.append(create_tool_result_message(
-                    content=message.content,
-                    tool_name=tool_name,
-                    tool_id=tool_id,
-                    timestamp=timestamp
-                ))
-                return result
-        
-        # Skip system messages and other types
-        return []
-    
     def parse_messages(self, messages: List[BaseMessage]) -> List[ParsedMessage]:
         """Parse list of messages (for history context)"""
         # Reset parser state to avoid carryover from previous parsing
@@ -846,6 +705,13 @@ class UnifiedMessageParser:
                         if tool_name in self.delegation_tools:
                             self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
                             continue
+                        elif tool_name == "ask_user":
+                            # Store description and questions for later - will be used when processing tool result
+                            self.pending_ask_user[tool_id] = {
+                                "description": tool_args.get('description'),
+                                "questions": tool_args.get('questions', [])
+                            }
+                            continue
                         elif tool_name == "calculate":
                             # Store calculator expression for later combination with result
                             expression = tool_args.get('expression', '')
@@ -971,6 +837,18 @@ class UnifiedMessageParser:
                         message_id=f"{tool_id}_transition",
                         timestamp=timestamp,
                         preferred_language=self.preferred_language,
+                    ))
+                    continue
+
+                # Check for ask_user tool result - render as user message with questions context
+                if tool_name == "ask_user":
+                    ask_user_data = self.pending_ask_user.pop(tool_id, {"description": None, "questions": []})
+                    result.append(create_user_input_message(
+                        content=msg.content,
+                        questions=ask_user_data.get("questions", []),
+                        message_id=f"{tool_id}_user_input",
+                        timestamp=timestamp,
+                        description=ask_user_data.get("description")
                     ))
                     continue
 
@@ -1252,6 +1130,13 @@ class UnifiedMessageParser:
                 # Store delegation for later combination
                 self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
                 return result  # Return any analysis events but don't add tool call
+            elif tool_name == "ask_user":
+                # Store description and questions for later - will be used when processing tool result
+                self.pending_ask_user[tool_id] = {
+                    "description": tool_args.get('description'),
+                    "questions": tool_args.get('questions', [])
+                }
+                return result
             elif tool_name == "calculate":
                 # Store calculator expression for later combination with result
                 expression = tool_args.get('expression', '')
@@ -1305,6 +1190,17 @@ class UnifiedMessageParser:
                     message_id=f"{tool_id}_transition",
                     timestamp=timestamp,
                     preferred_language=self.preferred_language,
+                )]
+
+            # Check if this is ask_user tool result - render as user message with questions context
+            if tool_name == "ask_user":
+                ask_user_data = self.pending_ask_user.pop(tool_id, {"description": None, "questions": []})
+                return [create_user_input_message(
+                    content=result_content,
+                    questions=ask_user_data.get("questions", []),
+                    message_id=f"{tool_id}_user_input",
+                    timestamp=timestamp,
+                    description=ask_user_data.get("description")
                 )]
 
             # Check if this is a calculator tool result

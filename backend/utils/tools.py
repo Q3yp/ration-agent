@@ -235,10 +235,10 @@ async def create_artifact(
     config: Annotated[RunnableConfig, InjectedToolArg] = None
 ) -> str:
     """
-    Create an HTML artifact that can be displayed in the frontend.
+    Create an HTML artifact displayed in the frontend.
 
-    Use this tool when you want to create interactive HTML content, charts,
-    visualizations, or any other HTML-based content that the user can interact with.
+    Creates interactive HTML content, charts, visualizations, or other 
+    HTML-based content that the user can view and interact with.
 
     Args:
         html_content: The HTML content to save as an artifact (can include CSS and JavaScript)
@@ -317,30 +317,18 @@ async def create_artifact(
 @tool
 def calculate(expression: str) -> str:
     """
-    Evaluate mathematical expressions safely. Supports single expressions and multi-line chained equations with variables.
+    Evaluate mathematical expressions safely.
 
     Supported operations: +, -, *, /, ** (power), % (modulo), // (floor division)
     Functions: sqrt, sin, cos, tan, log, log10, exp, abs, round, ceil, floor, sum, min, max
     Constants: pi, e
 
-    Single expression:
-    "2 + 2 * 3"
-    "sqrt(16) + log(100)"
+    Expression formats:
+    - Single: "2 + 2 * 3", "sqrt(16) + log(100)"
+    - Multi-line (use \\n): "100 + 50\\n100 - 50\\n100 * 2"
+    - Variables (use \\n): "x = 5\\ny = 10\\nx * y"
 
-    Multiple standalone expressions (use \\n for line breaks, NO comments):
-    "100 + 50\\n100 - 50\\n100 * 2"
-    Shows intermediate results [1], [2], ... and final result
-
-    Chained equations with variables (use \\n for line breaks, NO comments):
-    "x = 5\\ny = 10\\nx * y"
-    "price = 100\\ntax_rate = 0.08\\ntax = price * tax_rate\\nprice + tax"
-
-    IMPORTANT:
-    - NO comments allowed in expressions (do not use # or //)
-    - Variables persist across lines within the same calculation
-    - Multiple expressions show all intermediate results
-    - Final result is always the last line evaluated
-    - Full output with all steps shown in tool result
+    Comments are not allowed. Variables persist across lines.
     """
     try:
         # Define allowed operations for safe evaluation
@@ -779,11 +767,13 @@ def get_search_tools():
 
 async def get_nutritionist_tools(animal_type: str = "dairy_cow"):
     """Get nutritionist-specific tools"""
+    from utils.ask_user_tool import ask_user
+    
     # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
     formulation_tools = create_formulation_tools(animal_type)
     
     # Base tools for all animal types
-    tools = formulation_tools + get_usda_tools() + [calculate]
+    tools = formulation_tools + get_usda_tools() + [calculate, ask_user]
     
     # Add NASEM tools for dairy cows only
     if animal_type == "dairy_cow":

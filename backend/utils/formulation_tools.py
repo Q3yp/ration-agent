@@ -387,9 +387,9 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
     async def set_animal_params(
         body_weight: float,
         milk_prod: float,
-        dim: int = 90,
-        parity: int = 2,
-        bcs: float = 3.0,
+        dim: int,
+        parity: int,
+        bcs: float,
         milk_fat_pct: float = 3.5,
         milk_protein_pct: float = 3.2,
         days_pregnant: int = 0,
@@ -400,25 +400,21 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
     ) -> Command:
         """Store animal parameters in session state for reuse across tools.
         
-        Once set, these parameters will be used as defaults by:
-        - formulate_ration (if animal_params not explicitly provided)
-        - predict_dairy_requirements (if individual params not provided)  
-        - evaluate_diet_with_nasem (if individual params not provided)
-        
-        This avoids needing to re-input the same animal data for each tool call.
-        Explicit parameters passed to individual tools will override these defaults.
+        Stored parameters are used as defaults by formulate_ration, 
+        predict_dairy_requirements, and evaluate_diet_with_nasem.
+        Explicit parameters passed to individual tools override stored defaults.
         
         Args:
             body_weight: Animal body weight in kg
-            milk_prod: Target milk production in kg/day
-            dim: Days in milk (default 90)
-            parity: Number of lactations, 1=first calf heifer (default 2)
-            bcs: Body condition score 1-5 scale (default 3.0)
-            milk_fat_pct: Target milk fat percentage (default 3.5)
-            milk_protein_pct: Target milk protein percentage (default 3.2)
-            days_pregnant: Days of gestation (default 0)
-            breed: "Holstein", "Jersey", or "Other" (default "Holstein")
-            milk_price_per_kg: Milk price per kg (default 3.0, used for maximize_profit optimization)
+            milk_prod: Target milk production in kg/day (0 for dry cow)
+            dim: Days in milk
+            parity: Number of lactations (1=first calf heifer)
+            bcs: Body condition score 1-5 scale (use 3.0 if user doesn't specify)
+            milk_fat_pct: Target milk fat percentage
+            milk_protein_pct: Target milk protein percentage
+            days_pregnant: Days of gestation
+            breed: "Holstein", "Jersey", or "Other"
+            milk_price_per_kg: Milk price per kg (used for maximize_profit optimization)
         
         Returns:
             Confirmation with stored parameter summary
@@ -477,14 +473,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         """
         Formulate optimal ration using linear/non-linear programming optimization.
         
-        For DAIRY COWS: Uses NASEM DMI prediction model (equation 9) to automatically 
-        calculate DMI from diet composition. MP and ME supply are also calculated 
-        automatically from diet composition using full NASEM.
-        
-        IMPORTANT: 
-        - Use check_feeds(feedbase, "nutrients") to get exact nutrient column names.
-        - If set_animal_params was called earlier, those parameters are AUTOMATICALLY USED.
-          You do NOT need to provide animal_params again unless you want to override.
+        For dairy cows: Uses NASEM DMI prediction model to calculate DMI from diet 
+        composition. MP and ME supply are calculated from diet composition using NASEM.
         
         Args:
             feed_base_name: Name of the feedbase to use for formulation
@@ -509,10 +499,9 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             optimization_goal: Optimization objective:
                 - "minimize_cost" (default): Find least-cost ration
                 - "feasibility": Find any ration satisfying constraints (no cost optimization)
-                - "maximize_profit": Maximize milk_revenue - feed_cost (requires milk_price_per_kg)
-            animal_params: Optional. For dairy cows, NASEM model parameters.
-                AUTOMATICALLY loaded from session state if set_animal_params was called.
-                Only provide if you need to override stored values.
+                - "maximize_profit": Maximize milk_revenue - feed_cost
+            animal_params: For dairy cows, NASEM model parameters. If not provided,
+                uses parameters from session state (set via set_animal_params).
                 Keys: milk_prod, body_weight, dim, parity, bcs, milk_fat_pct, milk_protein_pct, milk_price_per_kg
             
         Returns:

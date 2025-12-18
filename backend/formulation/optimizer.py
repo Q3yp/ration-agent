@@ -293,7 +293,8 @@ class FormulationOptimizer:
                 days_in_milk=self.animal_params.get("dim", 90),
                 parity=self.animal_params.get("parity", 2),
                 target_milk_kg=self.animal_params.get("milk_prod", 35.0),
-                target_dmi_kg=dmi
+                target_dmi_kg=dmi,
+                bcs=self.animal_params.get("bcs", 3.0)
             )
             
             # Call NASEM once for ALL values

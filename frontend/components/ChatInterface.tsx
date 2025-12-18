@@ -3,6 +3,7 @@ import { Send, AlertTriangle, Upload, Loader2, Square, MessageSquare } from 'luc
 import MessageList from './MessageList'
 import FileUpload from './FileUpload'
 import HtmlArtifact from './HtmlArtifact'
+import UserInputRequest from './UserInputRequest'
 import { PlanUpgradeModal } from './PlanUpgradeModal'
 import { useMessages } from '@/hooks/useMessages'
 import { Button } from '@/components/ui/button'
@@ -71,7 +72,9 @@ export default function ChatInterface({
     stopMessage,
     retryConnection,
     planLimitInfo,
-    clearPlanLimitInfo
+    clearPlanLimitInfo,
+    askUserState,
+    resumeChat
   } = useMessages({
     sessionId,
     endpoint,
@@ -391,6 +394,15 @@ export default function ChatInterface({
             onFileDownload={handleFileDownload}
             sessionId={sessionId}
           />
+          {/* Ask User Input Request */}
+          {askUserState?.isActive && !readOnly && (
+            <UserInputRequest
+              description={askUserState.description}
+              questions={askUserState.questions}
+              onSubmit={resumeChat}
+              disabled={isTyping || isStreaming}
+            />
+          )}
           <div ref={messagesEndRef} />
         </CardContent>
 

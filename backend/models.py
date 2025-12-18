@@ -25,6 +25,11 @@ class AnimalType(str, Enum):
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=10000, description="The user message")
+
+
+class ResumeRequest(BaseModel):
+    """Request for resuming interrupted agent with user response"""
+    response: str = Field(..., min_length=1, max_length=10000, description="User's response to agent question")
     
 
 class ChatResponse(BaseModel):
@@ -93,6 +98,7 @@ from typing import Dict, Any, Optional, Literal, List
 
 MessageType = Literal[
     "user",           # User input message
+    "user_input",     # User response to ask_user tool (orange, with questions context)
     "agent",          # Agent response content (streamable)
     "thinking",       # DeepSeek reasoning content (streamable, collapsible)
     "tool_call",      # Tool execution indicator
@@ -147,6 +153,23 @@ def create_user_message(content: str, message_id: str, timestamp: float) -> Pars
         content=content,
         timestamp=timestamp
     )
+
+def create_user_input_message(
+    content: str, 
+    questions: List[str], 
+    message_id: str, 
+    timestamp: float,
+    description: Optional[str] = None
+) -> ParsedMessage:
+    """User input response to ask_user tool - displayed with questions context"""
+    return ParsedMessage(
+        id=message_id,
+        type="user_input",
+        content=content,
+        timestamp=timestamp,
+        metadata={"description": description, "questions": questions}
+    )
+
 
 def create_agent_message(content: str, message_id: str, timestamp: float, is_streaming: bool = False, metadata: Dict[str, Any] = None) -> ParsedMessage:
     """Agent response - streamable in real-time, complete in history

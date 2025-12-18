@@ -133,6 +133,9 @@ export const translations: Record<Locale, TranslationTree> = {
       promptLimitBody: '当前对话的上下文已超过免费版 50,000 tokens 限制。请开启新的对话或升级账户以继续使用。',
       promptLimitCTA: '了解升级方案',
       promptLimitDismiss: '稍后再说',
+      askedQuestions: '询问',
+      userResponse: '您的回复',
+      userInputPrefix: '回复询问',
     },
     planUpgrade: {
       title: '选择适合您的方案',
@@ -386,6 +389,9 @@ export const translations: Record<Locale, TranslationTree> = {
       promptLimitBody: 'This conversation exceeded the 50,000-token limit for the free plan. Start a new chat or upgrade your plan to continue.',
       promptLimitCTA: 'Explore upgrade options',
       promptLimitDismiss: 'Maybe later',
+      askedQuestions: 'Asked',
+      userResponse: 'Your Response',
+      userInputPrefix: 'Reply to Inquiry',
     },
     planUpgrade: {
       title: 'Choose Your Plan',

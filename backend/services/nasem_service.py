@@ -105,7 +105,8 @@ class NASEMService:
         milk_protein_percent: float = 3.2,
         days_pregnant: int = 0,
         breed: str = "Holstein",
-        target_dmi_kg: Optional[float] = None
+        target_dmi_kg: Optional[float] = None,
+        bcs: float = 3.0
     ) -> Dict[str, Any]:
         """Build animal input dict for NASEM model."""
         if target_dmi_kg is None:
@@ -118,7 +119,7 @@ class NASEMService:
             "An_Parity_rl": float(parity),
             "Trg_MilkProd": 0.0 if state == "Dry Cow" else float(target_milk_kg),
             "An_BW": float(body_weight_kg),
-            "An_BCS": 3.0,
+            "An_BCS": float(bcs),
             "An_LactDay": int(days_in_milk),
             "Trg_MilkFatp": float(milk_fat_percent),
             "Trg_MilkTPp": float(milk_protein_percent),

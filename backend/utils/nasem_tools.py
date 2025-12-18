@@ -107,21 +107,18 @@ async def predict_dairy_requirements(
 ) -> str:
     """Predict NASEM nutrient requirements for a dairy cow based on animal parameters.
     
-    This tool calculates factorial requirements WITHOUT needing a diet. Use this to 
-    get NASEM 2021 requirements BEFORE formulation. The predicted values are derived
-    from animal parameters only using NASEM equations:
+    Calculates factorial requirements from animal parameters only (no diet needed).
+    Predictions are derived using NASEM equations:
     
-    - DMI prediction: Uses NASEM equation 8 (Lact1) - animal factors only
+    - DMI prediction: NASEM equation 8 (Lact1) - animal factors only
     - NE requirements: Maintenance + milk production + gestation + reserves
     - MP requirements: Maintenance + milk protein + gestation + growth
     - Mineral requirements: Ca, P, Mg based on production level
     
-    If animal parameters were previously set via set_animal_params, they will be used
-    as defaults. Explicit parameters passed here will override stored values.
+    If animal parameters were previously set via set_animal_params, they are used
+    as defaults. Explicit parameters passed here override stored values.
     
-    Note: Actual DMI and nutrient supply depend on diet composition. Use 
-    formulate_ration with animal_params to get optimized diet with predicted DMI,
-    then evaluate_diet_with_nasem for final validation.
+    Note: Actual DMI and nutrient supply depend on diet composition.
     
     Args:
         body_weight_kg: Animal body weight in kg (uses stored value if not provided)
@@ -319,6 +316,7 @@ async def evaluate_diet_with_nasem(
     target_milk_kg: Optional[float] = None,
     milk_fat_percent: Optional[float] = None,
     milk_protein_percent: Optional[float] = None,
+    body_condition_score: Optional[float] = None,
     days_pregnant: Optional[int] = None,
     breed: Optional[str] = None,
     state: Annotated[dict, InjectedState] = None,
@@ -342,6 +340,7 @@ async def evaluate_diet_with_nasem(
         target_milk_kg: Target milk production for comparison (uses stored value if not provided)
         milk_fat_percent: Target milk fat percentage
         milk_protein_percent: Target milk protein percentage
+        body_condition_score: BCS on 1-5 scale (default 3.0)
         days_pregnant: Days of gestation
         breed: "Holstein", "Jersey", or "Other"
     
@@ -374,6 +373,7 @@ async def evaluate_diet_with_nasem(
         target_milk_kg = target_milk_kg if target_milk_kg is not None else stored_params.get("milk_prod")
         milk_fat_percent = milk_fat_percent if milk_fat_percent is not None else stored_params.get("milk_fat_pct", 3.5)
         milk_protein_percent = milk_protein_percent if milk_protein_percent is not None else stored_params.get("milk_protein_pct", 3.2)
+        body_condition_score = body_condition_score if body_condition_score is not None else stored_params.get("bcs", 3.0)
         days_pregnant = days_pregnant if days_pregnant is not None else stored_params.get("days_pregnant", 0)
         breed = breed if breed is not None else stored_params.get("breed", "Holstein")
         
@@ -429,7 +429,8 @@ async def evaluate_diet_with_nasem(
             milk_protein_percent=milk_protein_percent,
             days_pregnant=days_pregnant,
             breed=breed,
-            target_dmi_kg=predicted_dmi_kg  # Use optimizer's DMI
+            target_dmi_kg=predicted_dmi_kg,  # Use optimizer's DMI
+            bcs=body_condition_score  # Add BCS from stored params
         )
         
         # Evaluate diet

@@ -41,6 +41,7 @@ export type SSEEventType =
   | 'error'
   | 'token_usage'
   | 'plan_limit'
+  | 'ask_user'
 
 export interface SSEEvent {
   type: SSEEventType
@@ -48,7 +49,7 @@ export interface SSEEvent {
 }
 
 export interface ProcessedEvent {
-  type: 'message' | 'title_update' | 'artifact_update' | 'connection_change' | 'error' | 'token_usage_update' | 'plan_limit'
+  type: 'message' | 'title_update' | 'artifact_update' | 'connection_change' | 'error' | 'token_usage_update' | 'plan_limit' | 'ask_user'
   data: any
 }
 
@@ -66,13 +67,13 @@ export interface MessageProcessorState {
 }
 
 export class MessageProcessor {
-  
+
   /**
    * Create a normalized Message from any source
    */
   static createMessage(
-    data: any, 
-    source: MessageSource, 
+    data: any,
+    source: MessageSource,
     timestamp?: number
   ): Message {
     const now = timestamp || Date.now()
@@ -122,11 +123,11 @@ export class MessageProcessor {
    * Validate that an object is a proper Message
    */
   static isValidMessage(obj: any): obj is Message {
-    return obj && 
-           typeof obj.id === 'string' && 
-           typeof obj.type === 'string' && 
-           typeof obj.content === 'string' && 
-           typeof obj.timestamp === 'number'
+    return obj &&
+      typeof obj.id === 'string' &&
+      typeof obj.type === 'string' &&
+      typeof obj.content === 'string' &&
+      typeof obj.timestamp === 'number'
   }
 
   /**
@@ -190,7 +191,7 @@ export class MessageProcessor {
           if (data.type === 'agent_complete') {
             results.push({
               type: 'connection_change',
-              data: { 
+              data: {
                 state: 'connected',
                 streamingComplete: true,
                 messageId: data.message_id
@@ -241,6 +242,18 @@ export class MessageProcessor {
           })
           break
 
+        case 'ask_user':
+          results.push({
+            type: 'ask_user',
+            data: {
+              description: data.description || null,
+              questions: data.questions || [],
+              sessionId: data.session_id,
+              timestamp: data.timestamp
+            }
+          })
+          break
+
         default:
           console.warn(`MessageProcessor: Unknown SSE event type: ${eventType}`)
       }
@@ -262,13 +275,13 @@ export class MessageProcessor {
    * Handle streaming message updates with accumulation
    */
   static processStreamingMessage(
-    currentMessages: Message[], 
+    currentMessages: Message[],
     newMessage: Message
   ): Message[] {
     // If it's a streaming agent message, handle accumulation
     if (newMessage.type === 'agent' && newMessage.metadata?.is_streaming) {
       const existingIndex = currentMessages.findIndex(msg => msg.id === newMessage.id)
-      
+
       if (existingIndex >= 0) {
         // Accumulate content for existing message
         const updated = [...currentMessages]
@@ -293,10 +306,10 @@ export class MessageProcessor {
    * Mark streaming message as complete
    */
   static completeStreamingMessage(
-    currentMessages: Message[], 
+    currentMessages: Message[],
     messageId: string
   ): Message[] {
-    return currentMessages.map(msg => 
+    return currentMessages.map(msg =>
       msg.id === messageId
         ? { ...msg, metadata: { ...msg.metadata, is_streaming: false } }
         : msg
@@ -368,9 +381,9 @@ export class MessageProcessor {
   static validateMessageState(state: MessageProcessorState): boolean {
     // Check that all messages are valid
     const allValid = state.messages.every(msg => MessageProcessor.isValidMessage(msg))
-    
+
     // Check that streaming message ID exists if set
-    const streamingValid = !state.streamingMessageId || 
+    const streamingValid = !state.streamingMessageId ||
       state.messages.some(msg => msg.id === state.streamingMessageId)
 
     return allValid && streamingValid
