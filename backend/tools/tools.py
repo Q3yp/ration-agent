@@ -14,7 +14,7 @@ from langchain_core.messages import ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
-from langchain_community.agent_toolkits import FileManagementToolkit
+
 from duckduckgo_search import DDGS
 from .excel_tools import get_excel_tools
 from .formulation_tools import create_formulation_tools
@@ -27,7 +27,7 @@ except ImportError:
     BLEACH_AVAILABLE = False
 
 try:
-    from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, BrowserConfig
+    from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
     CRAWL4AI_AVAILABLE = True
 except ImportError:
     CRAWL4AI_AVAILABLE = False
@@ -298,16 +298,10 @@ async def create_artifact(
 
         # Return structured data that includes the HTML content for frontend display
         # No file saving needed - content is embedded in tool result and persisted via LangGraph checkpointing
-        artifact_data = {
-            'title': title,
-            'description': description or '',
-            'html_content': full_html
-        }
+        # NOTE: Artifacts are now created directly from tool call args by the message parser.
+        # This return string is just for agent confirmation.
 
-        # Use compact JSON serialization without newlines to avoid parsing issues
-        artifact_json = json.dumps(artifact_data, ensure_ascii=False, separators=(',', ':'))
-
-        return f"✅ HTML artifact created successfully!\n- Title: {title}\n- Description: {description or 'No description'}\n\n[ARTIFACT_DATA]\n{artifact_json}\n[/ARTIFACT_DATA]\n\nThe artifact is now available for display in the frontend."
+        return f"✅ HTML artifact created successfully!\n- Title: {title}\n- Description: {description or 'No description'}\n\nThe artifact is now available for display in the frontend."
 
     except Exception as e:
         logger.error(f"Failed to create HTML artifact: {e}")
@@ -767,7 +761,7 @@ def get_search_tools():
 
 async def get_nutritionist_tools(animal_type: str = "dairy_cow"):
     """Get nutritionist-specific tools"""
-    from utils.ask_user_tool import ask_user
+    from tools.ask_user_tool import ask_user
     
     # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
     formulation_tools = create_formulation_tools(animal_type)
@@ -778,7 +772,7 @@ async def get_nutritionist_tools(animal_type: str = "dairy_cow"):
     # Add NASEM tools for dairy cows only
     if animal_type == "dairy_cow":
         try:
-            from utils.nasem_tools import get_nasem_tools
+            from tools.nasem_tools import get_nasem_tools
             nasem_tools = get_nasem_tools()
             tools.extend(nasem_tools)
             logger.info(f"Added {len(nasem_tools)} NASEM tools for dairy_cow nutritionist")

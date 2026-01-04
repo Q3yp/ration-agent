@@ -3,7 +3,7 @@ from langgraph.prebuilt import create_react_agent
 from langgraph_swarm import create_swarm, create_handoff_tool
 
 from utils.prompt_loader import apply_prompt_template
-from utils.tools import get_search_tools, get_nutritionist_tools, get_coder_tools
+from tools.tools import get_search_tools, get_nutritionist_tools, get_coder_tools
 from utils.model_config import get_model_config
 from core.agent import FormulationState, FormulationSwarmState
 from services.session_manager import session_manager

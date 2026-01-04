@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from 'react'
 import { AnimalType, AnimalTypeOption } from '@/types/chat'
-import { Card } from './ui/card'
-import { Button } from './ui/button'
+import { Card } from '../ui/card'
+import { Button } from '../ui/button'
 import { httpClient } from '@/utils/httpClient'
 import { useI18n } from '@/contexts/I18nContext'
 

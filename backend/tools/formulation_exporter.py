@@ -719,8 +719,6 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                 # Apply formatting
                 workbook = writer.book
                 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-                from openpyxl.chart import PieChart, Reference
-                from openpyxl.utils import get_column_letter
 
 
                 # Define common styles

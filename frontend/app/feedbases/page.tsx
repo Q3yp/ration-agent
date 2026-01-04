@@ -2,12 +2,12 @@
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import FeedbaseManager from '@/components/FeedbaseManager'
+import FeedbaseManager from '@/components/feedbase/FeedbaseManager'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { useI18n } from '@/contexts/I18nContext'
 import { Badge } from '@/components/ui/badge'
-import BackToChatButton from '@/components/BackToChatButton'
+import BackToChatButton from '@/components/layout/BackToChatButton'
 
 export default function FeedbasesPage() {
   const { user, logout } = useAuthContext()

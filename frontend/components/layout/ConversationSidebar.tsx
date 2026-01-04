@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { httpClient } from '@/utils/httpClient'
-import { AnimalTypeSelector } from './AnimalTypeSelector'
-import { TokenUsage } from './TokenUsage'
+import { AnimalTypeSelector } from '../shared/AnimalTypeSelector'
+import { TokenUsage } from '../chat/TokenUsage'
 import { useI18n } from '@/contexts/I18nContext'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { useAuthContext } from '@/contexts/AuthContext'
@@ -345,11 +345,10 @@ export default function ConversationSidebar({
             <Button
               variant="ghost"
               size="icon"
-              className={`fixed top-1/2 -translate-y-1/2 z-[60] h-12 w-8 rounded-r-lg transition-all duration-300 bg-transparent border-0 ${
-                isDrawerOpen
+              className={`fixed top-1/2 -translate-y-1/2 z-[60] h-12 w-8 rounded-r-lg transition-all duration-300 bg-transparent border-0 ${isDrawerOpen
                   ? 'left-80 text-white hover:bg-white/10'
                   : 'left-0 hover:bg-muted/50'
-              }`}
+                }`}
               title={t('sidebar.title')}
             >
               {isDrawerOpen ? <PanelLeftClose className="h-4 w-4 text-white" /> : <PanelLeftOpen className="h-4 w-4" />}

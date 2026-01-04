@@ -1,9 +1,9 @@
 'use client'
 
-import UserGuide from '@/components/UserGuide'
+import UserGuide from '@/components/layout/UserGuide'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { useI18n } from '@/contexts/I18nContext'
-import BackToChatButton from '@/components/BackToChatButton'
+import BackToChatButton from '@/components/layout/BackToChatButton'
 
 export default function GuidePage() {
   const { t } = useI18n()

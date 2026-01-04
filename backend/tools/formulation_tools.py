@@ -16,7 +16,7 @@ from langgraph.config import get_store
 
 from formulation.optimizer import create_optimizer
 from utils.language import normalize_locale, get_export_texts
-from utils.formulation_exporter import create_export_formulation_tool, sanitize_feed_name
+from .formulation_exporter import create_export_formulation_tool, sanitize_feed_name
 from services.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)

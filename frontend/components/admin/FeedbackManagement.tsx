@@ -13,7 +13,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
-import ChatInterface from '@/components/ChatInterface'
+import ChatInterface from '@/components/chat/ChatInterface'
 
 interface Feedback {
     id: string

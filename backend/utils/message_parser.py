@@ -43,8 +43,6 @@ class UnifiedMessageParser:
         self.delegation_tools = {
             # LangGraph Swarm tools with custom prefix
             "transfer_to_researcher", "transfer_to_coder", "transfer_to_nutritionist",
-            # Legacy supervisor tools
-            "transfer_back_to_nutritionist"
         }
         self.pending_delegations = {}  # tool_id -> (tool_name, tool_args, timestamp)
         self.pending_calculations = {}  # tool_id -> (expression, timestamp)
@@ -96,48 +94,6 @@ class UnifiedMessageParser:
             "total_tokens": getattr(usage, 'total_tokens', 0)
         }
     
-    def _extract_artifact_data(self, content: str) -> Optional[Dict[str, str]]:
-        """Extract artifact data from tool result content (legacy fallback)"""
-        # This method is now a fallback for any legacy artifact data in tool results
-        # New artifacts are created directly from tool calls, not tool results
-        
-        # Check for legacy artifact data markers (keeping for backwards compatibility)
-        start_tag = '[ARTIFACT_DATA]'
-        end_tag = '[/ARTIFACT_DATA]'
-        
-        start_idx = content.find(start_tag)
-        if start_idx == -1:
-            return None
-            
-        end_idx = content.find(end_tag)
-        if end_idx == -1:
-            return None
-        
-        
-        # Simple extraction for legacy support only
-        json_start = start_idx + len(start_tag)
-        raw_content = content[json_start:end_idx]
-        
-        first_brace = raw_content.find('{')
-        last_brace = raw_content.rfind('}')
-        
-        if first_brace == -1 or last_brace == -1 or first_brace >= last_brace:
-            return None
-        
-        json_str = raw_content[first_brace:last_brace + 1]
-        
-        try:
-            artifact_data = json.loads(json_str)
-            if artifact_data.get('title') and artifact_data.get('html_content'):
-                return {
-                    'title': artifact_data['title'],
-                    'description': artifact_data.get('description', ''),
-                    'html_content': artifact_data['html_content']
-                }
-        except json.JSONDecodeError:
-            pass
-        
-        return None
     
     def _extract_file_export_data(self, content: str) -> Optional[Dict[str, str]]:
         """Extract file export data from tool result content"""
@@ -248,7 +204,6 @@ class UnifiedMessageParser:
             "transfer_to_researcher": "researcher",
             "transfer_to_coder": "coder", 
             "transfer_to_nutritionist": "nutritionist",
-            "transfer_back_to_nutritionist": "nutritionist"
         }
         return mapping.get(tool_name)
     
@@ -792,16 +747,7 @@ class UnifiedMessageParser:
                         description=file_export_data.get('description'),
                     ))
                 
-                # Check for legacy artifact data and create artifact event
-                artifact_data = self._extract_artifact_data(msg.content)
-                if artifact_data:
-                    result_for_this_tool.append(create_artifact_message(
-                        title=artifact_data['title'],
-                        description=artifact_data['description'],
-                        html_content=artifact_data['html_content'],
-                        message_id=f"{tool_id}_artifact",
-                        timestamp=timestamp
-                    ))
+
                 
                 # Check for calculator tool results BEFORE skipping
                 if tool_id in self.pending_calculations:
@@ -1235,16 +1181,7 @@ class UnifiedMessageParser:
                     description=file_export_data.get('description'),
                 ))
             
-            # Check for legacy artifact data and create artifact event
-            artifact_data = self._extract_artifact_data(result_content)
-            if artifact_data:
-                result.append(create_artifact_message(
-                    title=artifact_data['title'],
-                    description=artifact_data['description'],
-                    html_content=artifact_data['html_content'],
-                    message_id=f"{tool_id}_artifact",
-                    timestamp=timestamp
-                ))
+
             
             # Then decide whether to include the raw tool result message
             current_tool_type = self._is_analysis_tool(tool_name)

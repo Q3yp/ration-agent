@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import { MessageCircle, User, LogOut, Database, BookOpen, Menu, X } from 'lucide-react'
-import ChatInterface from '@/components/ChatInterface'
-import ConversationSidebar from '@/components/ConversationSidebar'
-import { PlanUpgradeModal } from '@/components/PlanUpgradeModal'
+import ChatInterface from '@/components/chat/ChatInterface'
+import ConversationSidebar from '@/components/layout/ConversationSidebar'
+import { PlanUpgradeModal } from '@/components/shared/PlanUpgradeModal'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { useAuthContext } from '@/contexts/AuthContext'
 import Link from 'next/link'
 import { useI18n } from '@/contexts/I18nContext'
-import { LocaleToggle } from '@/components/LocaleToggle'
+import { LocaleToggle } from '@/components/shared/LocaleToggle'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -217,37 +217,37 @@ export default function Home() {
                 </div>
               </div>
             </header>
-          
-          <div className="flex-1 p-3 sm:p-6 min-h-0">
-            {sessionId ? (
-              <div className="h-full max-h-full">
-                <ChatInterface
-                  key={chatKey}
-                  sessionId={sessionId}
-                  onTitleUpdate={handleTitleUpdate}
-                  onTokenUsageUpdate={handleTokenUsageUpdate}
-                  onArtifactChange={setArtifactOpen}
-                />
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <Card className="w-full max-w-md mx-4">
-                  <CardContent className="p-6 text-center">
-                    <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                    <p className="text-muted-foreground mb-3">{t('chat.selectPrompt')}</p>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+
+            <div className="flex-1 p-3 sm:p-6 min-h-0">
+              {sessionId ? (
+                <div className="h-full max-h-full">
+                  <ChatInterface
+                    key={chatKey}
+                    sessionId={sessionId}
+                    onTitleUpdate={handleTitleUpdate}
+                    onTokenUsageUpdate={handleTokenUsageUpdate}
+                    onArtifactChange={setArtifactOpen}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <Card className="w-full max-w-md mx-4">
+                    <CardContent className="p-6 text-center">
+                      <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                      <p className="text-muted-foreground mb-3">{t('chat.selectPrompt')}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Plan Upgrade Modal */}
-      <PlanUpgradeModal
-        open={showUpgradeModal}
-        onOpenChange={setShowUpgradeModal}
-      />
+        {/* Plan Upgrade Modal */}
+        <PlanUpgradeModal
+          open={showUpgradeModal}
+          onOpenChange={setShowUpgradeModal}
+        />
       </main>
     </ProtectedRoute>
   )

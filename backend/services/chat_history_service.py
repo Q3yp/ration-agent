@@ -129,28 +129,6 @@ class ChatHistoryService:
                 "has_history": False
             }
 
-    async def get_session_summary_async(self, session_id: str) -> Dict:
-        """Get summary statistics for a session from LangGraph checkpointer (backwards compatibility)"""
-        try:
-            # Use complete message retrieval for accurate counts
-            all_messages = await self.get_complete_session_messages(session_id)
-            return self.get_session_summary_from_messages(session_id, all_messages)
-
-        except Exception as e:
-            logger.error(f"Error getting session summary for {session_id}: {e}")
-            return {
-                "session_id": session_id,
-                "total_messages": 0,
-                "human_messages": 0,
-                "ai_messages": 0,
-                "system_messages": 0,
-                "tool_messages": 0,
-                "has_history": False
-            }
-
-    def get_session_summary(self, session_id: str) -> Dict:
-        """Sync wrapper for getting session summary"""
-        return asyncio.run(self.get_session_summary_async(session_id))
 
     async def clear_session_history_async(self, session_id: str):
         """Clear all messages for a session by removing checkpoints"""

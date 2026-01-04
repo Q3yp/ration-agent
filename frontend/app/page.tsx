@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Sparkles, Brain, Database, TrendingUp, ChevronRight } from 'lucide-react'
 import { useI18n } from '@/contexts/I18nContext'
-import { LocaleToggle } from '@/components/LocaleToggle'
+import { LocaleToggle } from '@/components/shared/LocaleToggle'
 
 export default function LandingPage() {
   const router = useRouter()

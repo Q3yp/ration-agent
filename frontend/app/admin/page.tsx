@@ -3,7 +3,7 @@
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import UserManagement from '@/components/admin/UserManagement'
 import FeedbackManagement from '@/components/admin/FeedbackManagement'
-import BackToChatButton from '@/components/BackToChatButton'
+import BackToChatButton from '@/components/layout/BackToChatButton'
 import { useI18n } from '@/contexts/I18nContext'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 

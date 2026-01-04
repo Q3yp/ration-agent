@@ -111,3 +111,10 @@ backend/test_suite/test_runs/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# Design Showcase (presentation slides)
+design-showcase/
+
+# AI Agent configuration
+.agent/
+.claude/

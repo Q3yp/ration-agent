@@ -41,7 +41,9 @@ dependencies = [
 ]
 
 [tool.uv]
-dev-dependencies = []
+dev-dependencies = [
+    "vulture>=2.14",
+]
 
 [tool.uv.sources]
 nasem_dairy = { path = "./nasem_dairy", editable = true }

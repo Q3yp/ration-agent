@@ -116,7 +116,7 @@ class StopManager:
 
     _instance = None
     _HANDOFF_TOOL_PREFIXES = ("transfer_to_",)
-    _HANDOFF_TOOL_NAMES = {"transfer_back_to_nutritionist"}
+    _HANDOFF_TOOL_NAMES = set()  # Empty set; all handoffs use prefix-based matching
 
     def __new__(cls):
         if cls._instance is None:

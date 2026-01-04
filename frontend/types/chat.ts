@@ -18,8 +18,6 @@ export type MessageType =
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
-export type MessageSource = 'history' | 'sse_stream' | 'user_input'
-
 export interface AttachedFile {
   name: string
   size: number
@@ -31,13 +29,6 @@ export interface ArtifactData {
   description: string
   html_content: string
   isLoading?: boolean
-}
-
-export interface FileExportData {
-  filename: string
-  file_type: string
-  filepath: string
-  description?: string
 }
 
 // Simplified message interface matching backend ParsedMessage

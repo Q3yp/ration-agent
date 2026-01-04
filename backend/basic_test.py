@@ -63,7 +63,7 @@ async def main() -> None:
         return [{"role": "system", "content": system_msg}] + state["messages"]
 
     model = ChatOpenAI(
-        model="deepseek/deepseek-r1-0528",
+        model=os.getenv("OPENROUTER_MODEL", "deepseek-chat"),
         temperature=0.0,
         openai_api_base=os.getenv("OPENAI_ENDPOINT"),
         openai_api_key=os.getenv("OPENROUTER_API_KEY"),

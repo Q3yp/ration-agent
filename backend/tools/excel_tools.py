@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import openpyxl
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union, Annotated
+from typing import Optional, List, Dict, Any, Annotated
 from langchain_core.tools import tool, InjectedToolArg
 from langchain_core.runnables import RunnableConfig
 from datetime import datetime

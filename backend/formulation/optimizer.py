@@ -356,8 +356,7 @@ class FormulationOptimizer:
         nutritional_constraints: List[Dict[str, Any]],
         selected_feeds: List[str],
         feed_constraints: Optional[Dict[str, Dict]] = None,
-        optimization_goal: str = "minimize_cost",
-        use_dmi_prediction: bool = True  # Kept for backward compatibility
+        optimization_goal: str = "minimize_cost"
     ) -> Dict[str, Any]:
         """
         Optimize feed formulation using SLSQP.
@@ -369,7 +368,6 @@ class FormulationOptimizer:
             optimization_goal: Optimization objective:
                 - "minimize_cost" (default): Find least-cost ration that meets constraints
                 - "feasibility": Find any ration that meets constraints (no cost optimization)
-            use_dmi_prediction: Ignored (always uses SLSQP now)
             
         Returns:
             Dictionary with optimization results

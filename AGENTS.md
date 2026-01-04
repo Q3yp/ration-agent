@@ -111,7 +111,6 @@ ration-agent/
 │   │   ├── authHeaders.ts      # JWT header injection
 │   │   ├── messageProcessor.ts # Message parsing and formatting
 │   │   ├── errorHandler.ts     # Error handling utilities
-│   │   ├── artifactParser.ts   # HTML artifact extraction
 │   │   └── roleMapping.ts      # Agent role display names
 │   ├── contexts/               # React contexts
 │   ├── types/                  # TypeScript type definitions
@@ -119,6 +118,13 @@ ration-agent/
 │
 ├── docker-compose.yml          # Local dev: PostgreSQL + pgvector
 ├── docker-compose.prod.yml     # Production deployment config
+├── design-showcase/            # Vite slide presentation for design philosophy
+│   └── src/
+│       ├── slides/             # JS slide modules (01-title, 02-pretrain-scale, 15-agent-flow, etc.)
+│                               # Note: All slide content is in Chinese. Data quantities in pretrain slide use visual bars.
+│       ├── renderer.js         # Slide type renderers (layers, comparison, twoCol, scale, etc.)
+│       └── style.css           # Design system with glassmorphism, gradients, animated bars
+# Note: .agentflow-packet use vertical offset (-140%) to avoid label occlusion.
 ├── README.md                   # User-facing documentation
 ├── SETUP.md                    # Authentication setup guide
 └── AGENTS.md                   # This file (agent reference)

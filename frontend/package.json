@@ -51,6 +51,7 @@
     "@types/react-syntax-highlighter": "^15.5.11",
     "eslint": "^8.0.0",
     "eslint-config-next": "^15.5.7",
+    "ts-prune": "^0.10.3",
     "typescript": "^5.0.0"
   },
   "overrides": {
