@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { MessageCircle, User, LogOut, Database, BookOpen, Menu, X } from 'lucide-react'
 import ChatInterface from '@/components/chat/ChatInterface'
 import ConversationSidebar from '@/components/layout/ConversationSidebar'
-import { PlanUpgradeModal } from '@/components/shared/PlanUpgradeModal'
+// import { PlanUpgradeModal } from '@/components/shared/PlanUpgradeModal' // suppressed for conference
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -62,11 +62,7 @@ export default function Home() {
     }))
   }
 
-  const tierBadgeText = user?.tier === 'paid'
-    ? t('chat.tierBadges.paid')
-    : user?.tier === 'free'
-      ? t('chat.tierBadges.free')
-      : null
+  const tierBadgeText = null // suppressed for conference
 
   return (
     <ProtectedRoute>
@@ -243,11 +239,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Plan Upgrade Modal */}
-        <PlanUpgradeModal
-          open={showUpgradeModal}
-          onOpenChange={setShowUpgradeModal}
-        />
+        {/* Plan Upgrade Modal - suppressed for conference */}
       </main>
     </ProtectedRoute>
   )

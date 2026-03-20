@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Callable, Dict, List, Any, Optional, Tuple
 from functools import lru_cache
 import json
 import logging
@@ -350,6 +350,541 @@ class FormulationOptimizer:
         if ne_milk <= 0:
             return mp_milk
         return min(mp_milk, ne_milk)
+
+    def _build_objective(
+        self,
+        selected_feeds: List[str],
+        optimization_goal: str
+    ) -> Callable[[np.ndarray], float]:
+        """Build the base objective used by the optimizer."""
+        if optimization_goal == "feasibility":
+            def objective(x: np.ndarray) -> float:
+                return 0.0
+            return objective
+
+        if optimization_goal == "maximize_profit":
+            milk_price = self.animal_params.get("milk_price_per_kg", 3.0) if self.animal_params else 3.0
+
+            def objective(x: np.ndarray) -> float:
+                dmi = self._get_dmi(x, selected_feeds)
+                total_feed_cost = self._calculate_feed_cost_per_day(x, selected_feeds, dmi)
+                predicted_milk = self._get_nasem_milk_prod(x, selected_feeds)
+                milk_revenue = predicted_milk * milk_price
+                profit = milk_revenue - total_feed_cost
+                return -profit
+
+            return objective
+
+        def objective(x: np.ndarray) -> float:
+            return self._calculate_cost_per_kg_dm(x, selected_feeds)
+
+        return objective
+
+    def _calculate_cost_per_kg_dm(
+        self,
+        feed_percentages: np.ndarray,
+        selected_feeds: List[str]
+    ) -> float:
+        """Calculate ration cost per kg DM."""
+        total_cost = 0.0
+        for i, feed_name in enumerate(selected_feeds):
+            feed_data = self.feeds[feed_name]
+            cost_per_kg_dm = feed_data.get("cost_per_kg", 0) / (feed_data.get("dm_percent", 100) / 100)
+            total_cost += feed_percentages[i] * cost_per_kg_dm / 100
+        return total_cost
+
+    def _calculate_feed_cost_per_day(
+        self,
+        feed_percentages: np.ndarray,
+        selected_feeds: List[str],
+        dmi: Optional[float] = None
+    ) -> float:
+        """Calculate total daily feed cost for the ration."""
+        dmi = dmi if dmi is not None else self._get_dmi(feed_percentages, selected_feeds)
+        total_feed_cost = 0.0
+        for i, feed_name in enumerate(selected_feeds):
+            feed_data = self.feeds[feed_name]
+            dm_pct = feed_data.get("dm_percent", 100)
+            cost_per_kg_dm = feed_data.get("cost_per_kg", 0) / (dm_pct / 100)
+            kg_dm = dmi * feed_percentages[i] / 100
+            total_feed_cost += kg_dm * cost_per_kg_dm
+        return total_feed_cost
+
+    def _default_penalty_weight(self, constraint: Dict[str, Any]) -> float:
+        """Default penalty weight used by the compromise fallback."""
+        explicit_weight = constraint.get("penalty_weight")
+        if explicit_weight is not None:
+            try:
+                return float(explicit_weight)
+            except (TypeError, ValueError):
+                logger.warning(f"Invalid penalty_weight ignored: {explicit_weight}")
+
+        priority = str(constraint.get("penalty_priority", "")).strip().lower()
+        priority_map = {
+            "critical": 1000.0,
+            "high": 300.0,
+            "medium": 100.0,
+            "low": 30.0,
+        }
+        if priority in priority_map:
+            return priority_map[priority]
+        return 1.0
+
+    def _constraint_label(self, constraint: Dict[str, Any]) -> str:
+        """Human-readable label for diagnostics."""
+        c_type = constraint.get("type", "")
+        if c_type == "concentration":
+            return f"concentration:{constraint.get('nutrient', 'unknown')}"
+        if c_type == "daily_total":
+            return f"daily_total:{constraint.get('attribute', 'unknown')}"
+        if c_type == "ratio":
+            numerator = constraint.get("numerator", "unknown")
+            denominator = constraint.get("denominator", "unknown")
+            return f"ratio:{numerator}/{denominator}"
+        return c_type or "unknown"
+
+    def _constraint_scale(
+        self,
+        constraint: Dict[str, Any],
+        min_allowed: Optional[float],
+        max_allowed: Optional[float],
+        target: Optional[float]
+    ) -> float:
+        """Normalization scale for penalty calculations."""
+        explicit_scale = constraint.get("penalty_scale")
+        if explicit_scale is not None:
+            try:
+                explicit_scale = float(explicit_scale)
+                if explicit_scale > 0:
+                    return explicit_scale
+            except (TypeError, ValueError):
+                logger.warning(f"Invalid penalty_scale ignored: {explicit_scale}")
+
+        candidates = [abs(value) for value in (target, min_allowed, max_allowed) if value is not None]
+        return max(candidates + [1.0])
+
+    def _constraint_tolerance(self, penalty_scale: float) -> float:
+        """Numerical tolerance for classifying a constraint as satisfied."""
+        return max(1e-6, penalty_scale * 1e-6)
+
+    def _to_python_scalar(self, value: Any) -> Any:
+        """Convert NumPy scalars to plain Python values for cleaner JSON output."""
+        if isinstance(value, np.generic):
+            return value.item()
+        return value
+
+    def _sanitize_constraint_detail(self, detail: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize constraint diagnostics to plain Python types."""
+        sanitized = {}
+        for key, value in detail.items():
+            native_value = self._to_python_scalar(value)
+            if isinstance(native_value, float) and math.isfinite(native_value):
+                sanitized[key] = round(native_value, 6)
+            else:
+                sanitized[key] = native_value
+        return sanitized
+
+    def _evaluate_constraint(
+        self,
+        feed_percentages: np.ndarray,
+        selected_feeds: List[str],
+        constraint: Dict[str, Any],
+        index: int
+    ) -> Dict[str, Any]:
+        """Evaluate one nutritional constraint against a ration."""
+        c_type = constraint.get("type", "")
+        label = self._constraint_label(constraint)
+        penalty_weight = self._default_penalty_weight(constraint)
+
+        detail: Dict[str, Any] = {
+            "constraint_index": index,
+            "constraint_label": label,
+            "type": c_type,
+            "actual": None,
+            "target": None,
+            "min_allowed": None,
+            "max_allowed": None,
+            "tolerance_percent": constraint.get("tolerance_percent"),
+            "unit": "",
+            "satisfied": True,
+            "violation_direction": None,
+            "violation_amount": 0.0,
+            "normalized_violation": 0.0,
+            "severity_percent": 0.0,
+            "penalty_weight": penalty_weight,
+            "penalty_scale": 1.0,
+            "penalty": 0.0,
+            "penalty_applicable": True,
+        }
+
+        if c_type == "concentration":
+            nutrient = constraint["nutrient"]
+            actual = sum(
+                feed_percentages[i] * self.feeds[f]["nutrients"].get(nutrient, 0)
+                for i, f in enumerate(selected_feeds)
+            ) / 100
+            detail.update({
+                "nutrient": nutrient,
+                "actual": actual,
+                "min_allowed": constraint.get("min"),
+                "max_allowed": constraint.get("max"),
+                "unit": "% DM",
+            })
+
+        elif c_type == "daily_total":
+            attribute = constraint.get("attribute")
+            target = constraint.get("target")
+            tolerance_pct = float(constraint.get("tolerance_percent", 3.0))
+            detail.update({
+                "attribute": attribute,
+                "target": target,
+                "tolerance_percent": tolerance_pct,
+            })
+
+            if attribute in ("dmi", "Fd_DM") and self.dmi_override is not None:
+                actual_dmi = self._get_dmi(feed_percentages, selected_feeds)
+                detail.update({
+                    "actual": actual_dmi,
+                    "min_allowed": target,
+                    "max_allowed": target,
+                    "unit": "kg/day",
+                    "penalty_applicable": False,
+                    "note": "Handled as a DMI override during strict optimization.",
+                })
+                return self._sanitize_constraint_detail(detail)
+
+            if target is not None:
+                detail["min_allowed"] = target * (1 - tolerance_pct / 100)
+                detail["max_allowed"] = target * (1 + tolerance_pct / 100)
+
+            if attribute in ("dmi", "Fd_DM"):
+                detail.update({
+                    "actual": self._get_dmi(feed_percentages, selected_feeds),
+                    "unit": "kg/day",
+                })
+            elif attribute == "mp":
+                detail.update({
+                    "actual": self._get_nasem_mp(feed_percentages, selected_feeds),
+                    "unit": "g/day",
+                })
+            elif attribute == "me":
+                detail.update({
+                    "actual": self._get_nasem_me(feed_percentages, selected_feeds),
+                    "unit": "Mcal/day",
+                })
+            else:
+                is_mineral = str(attribute).lower() in (
+                    "fd_ca", "fd_p", "fd_mg", "fd_k", "fd_s", "fd_na", "fd_cl",
+                    "ca", "p", "mg", "k", "s", "na", "cl"
+                )
+                dmi = self._get_dmi(feed_percentages, selected_feeds)
+                conc_pct = sum(
+                    feed_percentages[i] * self.feeds[f]["nutrients"].get(attribute, 0) / 100
+                    for i, f in enumerate(selected_feeds)
+                )
+                actual = conc_pct / 100 * dmi * 1000 if is_mineral else conc_pct / 100 * dmi
+                detail.update({
+                    "actual": actual,
+                    "unit": "g/day" if is_mineral else "kg/day",
+                })
+
+        elif c_type == "ratio":
+            numerator = constraint["numerator"]
+            denominator = constraint["denominator"]
+            numerator_value = sum(
+                feed_percentages[i] * self.feeds[f]["nutrients"].get(numerator, 0)
+                for i, f in enumerate(selected_feeds)
+            )
+            denominator_value = sum(
+                feed_percentages[i] * self.feeds[f]["nutrients"].get(denominator, 0)
+                for i, f in enumerate(selected_feeds)
+            )
+            detail.update({
+                "numerator": numerator,
+                "denominator": denominator,
+                "min_allowed": constraint.get("min"),
+                "max_allowed": constraint.get("max"),
+                "unit": "ratio",
+            })
+            if denominator_value < 0.001:
+                detail.update({
+                    "actual": None,
+                    "penalty_applicable": False,
+                    "note": "Denominator near zero; ratio treated as satisfied for solver compatibility.",
+                })
+                return self._sanitize_constraint_detail(detail)
+            detail["actual"] = numerator_value / denominator_value
+
+        else:
+            detail.update({
+                "penalty_applicable": False,
+                "note": "Unsupported constraint type for diagnostics.",
+            })
+            return self._sanitize_constraint_detail(detail)
+
+        actual = detail["actual"]
+        min_allowed = detail["min_allowed"]
+        max_allowed = detail["max_allowed"]
+        target = detail["target"]
+
+        if actual is None or not np.isfinite(actual):
+            detail.update({
+                "satisfied": False,
+                "violation_direction": "unresolved",
+                "violation_amount": 1.0,
+                "normalized_violation": 1.0,
+                "severity_percent": 100.0,
+                "penalty_scale": 1.0,
+                "penalty": penalty_weight,
+            })
+            return self._sanitize_constraint_detail(detail)
+
+        under_violation = max(0.0, min_allowed - actual) if min_allowed is not None else 0.0
+        over_violation = max(0.0, actual - max_allowed) if max_allowed is not None else 0.0
+        violation_amount = under_violation + over_violation
+        penalty_scale = self._constraint_scale(constraint, min_allowed, max_allowed, target)
+        tolerance = self._constraint_tolerance(penalty_scale)
+        if violation_amount <= tolerance:
+            under_violation = 0.0
+            over_violation = 0.0
+            violation_amount = 0.0
+        normalized_violation = violation_amount / penalty_scale
+
+        if under_violation > 0:
+            direction = "below_min"
+        elif over_violation > 0:
+            direction = "above_max"
+        else:
+            direction = None
+
+        detail.update({
+            "satisfied": violation_amount <= tolerance,
+            "violation_direction": direction,
+            "violation_amount": violation_amount,
+            "normalized_violation": normalized_violation,
+            "severity_percent": normalized_violation * 100,
+            "penalty_scale": penalty_scale,
+            "penalty": penalty_weight * (normalized_violation ** 2) if detail["penalty_applicable"] else 0.0,
+        })
+        return self._sanitize_constraint_detail(detail)
+
+    def _evaluate_constraints(
+        self,
+        feed_percentages: np.ndarray,
+        selected_feeds: List[str],
+        nutritional_constraints: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Evaluate all nutritional constraints against a ration."""
+        return [
+            self._evaluate_constraint(feed_percentages, selected_feeds, constraint, index)
+            for index, constraint in enumerate(nutritional_constraints, start=1)
+        ]
+
+    def _summarize_constraints(self, constraint_details: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Build a compact constraint summary for tool consumers."""
+        counted_constraints = [detail for detail in constraint_details if detail.get("type")]
+        violated_constraints = [
+            detail for detail in counted_constraints
+            if not detail.get("satisfied", True) and detail.get("penalty_applicable", True)
+        ]
+        violated_constraints = sorted(
+            violated_constraints,
+            key=lambda detail: (
+                detail.get("penalty", 0.0),
+                detail.get("normalized_violation", 0.0),
+                detail.get("violation_amount", 0.0),
+            ),
+            reverse=True,
+        )
+
+        return {
+            "total_constraints": len(counted_constraints),
+            "satisfied_constraints": len(counted_constraints) - len(violated_constraints),
+            "violated_constraints": len(violated_constraints),
+            "all_constraints_satisfied": len(violated_constraints) == 0,
+            "total_penalty": sum(detail.get("penalty", 0.0) for detail in counted_constraints),
+            "max_severity_percent": max(
+                (detail.get("severity_percent", 0.0) for detail in violated_constraints),
+                default=0.0,
+            ),
+            "top_violations": violated_constraints[:3],
+        }
+
+    def _format_constraint_summary(
+        self,
+        summary: Dict[str, Any],
+        solution_mode: str
+    ) -> str:
+        """Human-readable constraint summary for the agent."""
+        total_constraints = summary["total_constraints"]
+        violated_constraints = summary["violated_constraints"]
+
+        if violated_constraints == 0:
+            if solution_mode == "strict":
+                return f"Strict solution satisfies all {total_constraints} nutritional constraints."
+            return (
+                f"Fallback solution satisfies all {total_constraints} nutritional constraints "
+                f"after the strict solve failed."
+            )
+
+        top_issues = []
+        for detail in summary["top_violations"]:
+            actual = detail.get("actual")
+            actual_text = "unresolved" if actual is None else f"{actual:.3f}"
+            top_issues.append(
+                f"{detail['constraint_label']} {detail['violation_direction']} by "
+                f"{detail['violation_amount']:.3f} {detail['unit']} (actual {actual_text})"
+            )
+
+        issues_text = "; ".join(top_issues)
+        return (
+            f"Compromise solution leaves {violated_constraints} of {total_constraints} nutritional "
+            f"constraints unsatisfied. Worst issues: {issues_text}"
+        )
+
+    def _build_penalized_objective(
+        self,
+        base_objective: Callable[[np.ndarray], float],
+        nutritional_constraints: List[Dict[str, Any]],
+        selected_feeds: List[str]
+    ) -> Callable[[np.ndarray], float]:
+        """Build the compromise objective used when the strict solve fails."""
+        def penalized_objective(x: np.ndarray) -> float:
+            constraint_details = self._evaluate_constraints(x, selected_feeds, nutritional_constraints)
+            total_penalty = sum(detail["penalty"] for detail in constraint_details)
+            return base_objective(x) + total_penalty
+
+        return penalized_objective
+
+    def _build_initial_guess(
+        self,
+        n_feeds: int,
+        bounds: List[Tuple[float, float]],
+        candidate: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        """Build a stable starting point for SLSQP."""
+        if candidate is not None and len(candidate) == n_feeds and np.all(np.isfinite(candidate)):
+            x0 = np.clip(np.array(candidate, dtype=float), [b[0] for b in bounds], [b[1] for b in bounds])
+            total = np.sum(x0)
+            if total > 0:
+                return x0 / total * 100.0
+
+        return np.ones(n_feeds) * (100.0 / n_feeds)
+
+    def _build_result_dict(
+        self,
+        feed_percentages: np.ndarray,
+        selected_feeds: List[str],
+        nutritional_constraints: List[Dict[str, Any]],
+        optimization_goal: str,
+        solution_mode: str,
+        strict_result: Any,
+        fallback_result: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Format optimization output with detailed constraint diagnostics."""
+        predicted_dmi = self._get_dmi(feed_percentages, selected_feeds)
+
+        formulation = {}
+        total_cost = 0.0
+        for i, feed_name in enumerate(selected_feeds):
+            pct = float(feed_percentages[i])
+            if pct > 0.001:
+                feed_data = self.feeds[feed_name]
+                dm_pct = feed_data.get("dm_percent", 100)
+                kg_dm = predicted_dmi * pct / 100
+                kg_fresh = kg_dm / (dm_pct / 100)
+
+                formulation[feed_name] = {
+                    "percentage_dm": round(pct, 2),
+                    "kg_per_day": round(kg_fresh, 2),
+                    "kg_dm_per_day": round(kg_dm, 2)
+                }
+
+                cost_per_kg_dm = feed_data.get("cost_per_kg", 0) / (dm_pct / 100)
+                total_cost += pct * cost_per_kg_dm / 100
+
+        nutrient_analysis = self._calculate_nutrient_analysis(formulation, selected_feeds)
+
+        nasem_results = self._get_nasem_values(
+            feed_percentages,
+            selected_feeds,
+            ["An_MPIn_g", "An_MEIn", "Mlk_Prod_MPalow", "Mlk_Prod_NEalow"]
+        )
+        predicted_mp = nasem_results.get("An_MPIn_g", 0.0)
+        predicted_me = nasem_results.get("An_MEIn", 0.0)
+        mp_milk = nasem_results.get("Mlk_Prod_MPalow", 0.0)
+        ne_milk = nasem_results.get("Mlk_Prod_NEalow", 0.0)
+
+        if mp_milk > 0 and ne_milk > 0:
+            predicted_milk = min(mp_milk, ne_milk)
+            if mp_milk < ne_milk:
+                limiting_factor = "MP"
+            elif ne_milk < mp_milk:
+                limiting_factor = "NE"
+            else:
+                limiting_factor = "balanced"
+        else:
+            predicted_milk = max(mp_milk, ne_milk)
+            limiting_factor = "unknown"
+
+        constraint_details = self._evaluate_constraints(feed_percentages, selected_feeds, nutritional_constraints)
+        constraint_summary = self._summarize_constraints(constraint_details)
+        all_constraints_satisfied = constraint_summary["all_constraints_satisfied"]
+        violated_constraints = [
+            detail for detail in constraint_details
+            if not detail.get("satisfied", True) and detail.get("penalty_applicable", True)
+        ]
+
+        feed_cost_per_day = self._calculate_feed_cost_per_day(feed_percentages, selected_feeds, predicted_dmi)
+        base_objective = self._build_objective(selected_feeds, optimization_goal)
+        result_dict = {
+            "status": "success" if all_constraints_satisfied else "compromised",
+            "solution_mode": solution_mode,
+            "optimization_goal": optimization_goal,
+            "formulation": formulation,
+            "predicted_dmi_kg": round(predicted_dmi, 2),
+            "predicted_mp_g": round(predicted_mp, 0),
+            "predicted_me_mcal": round(predicted_me, 2),
+            "predicted_milk_kg": round(predicted_milk, 2),
+            "milk_limited_by": limiting_factor,
+            "cost_per_kg_dm": round(float(total_cost), 3),
+            "feed_cost_per_day": round(float(feed_cost_per_day), 2),
+            "nutrient_analysis": nutrient_analysis,
+            "optimization_method": "SLSQP (strict-first with compromise fallback)",
+            "strict_solver_status": "success" if bool(getattr(strict_result, "success", False)) else "failed",
+            "strict_solver_message": str(getattr(strict_result, "message", "")),
+            "all_nutritional_constraints_satisfied": all_constraints_satisfied,
+            "constraint_summary": {
+                "total_constraints": constraint_summary["total_constraints"],
+                "satisfied_constraints": constraint_summary["satisfied_constraints"],
+                "violated_constraints": constraint_summary["violated_constraints"],
+                "all_constraints_satisfied": constraint_summary["all_constraints_satisfied"],
+                "total_penalty": round(float(constraint_summary["total_penalty"]), 6),
+                "max_severity_percent": round(float(constraint_summary["max_severity_percent"]), 3),
+            },
+            "constraint_details": constraint_details,
+            "violated_constraints": violated_constraints,
+            "constraint_satisfaction": self._format_constraint_summary(constraint_summary, solution_mode),
+            "objective_value": round(float(base_objective(feed_percentages)), 6),
+            "total_penalty": round(float(constraint_summary["total_penalty"]), 6),
+        }
+
+        if optimization_goal == "maximize_profit":
+            milk_price = self.animal_params.get("milk_price_per_kg", 3.0) if self.animal_params else 3.0
+            milk_revenue = predicted_milk * milk_price
+            result_dict["milk_revenue_per_day"] = round(float(milk_revenue), 2)
+            result_dict["profit_per_day"] = round(float(milk_revenue - feed_cost_per_day), 2)
+
+        if fallback_result is not None:
+            result_dict["fallback_solver_status"] = "success" if bool(getattr(fallback_result, "success", False)) else "failed"
+            result_dict["fallback_solver_message"] = str(getattr(fallback_result, "message", ""))
+
+        if self.animal_params:
+            result_dict["animal_params_used"] = self.animal_params
+        if self.dmi_override:
+            result_dict["dmi_override_kg"] = self.dmi_override
+
+        return result_dict
     
     def optimize(
         self,
@@ -383,45 +918,10 @@ class FormulationOptimizer:
             # Clear caches for this optimization run
             self._nasem_cache.clear()
             NASEMCacheStats.reset()
+            self.dmi_override = None
             
             n_feeds = len(selected_feeds)
-            
-            # Objective function based on optimization goal
-            if optimization_goal == "feasibility":
-                # Just find any feasible solution - constant objective
-                def objective(x):
-                    return 0.0
-            elif optimization_goal == "maximize_profit":
-                # Maximize profit = milk revenue - feed cost
-                milk_price = self.animal_params.get("milk_price_per_kg", 3.0) if self.animal_params else 3.0
-                
-                def objective(x):
-                    # Calculate total feed cost
-                    dmi = self._get_dmi(x, selected_feeds)
-                    total_feed_cost = 0.0
-                    for i, feed_name in enumerate(selected_feeds):
-                        feed_data = self.feeds[feed_name]
-                        dm_pct = feed_data.get("dm_percent", 100)
-                        cost_per_kg_dm = feed_data.get("cost_per_kg", 0) / (dm_pct / 100)
-                        kg_dm = dmi * x[i] / 100
-                        total_feed_cost += kg_dm * cost_per_kg_dm
-                    
-                    # Calculate milk revenue using least-constraint milk
-                    predicted_milk = self._get_nasem_milk_prod(x, selected_feeds)
-                    milk_revenue = predicted_milk * milk_price
-                    
-                    # Profit = revenue - cost, return negative for minimization
-                    profit = milk_revenue - total_feed_cost
-                    return -profit  # Minimize negative profit = maximize profit
-            else:
-                # Default: minimize cost per kg DM
-                def objective(x):
-                    total_cost = 0.0
-                    for i, feed_name in enumerate(selected_feeds):
-                        feed_data = self.feeds[feed_name]
-                        cost_per_kg_dm = feed_data.get("cost_per_kg", 0) / (feed_data.get("dm_percent", 100) / 100)
-                        total_cost += x[i] * cost_per_kg_dm / 100
-                    return total_cost
+            objective = self._build_objective(selected_feeds, optimization_goal)
             
             # Equality constraint: percentages sum to 100
             def eq_constraint(x):
@@ -576,95 +1076,105 @@ class FormulationOptimizer:
                 bounds.append((min_incl, max_incl))
             
             # Initial guess - equal distribution
-            x0 = np.ones(n_feeds) * (100.0 / n_feeds)
+            x0 = self._build_initial_guess(n_feeds, bounds)
             
             # All constraints for SLSQP
-            constraints = [{"type": "eq", "fun": eq_constraint}] + ineq_constraints
+            strict_constraints = [{"type": "eq", "fun": eq_constraint}] + ineq_constraints
             
-            # Optimize
-            result = minimize(
+            # Strict solve first: preserve the existing hard-constraint semantics.
+            strict_result = minimize(
                 objective,
                 x0,
                 method='SLSQP',
                 bounds=bounds,
-                constraints=constraints,
+                constraints=strict_constraints,
                 options={'maxiter': 200, 'ftol': 1e-6}
             )
             
-            if not result.success:
-                return {"error": f"Optimization failed: {result.message}", "status": "failed"}
-            
-            # Format results
-            feed_percentages = result.x
-            predicted_dmi = self._get_dmi(feed_percentages, selected_feeds)
-            
-            formulation = {}
-            total_cost = 0.0
-            
-            for i, feed_name in enumerate(selected_feeds):
-                pct = float(feed_percentages[i])
-                if pct > 0.001:
-                    feed_data = self.feeds[feed_name]
-                    dm_pct = feed_data.get("dm_percent", 100)
-                    kg_dm = predicted_dmi * pct / 100
-                    kg_fresh = kg_dm / (dm_pct / 100)
-                    
-                    formulation[feed_name] = {
-                        "percentage_dm": round(pct, 2),
-                        "kg_per_day": round(kg_fresh, 2),
-                        "kg_dm_per_day": round(kg_dm, 2)
-                    }
-                    
-                    cost_per_kg_dm = feed_data.get("cost_per_kg", 0) / (dm_pct / 100)
-                    total_cost += pct * cost_per_kg_dm / 100
-            
-            # Calculate nutrient analysis
-            nutrient_analysis = self._calculate_nutrient_analysis(formulation, selected_feeds)
-            
-            # Calculate predicted MP, ME, and milk production using NASEM (single model run)
-            nasem_results = self._get_nasem_values(
-                feed_percentages, selected_feeds, 
-                ["An_MPIn_g", "An_MEIn", "Mlk_Prod_MPalow", "Mlk_Prod_NEalow"]
+            if strict_result.success:
+                return self._build_result_dict(
+                    strict_result.x,
+                    selected_feeds,
+                    nutritional_constraints,
+                    optimization_goal,
+                    "strict",
+                    strict_result,
+                )
+
+            # On the compromise path, DMI is softened like other nutrition targets.
+            self.dmi_override = None
+            penalized_objective = self._build_penalized_objective(
+                objective,
+                nutritional_constraints,
+                selected_feeds,
             )
-            predicted_mp = nasem_results.get("An_MPIn_g", 0.0)
-            predicted_me = nasem_results.get("An_MEIn", 0.0)
-            mp_milk = nasem_results.get("Mlk_Prod_MPalow", 0.0)
-            ne_milk = nasem_results.get("Mlk_Prod_NEalow", 0.0)
-            
-            # Determine predicted milk and limiting factor
-            if mp_milk > 0 and ne_milk > 0:
-                predicted_milk = min(mp_milk, ne_milk)
-                if mp_milk < ne_milk:
-                    limiting_factor = "MP"
-                elif ne_milk < mp_milk:
-                    limiting_factor = "NE"
-                else:
-                    limiting_factor = "balanced"
-            else:
-                predicted_milk = max(mp_milk, ne_milk)
-                limiting_factor = "unknown"
-            
-            result_dict = {
-                "status": "success",
-                "formulation": formulation,
-                "predicted_dmi_kg": round(predicted_dmi, 2),
-                "predicted_mp_g": round(predicted_mp, 0),
-                "predicted_me_mcal": round(predicted_me, 2),
-                "predicted_milk_kg": round(predicted_milk, 2),
-                "milk_limited_by": limiting_factor,
-                "cost_per_kg_dm": round(float(total_cost), 3),
-                "nutrient_analysis": nutrient_analysis,
-                "optimization_method": "SLSQP",
-                "constraint_satisfaction": "All constraints satisfied"
+            fallback_x0 = self._build_initial_guess(
+                n_feeds,
+                bounds,
+                candidate=getattr(strict_result, "x", None),
+            )
+            fallback_result = minimize(
+                penalized_objective,
+                fallback_x0,
+                method='SLSQP',
+                bounds=bounds,
+                constraints=[{"type": "eq", "fun": eq_constraint}],
+                options={'maxiter': 300, 'ftol': 1e-6}
+            )
+
+            if fallback_result.success:
+                constraint_details = self._evaluate_constraints(
+                    fallback_result.x,
+                    selected_feeds,
+                    nutritional_constraints,
+                )
+                summary = self._summarize_constraints(constraint_details)
+                solution_mode = "fallback_feasible" if summary["all_constraints_satisfied"] else "fallback_compromise"
+                return self._build_result_dict(
+                    fallback_result.x,
+                    selected_feeds,
+                    nutritional_constraints,
+                    optimization_goal,
+                    solution_mode,
+                    strict_result,
+                    fallback_result,
+                )
+
+            diagnostic_result = getattr(fallback_result, "x", None)
+            if diagnostic_result is None or len(diagnostic_result) != n_feeds or not np.all(np.isfinite(diagnostic_result)):
+                diagnostic_result = getattr(strict_result, "x", None)
+
+            failure_payload: Dict[str, Any] = {
+                "error": (
+                    f"Optimization failed. Strict solve: {strict_result.message}. "
+                    f"Fallback solve: {fallback_result.message}."
+                ),
+                "status": "failed",
+                "optimization_method": "SLSQP (strict-first with compromise fallback)",
+                "strict_solver_status": "failed",
+                "strict_solver_message": str(strict_result.message),
+                "fallback_solver_status": "failed",
+                "fallback_solver_message": str(fallback_result.message),
             }
-            
-            # Add animal params if used
-            if self.animal_params:
-                result_dict["animal_params_used"] = self.animal_params
-            if self.dmi_override:
-                result_dict["dmi_override_kg"] = self.dmi_override
-            
-            return result_dict
+
+            if diagnostic_result is not None and len(diagnostic_result) == n_feeds and np.all(np.isfinite(diagnostic_result)):
+                constraint_details = self._evaluate_constraints(
+                    diagnostic_result,
+                    selected_feeds,
+                    nutritional_constraints,
+                )
+                summary = self._summarize_constraints(constraint_details)
+                failure_payload["constraint_summary"] = {
+                    "total_constraints": summary["total_constraints"],
+                    "satisfied_constraints": summary["satisfied_constraints"],
+                    "violated_constraints": summary["violated_constraints"],
+                    "all_constraints_satisfied": summary["all_constraints_satisfied"],
+                    "total_penalty": round(float(summary["total_penalty"]), 6),
+                    "max_severity_percent": round(float(summary["max_severity_percent"]), 3),
+                }
+                failure_payload["violated_constraints"] = summary["top_violations"]
+
+            return failure_payload
             
         except Exception as e:
             logger.error(f"SLSQP optimization error: {e}")

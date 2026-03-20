@@ -17,21 +17,11 @@ env = Environment(
 
 
 def _is_anthropic_model() -> bool:
-    """Check if the current model configuration uses Anthropic/Claude models."""
-    endpoint = os.getenv("OPENAI_ENDPOINT", "")
-    model = os.getenv("NUTRITIONIST_MODEL", os.getenv("OPENROUTER_MODEL", ""))
+    """Check if the current model configuration uses Anthropic/Claude models via OpenRouter."""
+    model = os.getenv("NUTRITIONIST_MODEL", os.getenv("OPENROUTER_MODEL", "")).lower()
     
-    # Check if using Anthropic via OpenRouter
-    if "openrouter" in endpoint.lower() and "anthropic" in model.lower():
-        return True
-    if "openrouter" in endpoint.lower() and "claude" in model.lower():
-        return True
-    
-    # Check if using Anthropic API directly
-    if "anthropic" in endpoint.lower():
-        return True
-    
-    return False
+    # Check model name for Anthropic identifiers (OpenRouter uses anthropic/ prefix)
+    return "anthropic" in model or "claude" in model
 
 
 def add_cache_control_to_messages(messages: List[Any]) -> List[Any]:

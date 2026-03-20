@@ -35,7 +35,13 @@ DEFAULT_FEEDBASE_PREFIX = "default_"
 
 
 def is_free_tier(user: User) -> bool:
-    """Return True if the user is assigned to the free tier."""
+    """Return True if the user is assigned to the free tier.
+    
+    Bypassed when RESEARCH_MODE=true (treats all users as paid).
+    """
+    import os
+    if os.getenv("RESEARCH_MODE", "").lower() in ("true", "1", "yes"):
+        return False
     return getattr(user, "tier", FREE_TIER) == FREE_TIER
 
 
@@ -203,11 +209,16 @@ async def list_sessions(current_user: User = Depends(current_active_user)):
 @router.get("/animal-types")
 async def get_animal_types(current_user: User = Depends(current_active_user)):
     """Get list of animal types available to the current user"""
+    import os
     all_types = [t.value for t in AnimalType]
 
-    # If user has specific allowed types, return those
+    # In RESEARCH_MODE, limit to dairy_cow only
+    if os.getenv("RESEARCH_MODE", "").lower() in ("true", "1", "yes"):
+        all_types = ["dairy_cow"]
+
+    # If user has specific allowed types, return those (intersected with deployment filter)
     if current_user.allowed_animal_types:
-        allowed_types = current_user.allowed_animal_types
+        allowed_types = [t for t in current_user.allowed_animal_types if t in all_types]
     else:
         # If no restrictions, return all available types
         allowed_types = all_types
@@ -1097,7 +1108,7 @@ async def export_feedbase(feedbase_name: str, current_user: User = Depends(curre
             row = {
                 '饲料名称': feed_name,
                 '干物质含量(%)': feed_data.get('dm_percent', 0),
-                '成本(¥/kg)': feed_data.get('cost_per_kg', 0)
+                '成本(/kg)': feed_data.get('cost_per_kg', 0)
             }
 
             # Add nutrients as separate columns
@@ -1110,7 +1121,7 @@ async def export_feedbase(feedbase_name: str, current_user: User = Depends(curre
         # Create DataFrame and Excel file
         if not rows:
             # Create empty DataFrame with basic structure
-            df = pd.DataFrame(columns=['饲料名称', '干物质含量(%)', '成本(¥/kg)'])
+            df = pd.DataFrame(columns=['饲料名称', '干物质含量(%)', '成本(/kg)'])
         else:
             df = pd.DataFrame(rows)
 

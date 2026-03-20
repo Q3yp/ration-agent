@@ -35,11 +35,18 @@ export function AnimalTypeSelector({ onSelect, onCancel }: AnimalTypeSelectorPro
     try {
       setLoading(true)
       const data = await httpClient.getJson('/animal-types')
-      setAnimalTypes(data.animal_types || [])
+      const types = data.animal_types || []
+      setAnimalTypes(types)
+
+      // Auto-select and auto-confirm if only one option is available
+      if (types.length === 1) {
+        onSelect(types[0].value as AnimalType)
+        return
+      }
 
       // Auto-select first option if available
-      if (data.animal_types && data.animal_types.length > 0) {
-        setSelectedType(data.animal_types[0].value)
+      if (types.length > 0) {
+        setSelectedType(types[0].value)
       }
     } catch (err) {
       console.error('Error fetching animal types:', err)

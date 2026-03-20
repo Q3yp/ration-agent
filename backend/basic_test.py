@@ -4,7 +4,7 @@ from typing import Annotated, Any
 from langchain_core.messages import ToolMessage
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import tool, InjectedToolCallId
-from langchain_openai import ChatOpenAI
+from langchain_openrouter import ChatOpenRouter
 from langgraph.prebuilt import create_react_agent
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from langgraph.types import Command
@@ -62,11 +62,9 @@ async def main() -> None:
         )
         return [{"role": "system", "content": system_msg}] + state["messages"]
 
-    model = ChatOpenAI(
-        model=os.getenv("OPENROUTER_MODEL", "deepseek-chat"),
+    model = ChatOpenRouter(
+        model=os.getenv("OPENROUTER_MODEL", "openai/gpt-5.4-mini"),
         temperature=0.0,
-        openai_api_base=os.getenv("OPENAI_ENDPOINT"),
-        openai_api_key=os.getenv("OPENROUTER_API_KEY"),
     )
 
     # Create the react agent as a node function

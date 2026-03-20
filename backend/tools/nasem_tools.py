@@ -4,6 +4,7 @@ Provides LangChain tools for the NASEM 2021 Dairy Cattle Model.
 Tools load feedbase from store and pass to NASEMService.
 """
 
+import asyncio
 import json
 import logging
 from typing import Annotated, Optional, Dict, Any
@@ -433,8 +434,10 @@ async def evaluate_diet_with_nasem(
             bcs=body_condition_score  # Add BCS from stored params
         )
         
-        # Evaluate diet
-        result = service.evaluate_diet(
+        # Evaluate diet — offload to thread pool to avoid blocking the event loop
+        # (NASEM model run is CPU-intensive: numpy/pandas/DAG evaluation)
+        result = await asyncio.to_thread(
+            service.evaluate_diet,
             feedbase=feedbase,
             diet_composition=diet_composition,
             animal_input=animal_input

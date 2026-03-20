@@ -4,6 +4,7 @@ Formulation Export Tool
 Contains the export_formulation tool for exporting formulations to Excel.
 Extracted from formulation_tools.py to reduce file size.
 """
+import asyncio
 import json
 import logging
 import re
@@ -347,7 +348,9 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                         feedbase_dict = {"feeds": feed_database}
                         
                         # Run NASEM evaluation with full output
-                        nasem_results = nasem_service.evaluate_diet(
+                        # Offload to thread pool (CPU-intensive numpy/pandas work)
+                        nasem_results = await asyncio.to_thread(
+                            nasem_service.evaluate_diet,
                             feedbase=feedbase_dict,
                             diet_composition=diet_composition,
                             animal_input=nasem_animal_input,
@@ -492,25 +495,27 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                     main_rows.append([texts["no_feed_constraints"], "", "", "", ""])
                 
                 # Build profitability column data (G-H, starting at row 1)
+                # Check if milk price was explicitly set
+                has_milk_price = "milk_price_per_kg" in animal_params
+                milk_price_value = animal_params.get("milk_price_per_kg") if has_milk_price else None
+                
                 profit_rows = []
                 profit_rows.append([texts["profitability"], ""])
                 profit_rows.append([texts["input_section"], ""])
                 profit_rows.append([texts["herd_size"], 100])  # Default 100
-                # Use milk_price from animal_params if available, otherwise default to 4.0
-                milk_price_default = animal_params.get("milk_price_per_kg", 4.0)
-                profit_rows.append([texts["milk_price"], milk_price_default])
+                profit_rows.append([texts["milk_price"], milk_price_value if milk_price_value is not None else ""])
                 profit_rows.append(["", ""])
                 
-                # Cost metrics - use placeholders for formulas that reference column E
-                # These will be replaced with Excel formulas during formatting
+                # Cost metrics - always show (don't depend on milk price)
                 profit_rows.append([texts["cost_per_kg_dm"], "__COST_PER_KG_DM__"])  # Formula placeholder
                 profit_rows.append([texts["cost_per_cow_day"], "__COST_PER_COW__"])  # Formula placeholder
                 profit_rows.append([texts["nasem_predicted_milk"], round(predicted_milk, 2) if predicted_milk else 0])
-                profit_rows.append([texts["revenue_per_cow_day"], 0])  # Formula placeholder
-                profit_rows.append([texts["profit_per_cow_day"], 0])  # Formula placeholder
+                # Revenue/profit rows - only populate formulas when milk price is explicitly set
+                profit_rows.append([texts["revenue_per_cow_day"], 0 if has_milk_price else ""])
+                profit_rows.append([texts["profit_per_cow_day"], 0 if has_milk_price else ""])
                 profit_rows.append(["", ""])
-                profit_rows.append([texts["herd_profit_day"], 0])  # Formula placeholder
-                profit_rows.append([texts["herd_profit_month"], 0])  # Formula placeholder
+                profit_rows.append([texts["herd_profit_day"], 0 if has_milk_price else ""])
+                profit_rows.append([texts["herd_profit_month"], 0 if has_milk_price else ""])
                 
                 # Build notes as single text (will be put in vertically merged cell F)
                 # Join all lines with newline for the merged cell
@@ -920,35 +925,35 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                                 h_cell.value = f"=E{total_row}"
                             cost_per_cow_cell = f"H{row_num}"
                         
-                        # Revenue formula (always apply - cells should exist in expected positions)
+                        # Revenue formula - only apply when milk price is explicitly set
                         elif g_value == texts["revenue_per_cow_day"]:
-                            # Revenue = Predicted Milk × Milk Price
-                            if predicted_milk_cell and milk_price_cell:
-                                h_cell.value = f"={predicted_milk_cell}*{milk_price_cell}"
-                            else:
-                                # Fallback: use relative row references if cell tracking failed
-                                h_cell.value = f"=H{row_num-1}*H{row_num-5}"
+                            if has_milk_price:
+                                # Revenue = Predicted Milk × Milk Price
+                                if predicted_milk_cell and milk_price_cell:
+                                    h_cell.value = f"={predicted_milk_cell}*{milk_price_cell}"
+                                else:
+                                    h_cell.value = f"=H{row_num-1}*H{row_num-5}"
                         
-                        # Profit per cow formula (always apply)
+                        # Profit per cow formula - only apply when milk price is explicitly set
                         elif g_value == texts["profit_per_cow_day"]:
-                            # Profit = Revenue - Feed Cost = (Predicted Milk × Milk Price) - Cost per Cow
-                            if predicted_milk_cell and milk_price_cell and cost_per_cow_cell:
-                                h_cell.value = f"={predicted_milk_cell}*{milk_price_cell}-{cost_per_cow_cell}"
-                            else:
-                                # Fallback: Revenue cell is one row above, cost is 3 rows above
-                                h_cell.value = f"=H{row_num-1}-H{row_num-3}"
+                            if has_milk_price:
+                                if predicted_milk_cell and milk_price_cell and cost_per_cow_cell:
+                                    h_cell.value = f"={predicted_milk_cell}*{milk_price_cell}-{cost_per_cow_cell}"
+                                else:
+                                    h_cell.value = f"=H{row_num-1}-H{row_num-3}"
                             profit_row = row_num
                         
-                        # Herd profit/day formula
+                        # Herd profit/day formula - only apply when milk price is explicitly set
                         elif g_value == texts["herd_profit_day"]:
-                            if profit_row and herd_size_cell:
+                            if has_milk_price and profit_row and herd_size_cell:
                                 h_cell.value = f"=H{profit_row}*{herd_size_cell}"
                         
-                        # Herd profit/month formula
+                        # Herd profit/month formula - only apply when milk price is explicitly set
                         elif g_value == texts["herd_profit_month"]:
-                            herd_day_cell = f"H{row_num - 1}" if row_num > 1 else None
-                            if herd_day_cell:
-                                h_cell.value = f"={herd_day_cell}*30"
+                            if has_milk_price:
+                                herd_day_cell = f"H{row_num - 1}" if row_num > 1 else None
+                                if herd_day_cell:
+                                    h_cell.value = f"={herd_day_cell}*30"
 
                         # Input section label
                         elif g_value == texts["input_section"]:

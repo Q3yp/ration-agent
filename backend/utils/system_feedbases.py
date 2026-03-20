@@ -9,7 +9,7 @@ from typing import Dict
 SYSTEM_FEEDBASES_PATH = Path(__file__).resolve().parents[1] / "migrations" / "data" / "system_feedbases.json"
 
 # NASEM feedbase with full Fd_* column names for dairy cow (extracted from NASEM feed library)
-NASEM_FEEDBASE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "nasem_feedbase.json"
+NASEM_FEEDBASE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "nasem_feedbase_enriched.json"
 
 
 class SystemFeedbaseConfigError(RuntimeError):

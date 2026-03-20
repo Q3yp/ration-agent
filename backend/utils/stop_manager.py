@@ -1,11 +1,17 @@
 """StopManager: Complete stream lifecycle management with caching and resumability"""
 import asyncio
 import json
+import os
 import time
 import logging
 from enum import Enum
 from typing import Dict, List, Any, AsyncIterator, Optional
 from services.session_manager import session_manager
+
+try:
+    from langgraph.errors import GraphRecursionError
+except ImportError:
+    GraphRecursionError = None  # Graceful fallback if import path changes
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +124,13 @@ class StopManager:
     _HANDOFF_TOOL_PREFIXES = ("transfer_to_",)
     _HANDOFF_TOOL_NAMES = set()  # Empty set; all handoffs use prefix-based matching
 
+    # Memory-based cache limit (tunable via env vars)
+    MAX_CACHE_MEMORY_BYTES = int(os.environ.get("STOP_MANAGER_MAX_CACHE_MB", "2048")) * 1024 * 1024
+    # When trimming a session under memory pressure, keep newest 20% of events
+    CACHE_TAIL_KEEP_RATIO = float(os.environ.get("STOP_MANAGER_TAIL_KEEP_RATIO", "0.2"))
+    # Orphan sessions (producer done, no consumer for this long) are cleaned up
+    MAX_ORPHAN_AGE_SECONDS = int(os.environ.get("STOP_MANAGER_ORPHAN_AGE", "600"))  # 10 minutes
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -137,6 +150,13 @@ class StopManager:
 
         # Producer tasks
         self.producer_tasks: Dict[str, asyncio.Task] = {}
+
+        # Track last activity time per session for orphan detection
+        self._session_last_active: Dict[str, float] = {}
+
+        # Memory tracking for cache eviction
+        self._session_cache_bytes: Dict[str, int] = {}
+        self._total_cache_bytes: int = 0
 
         self._initialized = True
 
@@ -165,10 +185,100 @@ class StopManager:
             return
         prune_count = index + 1
         if prune_count >= len(events):
+            # Reclaim all bytes for this session
+            self._subtract_session_bytes(session_id, self._session_cache_bytes.get(session_id, 0))
             self.active_sessions[session_id] = []
         else:
+            # Estimate bytes freed from pruned events
+            freed = sum(self._estimate_event_bytes(e) for e in events[:prune_count])
+            self._subtract_session_bytes(session_id, freed)
             self.active_sessions[session_id] = events[prune_count:]
         logger.debug(f"STOP_MANAGER: Pruned cache through index {index} for session {session_id}")
+
+    def _estimate_event_bytes(self, event: Any) -> int:
+        """Fast byte-size estimate for a cached event dict."""
+        try:
+            return len(json.dumps(event, default=str))
+        except Exception:
+            return 512  # conservative fallback
+
+    def _add_session_bytes(self, session_id: str, nbytes: int):
+        """Track bytes added to a session's cache."""
+        self._session_cache_bytes[session_id] = self._session_cache_bytes.get(session_id, 0) + nbytes
+        self._total_cache_bytes += nbytes
+
+    def _subtract_session_bytes(self, session_id: str, nbytes: int):
+        """Track bytes removed from a session's cache."""
+        self._session_cache_bytes[session_id] = max(0, self._session_cache_bytes.get(session_id, 0) - nbytes)
+        self._total_cache_bytes = max(0, self._total_cache_bytes - nbytes)
+
+    def _enforce_memory_limit(self):
+        """Trim the head of the largest session if global cache exceeds memory cap.
+
+        Strategy: target the session with the most cached bytes — it's the
+        longest-running and closest to finishing.  Keep a tail so active
+        streaming / reconnection still works.  Never fully empties a session.
+        """
+        if self._total_cache_bytes <= self.MAX_CACHE_MEMORY_BYTES:
+            return
+
+        # Find the session with the largest cache (by tracked bytes)
+        largest_sid = max(
+            self._session_cache_bytes,
+            key=self._session_cache_bytes.get,
+            default=None,
+        )
+        if largest_sid is None:
+            return
+
+        events = self.active_sessions.get(largest_sid)
+        if not events or len(events) <= 1:
+            return
+
+        # Keep newest CACHE_TAIL_KEEP_RATIO fraction
+        keep_count = max(1, int(len(events) * self.CACHE_TAIL_KEEP_RATIO))
+        evict_count = len(events) - keep_count
+        if evict_count <= 0:
+            return
+
+        freed = sum(self._estimate_event_bytes(e) for e in events[:evict_count])
+        self.active_sessions[largest_sid] = events[evict_count:]
+        self._subtract_session_bytes(largest_sid, freed)
+
+        logger.warning(
+            f"STOP_MANAGER: Memory pressure ({self._total_cache_bytes / 1024 / 1024:.1f} MB). "
+            f"Trimmed {evict_count} old events from session {largest_sid}, "
+            f"freed ~{freed / 1024:.1f} KB, {keep_count} events kept as tail."
+        )
+
+    def _cleanup_orphan_sessions(self):
+        """Remove cached events for sessions whose producer finished long ago.
+
+        Called lazily at the start of new streams — no background timer needed.
+        Only cleans sessions that have NO active producer or stream task
+        and whose last activity exceeds MAX_ORPHAN_AGE_SECONDS.
+        """
+        now = time.time()
+        orphan_ids = []
+        for sid in list(self.active_sessions.keys()):
+            # Skip sessions with active tasks
+            if sid in self.producer_tasks or sid in self.stream_tasks:
+                continue
+            last_active = self._session_last_active.get(sid, 0)
+            if now - last_active > self.MAX_ORPHAN_AGE_SECONDS:
+                orphan_ids.append(sid)
+
+        for sid in orphan_ids:
+            event_count = len(self.active_sessions.get(sid, []))
+            freed = self._session_cache_bytes.pop(sid, 0)
+            self._total_cache_bytes = max(0, self._total_cache_bytes - freed)
+            self.active_sessions.pop(sid, None)
+            self._session_last_active.pop(sid, None)
+            self.stop_requests.discard(sid)
+            logger.info(
+                f"STOP_MANAGER: Cleaned up orphan session {sid} "
+                f"({event_count} cached events, ~{freed / 1024:.1f} KB freed)"
+            )
 
     async def _producer(
         self,
@@ -196,19 +306,27 @@ class StopManager:
                 subgraphs=True
             )
 
+            # Track activity for orphan detection
+            self._session_last_active[session_id] = time.time()
+
             # Process each live event
             async for raw_event in agent_events:
                 try:
                     event_with_timestamp = {**raw_event, "timestamp": time.time()}
 
-                    # 1. Cache raw event
+                    # 1. Cache raw event and track its byte size
                     self.active_sessions[session_id].append(event_with_timestamp)
+                    self._add_session_bytes(session_id, self._estimate_event_bytes(event_with_timestamp))
 
                     # 2. Extract and cache token events
                     token_event = extract_token_event_from_raw(raw_event, token_state)
                     if token_event:
                         token_event["session_id"] = session_id
                         self.active_sessions[session_id].append(token_event)
+                        self._add_session_bytes(session_id, self._estimate_event_bytes(token_event))
+
+                    # 3. Enforce global memory limit (trims largest session head)
+                    self._enforce_memory_limit()
 
                 except Exception as e:
                     logger.error(f"STOP_MANAGER: Error processing live event: {e}")
@@ -260,29 +378,59 @@ class StopManager:
             raise
 
         except Exception as e:
-            logger.error(f"STOP_MANAGER: Producer error for session {session_id}: {e}")
+            logger.error(f"STOP_MANAGER: Producer error for session {session_id}: {type(e).__name__}: {e}")
+
+            error_type = type(e).__name__
+            error_msg = str(e)
+
+            # Classify the error for appropriate user-facing message
+            is_recursion_error = GraphRecursionError is not None and isinstance(e, GraphRecursionError)
+            is_network_error = any(keyword in error_msg.lower() for keyword in [
+                "remote", "connection", "network", "timeout", "disconnect"
+            ])
+
+            if is_recursion_error:
+                user_message = (
+                    "The agent exceeded its maximum reasoning steps. "
+                    "This usually means the request is too complex for a single turn. "
+                    "Please try breaking it into smaller steps."
+                )
+                error_code = "RECURSION_LIMIT"
+            elif is_network_error:
+                user_message = "Network error occurred. Please try again."
+                error_code = "NETWORK_ERROR"
+            else:
+                user_message = "An error occurred during processing. Please try again."
+                error_code = "PROCESSING_ERROR"
 
             # Cache error event for frontend
             if session_id in self.active_sessions:
-                error_type = type(e).__name__
-                error_msg = str(e)
-                is_network_error = any(keyword in error_msg.lower() for keyword in [
-                    "remote", "connection", "network", "timeout", "disconnect"
-                ])
-
                 error_event = {
                     "_event_type": "error",
                     "session_id": session_id,
+                    # Top-level fields for frontend compatibility
+                    "message": user_message,
+                    "content": user_message,
+                    "error_code": error_code,
+                    # Nested detail for debugging
                     "error": {
                         "type": error_type,
                         "message": error_msg,
                         "is_network_error": is_network_error,
-                        "user_message": "Network error occurred. Please try again." if is_network_error else "An error occurred during processing."
+                        "user_message": user_message,
                     },
                     "timestamp": time.time(),
                 }
                 self.active_sessions[session_id].append(error_event)
-            raise
+
+            # For network errors, re-raise to preserve reconnection semantics.
+            # For all other errors (recursion, processing), mark as completed
+            # so the consumer sends the 'complete' SSE event and frontend exits
+            # streaming state cleanly (prevents frontend freeze).
+            if is_network_error:
+                raise
+            else:
+                completed_naturally = True
 
         finally:
             # Only cleanup cache if task completed naturally (not cancelled) 
@@ -311,11 +459,17 @@ class StopManager:
     ) -> AsyncIterator[str]:
         """Start producer and stream cached events to frontend (unified with reconnection)"""
         try:
+            # Opportunistically clean up orphaned sessions to reclaim memory
+            self._cleanup_orphan_sessions()
+
             # If starting a brand new turn (Stream or Resume), we must clear 
             # any previous turn's cached events (like an old ask_user prompt)
             if session_id in self.active_sessions:
-                logger.info(f"STOP_MANAGER: Fresh turn start for {session_id}, clearing stale cache")
+                freed = self._session_cache_bytes.pop(session_id, 0)
+                self._total_cache_bytes = max(0, self._total_cache_bytes - freed)
+                logger.info(f"STOP_MANAGER: Fresh turn start for {session_id}, clearing stale cache (~{freed / 1024:.1f} KB)")
                 self.active_sessions[session_id] = []
+                self._session_cache_bytes[session_id] = 0
 
             # Start producer in background
             producer_task = asyncio.create_task(self._producer(session_id, agent, agent_input, config))
@@ -389,9 +543,14 @@ class StopManager:
         try:
             instance = cls.get_instance()
 
-            # Clean up active sessions cache
+            # Clean up active sessions cache and reclaim tracked bytes
+            freed = instance._session_cache_bytes.pop(session_id, 0)
+            instance._total_cache_bytes = max(0, instance._total_cache_bytes - freed)
             if session_id in instance.active_sessions:
                 instance.active_sessions.pop(session_id)
+
+            # Clean up activity tracking
+            instance._session_last_active.pop(session_id, None)
 
             # Clean up stream tasks
             if session_id in instance.stream_tasks:
@@ -439,6 +598,9 @@ class StopManager:
         Yields SSE-formatted events from cache (handles both raw LangGraph events and token events).
         """
         try:
+            # Mark session as active (prevents orphan cleanup during replay)
+            self._session_last_active[session_id] = time.time()
+
             # Anti-buffering padding
             yield f": {' ' * 2048}\n\n"
 
@@ -508,7 +670,12 @@ class StopManager:
                                 error_data = {
                                     "type": "error",
                                     "session_id": ev["session_id"],
-                                    "error": ev["error"],
+                                    # Top-level fields for frontend compatibility
+                                    "message": ev.get("message", ev.get("error", {}).get("user_message", "An error occurred")),
+                                    "content": ev.get("content", ev.get("message", "An error occurred")),
+                                    "error_code": ev.get("error_code", "PROCESSING_ERROR"),
+                                    # Nested detail for debugging
+                                    "error": ev.get("error", {}),
                                     "timestamp": ev["timestamp"]
                                 }
                                 yield f"event: error\ndata: {json.dumps(error_data, ensure_ascii=False)}\n\n"

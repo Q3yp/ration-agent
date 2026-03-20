@@ -6,7 +6,7 @@ MessageType = Literal[
     "user",           # User input message
     "user_input",     # User response to ask_user tool (orange, with questions context)
     "agent",          # Agent response content (streamable)
-    "thinking",       # DeepSeek reasoning content (streamable, collapsible)
+    "thinking",       # Model reasoning content (streamable, collapsible)
     "tool_call",      # Tool execution indicator
     "tool_result",    # Tool execution result
     "role_transition", # Agent handoff/routing (single expandable bubble)
@@ -85,7 +85,7 @@ def create_agent_message(content: str, message_id: str, timestamp: float, is_str
         message_id: Unique message identifier
         timestamp: Unix timestamp
         is_streaming: Whether this is a streaming chunk
-        metadata: Optional additional metadata (e.g., is_thinking for DeepSeek reasoning)
+        metadata: Optional additional metadata
     """
     # Build metadata dict
     msg_metadata = {}
@@ -103,7 +103,7 @@ def create_agent_message(content: str, message_id: str, timestamp: float, is_str
     )
 
 def create_thinking_message(content: str, message_id: str, timestamp: float, is_streaming: bool = False) -> ParsedMessage:
-    """DeepSeek reasoning content - streamable, displayed in collapsible indicator
+    """Model reasoning content - streamable, displayed in collapsible indicator
     
     Args:
         content: The reasoning/thinking content

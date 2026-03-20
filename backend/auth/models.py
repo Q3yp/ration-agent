@@ -38,13 +38,13 @@ class User(SQLAlchemyBaseUserTable[uuid.UUID], Base):
     allowed_animal_types: Mapped[Optional[List[str]]] = mapped_column(
         JSON,
         nullable=True,
-        default=lambda: ["cat", "dog"]
+        default=lambda: ["dairy_cow"]  # conference override (was: ["cat", "dog"])
     )  # List of allowed animal types
     preferred_language: Mapped[str] = mapped_column(String(length=10), default="zh-CN")
     phone_number: Mapped[Optional[str]] = mapped_column(
         String(length=20), unique=True, index=True, nullable=True
     )
-    tier: Mapped[str] = mapped_column(String(length=20), default="free")
+    tier: Mapped[str] = mapped_column(String(length=20), default="paid")  # conference override (was: "free")
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(
         "OAuthAccount",
         back_populates="user",

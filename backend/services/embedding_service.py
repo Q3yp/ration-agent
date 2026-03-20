@@ -30,7 +30,7 @@ class EmbeddingService:
         self.model = os.getenv("EMBEDDING_MODEL", "openai/text-embedding-3-small")
         self.endpoint = os.getenv("EMBEDDING_ENDPOINT", "https://openrouter.ai/api/v1")
         self.api_key = os.getenv("EMBEDDING_API_KEY")
-        self.dimension = 1536  # text-embedding-3-small dimension
+        self.dimension = 1024  # text-embedding-v4 (DashScope) dimension
         
     @classmethod
     def get_instance(cls) -> 'EmbeddingService':

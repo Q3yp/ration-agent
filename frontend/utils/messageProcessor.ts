@@ -233,10 +233,17 @@ export class MessageProcessor {
           break
 
         case 'error':
+          // Extract message from multiple possible locations for compatibility
+          const errorMessage = data.message
+            || data.content
+            || data.error?.user_message
+            || data.error?.message
+            || 'Unknown error occurred'
           results.push({
             type: 'error',
             data: {
-              message: data.content || data.message || 'Unknown error occurred',
+              message: errorMessage,
+              error_code: data.error_code || data.error?.type || 'UNKNOWN',
               details: data
             }
           })

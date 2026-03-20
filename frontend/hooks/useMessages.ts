@@ -399,27 +399,31 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
 
         case 'error':
           const rawError = event.data
-          const classified = ErrorHandler.classify({
-            message: rawError.message || rawError.content || 'Server error',
-            ...rawError
-          })
+          // Use the backend-provided user-friendly message directly
+          // (backend already classifies errors like GraphRecursionError specifically)
+          const errorMessage = rawError.message || rawError.content || 'Server error'
+          const errorCode = rawError.error_code || 'UNKNOWN'
 
           updateState({
-            error: classified.userMessage,
+            error: errorMessage,
             connectionState: 'error',
             streamingMessageId: null
           })
 
           setIsTyping(false)  // Stop typing on error
+          // Clear all active states to prevent stuck indicators
+          setAnalysisState(prev => prev?.isActive ? { ...prev, isActive: false, isComplete: true } : prev)
+          setFormulationState(prev => prev?.isActive ? { ...prev, isActive: false, isComplete: true } : prev)
+          setThinkingState(prev => prev?.isActive ? { ...prev, isActive: false, isComplete: true } : prev)
 
           if (onError) {
-            onError(classified.userMessage)
+            onError(errorMessage)
           }
 
-          // Auto-retry for certain error types
-          if (ErrorHandler.shouldAutoRetry(classified.originalError)) {
+          // Auto-retry only for network errors, not for processing/recursion errors
+          if (errorCode === 'NETWORK_ERROR') {
             setTimeout(() => {
-              console.log('Auto-retrying after error...')
+              console.log('Auto-retrying after network error...')
               retryConnection()
             }, 3000)
           }
@@ -514,27 +518,31 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
 
+      let buffer = ''
+      let currentEventType = 'message'
+      let currentEventData = ''
+
       try {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
 
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n')
-
-          let eventType = 'message'
-          let eventData = ''
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
 
           for (const line of lines) {
-            if (line.startsWith('event:')) {
-              eventType = line.slice(6).trim()
-            } else if (line.startsWith('data:')) {
-              eventData = line.slice(5).trim()
-            } else if (line === '' && eventData) {
-              const events = MessageProcessor.processSSEEvent(eventType, eventData)
+            const trimmedLine = line.trim()
+            if (trimmedLine.startsWith('event:')) {
+              currentEventType = trimmedLine.slice(6).trim()
+            } else if (trimmedLine.startsWith('data:')) {
+              const dataContent = trimmedLine.slice(5).trim()
+              currentEventData = currentEventData ? `${currentEventData}\n${dataContent}` : dataContent
+            } else if (trimmedLine === '' && currentEventData) {
+              const events = MessageProcessor.processSSEEvent(currentEventType, currentEventData)
               processEvents(events)
-              eventType = 'message'
-              eventData = ''
+              currentEventType = 'message'
+              currentEventData = ''
             }
           }
         }
@@ -612,28 +620,32 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
 
+      let buffer = ''
+      let currentEventType = 'message'
+      let currentEventData = ''
+
       try {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
 
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n')
-
-          let eventType = 'message'
-          let eventData = ''
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
 
           for (const line of lines) {
-            if (line.startsWith('event:')) {
-              eventType = line.slice(6).trim()
-            } else if (line.startsWith('data:')) {
-              eventData = line.slice(5).trim()
-            } else if (line === '' && eventData) {
+            const trimmedLine = line.trim()
+            if (trimmedLine.startsWith('event:')) {
+              currentEventType = trimmedLine.slice(6).trim()
+            } else if (trimmedLine.startsWith('data:')) {
+              const dataContent = trimmedLine.slice(5).trim()
+              currentEventData = currentEventData ? `${currentEventData}\n${dataContent}` : dataContent
+            } else if (trimmedLine === '' && currentEventData) {
               // End of event, process it
-              const events = MessageProcessor.processSSEEvent(eventType, eventData)
+              const events = MessageProcessor.processSSEEvent(currentEventType, currentEventData)
               processEvents(events)
-              eventType = 'message'
-              eventData = ''
+              currentEventType = 'message'
+              currentEventData = ''
             }
           }
         }
@@ -755,27 +767,31 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       const reader = fetchResponse.body.getReader()
       const decoder = new TextDecoder()
 
+      let buffer = ''
+      let currentEventType = 'message'
+      let currentEventData = ''
+
       try {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
 
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n')
-
-          let eventType = 'message'
-          let eventData = ''
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
 
           for (const line of lines) {
-            if (line.startsWith('event:')) {
-              eventType = line.slice(6).trim()
-            } else if (line.startsWith('data:')) {
-              eventData = line.slice(5).trim()
-            } else if (line === '' && eventData) {
-              const events = MessageProcessor.processSSEEvent(eventType, eventData)
+            const trimmedLine = line.trim()
+            if (trimmedLine.startsWith('event:')) {
+              currentEventType = trimmedLine.slice(6).trim()
+            } else if (trimmedLine.startsWith('data:')) {
+              const dataContent = trimmedLine.slice(5).trim()
+              currentEventData = currentEventData ? `${currentEventData}\n${dataContent}` : dataContent
+            } else if (trimmedLine === '' && currentEventData) {
+              const events = MessageProcessor.processSSEEvent(currentEventType, currentEventData)
               processEvents(events)
-              eventType = 'message'
-              eventData = ''
+              currentEventType = 'message'
+              currentEventData = ''
             }
           }
         }

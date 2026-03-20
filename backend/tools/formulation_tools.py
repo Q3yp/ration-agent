@@ -18,6 +18,7 @@ from formulation.optimizer import create_optimizer
 from utils.language import normalize_locale, get_export_texts
 from .formulation_exporter import create_export_formulation_tool, sanitize_feed_name
 from services.embedding_service import get_embedding_service
+from scripts.nasem_nutrient_graph import adjust_template
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,38 @@ def numpy_to_python(obj: Any) -> Any:
     elif isinstance(obj, (list, tuple)):
         return [numpy_to_python(item) for item in obj]
     return obj
+
+
+def _has_nasem_profile(feed_data: Dict[str, Any]) -> bool:
+    """Return True when a feed carries the full dairy NASEM-style nutrient profile."""
+    nutrients = feed_data.get("nutrients", {})
+    return isinstance(nutrients, dict) and "Fd_DM" in nutrients and "Fd_Conc" in nutrients
+
+
+def _apply_feed_overrides(feed_data: Dict[str, Any], nutrient_overrides: Optional[Dict[str, float]]) -> bool:
+    """Apply feed overrides in place.
+
+    Returns True when NASEM dependency adaptation was applied.
+    """
+    if not nutrient_overrides:
+        return False
+
+    existing_nutrients = dict(feed_data.get("nutrients", {}))
+
+    if _has_nasem_profile(feed_data):
+        adjusted_nutrients = adjust_template(existing_nutrients, nutrient_overrides)
+        feed_data["nutrients"] = adjusted_nutrients
+
+        if "Fd_DM" in adjusted_nutrients:
+            feed_data["dm_percent"] = adjusted_nutrients["Fd_DM"]
+        if "Fd_Conc" in adjusted_nutrients:
+            feed_data["type"] = "Concentrate" if adjusted_nutrients["Fd_Conc"] >= 50 else "Forage"
+        return True
+
+    for nutrient_key, nutrient_value in nutrient_overrides.items():
+        existing_nutrients[nutrient_key] = nutrient_value
+    feed_data["nutrients"] = existing_nutrients
+    return False
 
 
 def create_formulation_tools(animal_type: str = "dairy_cow"):
@@ -98,7 +131,9 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         Add or update feed ingredient in a custom feedbase.
 
         For dairy cows: Feed must exist in default_dairy_cow feedbase. All NASEM nutrients
-        are copied from the source, with optional cost and nutrient overrides.
+        are copied from the source, with optional cost and nutrient overrides. NASEM
+        feeds are automatically re-adapted after overrides to keep dependent fields
+        internally consistent.
 
         For other animals: Same reference-based behavior from respective default feedbase.
 
@@ -225,12 +260,8 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             # Apply cost override
             feed_data["cost_per_kg"] = cost_per_kg
             
-            # Apply nutrient overrides if provided
-            if nutrients:
-                if "nutrients" not in feed_data:
-                    feed_data["nutrients"] = {}
-                for nutrient_key, nutrient_value in nutrients.items():
-                    feed_data["nutrients"][nutrient_key] = nutrient_value
+            # Apply nutrient overrides, with NASEM consistency adaptation when possible
+            used_nasem_adaptation = _apply_feed_overrides(feed_data, nutrients)
             
             # Get or create user's custom feedbase
             # Use lock to prevent race conditions with parallel add_feed calls
@@ -263,11 +294,13 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             override_info = ""
             if nutrients:
                 override_info = f" with {len(nutrients)} nutrient override(s)"
+                if used_nasem_adaptation:
+                    override_info += ", adapted for NASEM consistency"
             
             return Command(
                 update={"messages": [ToolMessage(
                     f"{action} feed '{sanitized_name}' in feedbase '{feed_base_name}' "
-                    f"(source: {default_feedbase_name}, cost: ${cost_per_kg}/kg{override_info})",
+                    f"(source: {default_feedbase_name}, cost: {cost_per_kg}/kg{override_info})",
                     tool_call_id=tool_call_id
                 )]}
             )
@@ -394,7 +427,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
         milk_protein_pct: float = 3.2,
         days_pregnant: int = 0,
         breed: str = "Holstein",
-        milk_price_per_kg: float = 3.0,
+milk_price_per_kg: Optional[float] = None,
         state: Annotated[dict, InjectedState] = None,
         tool_call_id: Annotated[str, InjectedToolCallId] = None,
     ) -> Command:
@@ -414,7 +447,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             milk_protein_pct: Target milk protein percentage
             days_pregnant: Days of gestation
             breed: "Holstein", "Jersey", or "Other"
-            milk_price_per_kg: Milk price per kg (used for maximize_profit optimization)
+            milk_price_per_kg: Milk price per kg (optional, used for maximize_profit optimization and export profitability)
         
         Returns:
             Confirmation with stored parameter summary
@@ -430,9 +463,12 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 "milk_protein_pct": float(milk_protein_pct),
                 "days_pregnant": int(days_pregnant),
                 "breed": str(breed),
-                "milk_price_per_kg": float(milk_price_per_kg)
             }
+            # Only include milk_price if explicitly provided
+            if milk_price_per_kg is not None:
+                animal_params["milk_price_per_kg"] = float(milk_price_per_kg)
             
+            milk_price_line = f"  Milk price: {milk_price_per_kg}/kg\n" if milk_price_per_kg is not None else ""
             summary = (
                 f"✓ Animal parameters stored for this session:\n"
                 f"  Body weight: {body_weight} kg\n"
@@ -440,7 +476,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
                 f"  DIM: {dim}, Parity: {parity}, BCS: {bcs}\n"
                 f"  Milk fat: {milk_fat_pct}%, Milk protein: {milk_protein_pct}%\n"
                 f"  Days pregnant: {days_pregnant}, Breed: {breed}\n"
-                f"  Milk price: {milk_price_per_kg} yuan/kg\n\n"
+                f"{milk_price_line}\n"
                 f"These will be used as defaults for formulate_ration, "
                 f"predict_dairy_requirements, and evaluate_diet_with_nasem."
             )
@@ -804,7 +840,7 @@ def create_formulation_tools(animal_type: str = "dairy_cow"):
             """Format feed with all nutrients (full mode), skipping 0/null values."""
             lines = [f"**{feed_name}**"]
             lines.append(f"  DM: {feed_data.get('dm_percent', 'N/A')}%")
-            lines.append(f"  Cost: ${feed_data.get('cost_per_kg', 0)}/kg")
+            lines.append(f"  Cost: {feed_data.get('cost_per_kg', 0)}/kg")
             
             if feed_data.get('category'):
                 lines.append(f"  Category: {feed_data['category']}")

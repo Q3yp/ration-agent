@@ -4,7 +4,7 @@ import MessageList from './MessageList'
 import FileUpload from '../feedbase/FileUpload'
 import HtmlArtifact from './HtmlArtifact'
 import UserInputRequest from '../shared/UserInputRequest'
-import { PlanUpgradeModal } from '../shared/PlanUpgradeModal'
+// import { PlanUpgradeModal } from '../shared/PlanUpgradeModal' // suppressed for conference
 import { useMessages } from '@/hooks/useMessages'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -362,7 +362,7 @@ export default function ChatInterface({
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
-                  onClick={() => setShowUpgradeModal(true)}
+                  onClick={clearPlanLimitInfo} // suppressed upgrade modal for conference
                 >
                   {t('chat.promptLimitCTA')}
                 </Button>
@@ -481,11 +481,7 @@ export default function ChatInterface({
         </div>
       )}
 
-      {/* Plan Upgrade Modal */}
-      <PlanUpgradeModal
-        open={showUpgradeModal}
-        onOpenChange={setShowUpgradeModal}
-      />
+      {/* Plan Upgrade Modal - suppressed for conference */}
     </div>
   )
 }

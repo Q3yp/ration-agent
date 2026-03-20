@@ -116,5 +116,8 @@ backend/test_suite/test_runs/
 design-showcase/
 
 # AI Agent configuration
-.agent/
 .claude/
+
+# repcon
+.repcon/
+repcon.egg-info/

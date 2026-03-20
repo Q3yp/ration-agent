@@ -378,15 +378,15 @@ class UnifiedMessageParser:
             operation_data = {
                 "feed_name": name,
                 "feed_base_name": feed_base_name,
-                "cost_per_kg": f"¥{cost:.2f}",
+                "cost_per_kg": f"{cost:.2f}",
                 "nutrients": nutrients
             }
             # Note: DM% is not shown because it comes from the source feed in system feedbase,
             # not from user input. The add_feed tool copies nutrients from the source feed.
             description = (
-                f"添加饲料 {name} 到饲料库 [{feed_base_name}] (¥{cost:.2f}/kg)"
+                f"添加饲料 {name} 到饲料库 [{feed_base_name}] ({cost:.2f}/kg)"
                 if locale != "en-US"
-                else f"Add feed {name} to feedbase [{feed_base_name}] (¥{cost:.2f}/kg)"
+                else f"Add feed {name} to feedbase [{feed_base_name}] ({cost:.2f}/kg)"
             )
             return description, operation_data
             
@@ -465,7 +465,7 @@ class UnifiedMessageParser:
             milk_protein_pct = tool_args.get("milk_protein_pct", 3.2)
             days_pregnant = tool_args.get("days_pregnant", 0)
             breed = tool_args.get("breed", "Holstein")
-            milk_price = tool_args.get("milk_price_per_kg", 3.0)
+            milk_price = tool_args.get("milk_price_per_kg")
             
             operation_data = {
                 "body_weight": f"{body_weight}kg",
@@ -477,8 +477,9 @@ class UnifiedMessageParser:
                 "milk_protein_pct": f"{milk_protein_pct}%",
                 "days_pregnant": days_pregnant,
                 "breed": breed,
-                "milk_price": f"¥{milk_price}/kg"
             }
+            if milk_price is not None:
+                operation_data["milk_price"] = f"{milk_price}/kg"
             description = (
                 f"设置动物参数 (体重{body_weight}kg, 产奶{milk_prod}kg, DIM{dim}, 胎次{parity})"
                 if locale != "en-US"
@@ -888,8 +889,8 @@ class UnifiedMessageParser:
             chunk_content = chunk.content
             results = []
             
-            # Handle DeepSeek thinking mode: stream reasoning_content as separate thinking message
-            # reasoning_content is available in additional_kwargs for ChatDeepSeek
+            # Handle thinking/reasoning mode: stream reasoning_content as separate thinking message
+            # reasoning_content is available in additional_kwargs for models that support it (Qwen, DeepSeek, etc.)
             reasoning_content = None
             if hasattr(chunk, 'additional_kwargs'):
                 reasoning_content = chunk.additional_kwargs.get('reasoning_content')
