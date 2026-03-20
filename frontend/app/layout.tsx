@@ -28,7 +28,7 @@ export default async function RootLayout({
   }
 
   const resolvedLocale = initialLocale ?? defaultLocale
-  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ''
+  const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
 
   return (
     <html lang={resolvedLocale}>

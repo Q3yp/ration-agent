@@ -38,7 +38,8 @@ logging.getLogger("sqlalchemy.orm").setLevel(logging.WARNING)
 
 class HealthCheckFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        return '/health' not in record.getMessage()
+        msg = record.getMessage()
+        return '/health' not in msg and 'HEAD / ' not in msg
 
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
@@ -95,6 +96,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.head("/")
+@app.get("/")
+async def health_check():
+    return {"status": "ok"}
 
 app.include_router(router)
 app.include_router(auth_router, prefix="/auth")

@@ -118,6 +118,7 @@ services:
       - PORT=3000
       - HOSTNAME=0.0.0.0
       - BACKEND_URL=http://backend:8000
+      - GOOGLE_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
     ports:
       - "3000:3000"
     depends_on:

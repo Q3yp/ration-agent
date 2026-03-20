@@ -53,7 +53,15 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
   const buttonRef = useRef<HTMLDivElement | null>(null)
   const { t } = useI18n()
   const { loginWithGoogleIdToken } = useAuthContext()
-  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
+  const [googleClientId, setGoogleClientId] = useState('')
+
+  // Fetch Google Client ID from server at runtime (not baked in at build time)
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(data => setGoogleClientId(data.googleClientId || ''))
+      .catch(() => setGoogleClientId(''))
+  }, [])
 
   const clearLocalError = () => {
     if (localError) {
