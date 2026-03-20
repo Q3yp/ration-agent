@@ -291,14 +291,15 @@ class SchemaManager:
             now = datetime.utcnow()
             
             await conn.execute(text("""
-                INSERT INTO users (id, email, username, hashed_password, is_active, is_superuser, is_verified, role, full_name, created_at, updated_at)
-                VALUES (:id, :email, :username, :password, TRUE, TRUE, TRUE, 'admin', :full_name, :created_at, :updated_at)
+                INSERT INTO users (id, email, username, hashed_password, is_active, is_superuser, is_verified, role, full_name, preferred_language, created_at, updated_at)
+                VALUES (:id, :email, :username, :password, TRUE, TRUE, TRUE, 'admin', :full_name, :preferred_language, :created_at, :updated_at)
             """), {
                 "id": admin_id,
                 "email": "admin@example.com",
                 "username": "admin",
                 "password": admin_password,
                 "full_name": "Administrator",
+                "preferred_language": "zh-CN",
                 "created_at": now,
                 "updated_at": now
             })
