@@ -4,24 +4,28 @@ import { useState } from 'react'
 import { MessageSquare, Send, ChevronDown, ChevronUp } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/contexts/I18nContext'
 
 interface UserInputRequestProps {
     description?: string | null
     questions: string[]
+    defaultResponse?: string | null
     onSubmit: (response: string) => void
     disabled?: boolean
 }
 
-export default function UserInputRequest({ description, questions, onSubmit, disabled }: UserInputRequestProps) {
+export default function UserInputRequest({ description, questions, defaultResponse, onSubmit, disabled }: UserInputRequestProps) {
     const [answers, setAnswers] = useState<string[]>(questions.map(() => ''))
+    const [freeText, setFreeText] = useState(defaultResponse || '')
     const [isCollapsed, setIsCollapsed] = useState(false)
     const [isSubmitted, setIsSubmitted] = useState(false)
     const { locale } = useI18n()
 
     const headerText = locale === 'en-US' ? 'Info Request' : '请求更多信息'
     const submitText = locale === 'en-US' ? 'Submit' : '提交'
+    const freeTextPlaceholder = locale === 'en-US' ? 'Additional notes (optional)...' : '补充说明（选填）...'
 
     // For collapsed header, show truncated description if available
     const getHeaderDisplay = () => {
@@ -41,16 +45,31 @@ export default function UserInputRequest({ description, questions, onSubmit, dis
     }
 
     const handleSubmit = () => {
-        // Combine all answers into a single response
-        const nonEmptyAnswers = answers.filter(a => a.trim())
-        if (nonEmptyAnswers.length > 0 && !disabled) {
+        const hasAnswers = answers.some(a => a.trim())
+        const hasFreeText = freeText.trim()
+        if ((hasAnswers || hasFreeText) && !disabled) {
             setIsSubmitted(true)
             setIsCollapsed(true)
-            // Format: "Q1: answer1\nQ2: answer2" or just the answers if single question
-            const response = questions.length === 1
-                ? answers[0].trim()
-                : questions.map((q, i) => `${q}: ${answers[i].trim()}`).join('\n')
-            onSubmit(response)
+
+            // Build response parts
+            const parts: string[] = []
+
+            // Add question answers
+            if (questions.length === 1 && !hasFreeText) {
+                parts.push(answers[0].trim())
+            } else if (questions.length > 0) {
+                const answeredQuestions = questions
+                    .map((q, i) => answers[i].trim() ? `${q}: ${answers[i].trim()}` : null)
+                    .filter(Boolean)
+                parts.push(...answeredQuestions as string[])
+            }
+
+            // Add free text
+            if (hasFreeText) {
+                parts.push(freeText.trim())
+            }
+
+            onSubmit(parts.join('\n'))
         }
     }
 
@@ -61,7 +80,7 @@ export default function UserInputRequest({ description, questions, onSubmit, dis
         }
     }
 
-    const hasValidAnswers = answers.some(a => a.trim())
+    const hasValidInput = answers.some(a => a.trim()) || freeText.trim()
 
     return (
         <div className="flex justify-start items-start gap-2">
@@ -118,12 +137,24 @@ export default function UserInputRequest({ description, questions, onSubmit, dis
                                     </div>
                                 )}
 
+                                {/* Free text input */}
+                                {!isSubmitted && (
+                                    <Textarea
+                                        value={freeText}
+                                        onChange={(e) => setFreeText(e.target.value)}
+                                        disabled={disabled}
+                                        placeholder={freeTextPlaceholder}
+                                        rows={2}
+                                        className="w-full text-sm bg-white border-amber-200 focus:border-amber-400 resize-none"
+                                    />
+                                )}
+
                                 {/* Submit button */}
                                 {!isSubmitted && (
                                     <div className="flex justify-end pt-1">
                                         <Button
                                             onClick={handleSubmit}
-                                            disabled={disabled || !hasValidAnswers}
+                                            disabled={disabled || !hasValidInput}
                                             size="sm"
                                             className="bg-amber-500 hover:bg-amber-600 text-white"
                                         >
@@ -148,4 +179,3 @@ export default function UserInputRequest({ description, questions, onSubmit, dis
         </div>
     )
 }
-

@@ -27,7 +27,6 @@ from typing import Dict, Any, List, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from formulation.optimizer import FormulationOptimizer
-from services.nasem_service import get_nasem_service
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -228,6 +227,7 @@ def evaluate_with_nasem(
         formulation_result: Complete formulation result dict from optimizer  
         milk_prod, body_weight, dim, parity: Animal params
     """
+    from services.nasem_service import get_nasem_service
     from services.nasem_service import NASEMService
     nasem_service = get_nasem_service()
     
@@ -258,15 +258,30 @@ def evaluate_with_nasem(
 
 def print_formulation_result(result: Dict[str, Any]):
     """Pretty print formulation result."""
-    if result.get("status") != "success":
-        print(f"\n❌ Formulation failed: {result.get('message', 'Unknown error')}")
-        return
-    
-    print("\n" + "=" * 60)
-    print("✅ FORMULATION RESULT")
-    print("=" * 60)
-    
+    status = result.get("status")
     formulation = result.get("formulation", {})
+
+    if status == "failed" or (not formulation and status != "success"):
+        print(f"\n❌ Formulation failed: {result.get('error') or result.get('message', 'Unknown error')}")
+        return
+
+    print("\n" + "=" * 60)
+    if status == "compromised":
+        print("⚠️  COMPROMISE FORMULATION RESULT")
+    else:
+        print("✅ FORMULATION RESULT")
+    print("=" * 60)
+
+    solution_mode = result.get("solution_mode")
+    if solution_mode:
+        print(f"\n🧭 Solution mode: {solution_mode}")
+    if result.get("constraint_satisfaction"):
+        print(f"   {result['constraint_satisfaction']}")
+    if result.get("strict_solver_message"):
+        print(f"   Strict solver: {result.get('strict_solver_status', 'unknown')} ({result['strict_solver_message']})")
+    if result.get("fallback_solver_message"):
+        print(f"   Fallback solver: {result.get('fallback_solver_status', 'unknown')} ({result['fallback_solver_message']})")
+
     total_kg = 0
     
     print(f"\n{'Feed':<35} {'% DM':>8} {'kg/day':>10}")
@@ -302,8 +317,33 @@ def print_formulation_result(result: Dict[str, Any]):
         print(f"   {name:<20}: {val:>7.2f}")
     
     print(f"\n💰 Cost: ${result.get('cost_per_kg_dm', 0):.4f}/kg DM")
+    if result.get("feed_cost_per_day") is not None:
+        print(f"💵 Feed cost/day: ${result.get('feed_cost_per_day', 0):.2f}")
     print(f"📈 Predicted DMI: {result.get('predicted_dmi_kg', 0):.1f} kg/day")
     print(f"🔬 Predicted MP: {result.get('predicted_mp_g', 0):.0f} g/day")
+    print(f"⚡ Predicted ME: {result.get('predicted_me_mcal', 0):.2f} Mcal/day")
+
+    if result.get("constraint_summary"):
+        summary = result["constraint_summary"]
+        print(
+            f"\n📎 Constraint summary: "
+            f"{summary.get('satisfied_constraints', 0)}/{summary.get('total_constraints', 0)} satisfied, "
+            f"{summary.get('violated_constraints', 0)} violated, "
+            f"penalty={summary.get('total_penalty', 0):.6f}"
+        )
+
+    violated_constraints = result.get("violated_constraints", [])
+    if violated_constraints:
+        print("\n⚠️  Top violated constraints:")
+        for detail in violated_constraints[:3]:
+            actual = detail.get("actual")
+            actual_text = "unresolved" if actual is None else f"{actual:.3f}"
+            print(
+                f"   - {detail.get('constraint_label', 'unknown')}: "
+                f"{detail.get('violation_direction', 'unknown')} by "
+                f"{detail.get('violation_amount', 0):.3f} {detail.get('unit', '')} "
+                f"(actual {actual_text}, penalty {detail.get('penalty', 0):.6f})"
+            )
 
 
 def print_nasem_result(result: Dict[str, Any]):
@@ -384,7 +424,7 @@ def main():
     print_formulation_result(result)
     
     # NASEM evaluation
-    if args.evaluate and result.get("status") == "success":
+    if args.evaluate and result.get("formulation"):
         print("\n⚙️  Running NASEM evaluation...")
         nasem_result = evaluate_with_nasem(
             feedbase=feedbase,
@@ -399,4 +439,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

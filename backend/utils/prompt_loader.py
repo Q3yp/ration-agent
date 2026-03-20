@@ -150,19 +150,8 @@ def apply_prompt_template(prompt_name: str, state: FormulationState, animal_type
         template = env.get_template(template_file)
         system_prompt = template.render(**state_vars)
         
-        # Role-based message isolation
-        if prompt_name == "nutritionist":
-            # Nutritionist gets full conversation context
-            agent_messages = state.get("messages", [])
-        elif prompt_name == "researcher":
-            # Researcher only gets task-based messages if available, otherwise full context
-            agent_messages = state.get("researcher_messages", state.get("messages", []))
-        elif prompt_name == "coder":
-            # Coder only gets task-based messages if available, otherwise full context
-            agent_messages = state.get("coder_messages", state.get("messages", []))
-        else:
-            # Fallback to original behavior for unknown agents
-            agent_messages = state.get("messages", [])
+        # Single agent — always use full conversation context
+        agent_messages = state.get("messages", [])
         
         # Check if using Anthropic/Claude (supports cache_control)
         use_cache_control = _is_anthropic_model()

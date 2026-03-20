@@ -1,12 +1,12 @@
 """
 Simplified unified message parser.
 Handles both streaming events and stored messages with identical logic.
-Produces 6 message types: user, agent, tool_call, tool_result, role_transition, artifact
+Produces message types: user, agent, tool_call, tool_result, artifact
 """
 import logging
 import re
 import json
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Set
 from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, ToolMessage, SystemMessage
 from models import (
     ParsedMessage,
@@ -16,7 +16,7 @@ from models import (
     create_thinking_message,
     create_tool_call_message,
     create_tool_result_message,
-    create_role_transition_message,
+
     create_artifact_message,
     create_file_export_message,
     create_analysis_start_message,
@@ -34,17 +34,11 @@ logger = logging.getLogger(__name__)
 class UnifiedMessageParser:
     """
     Single parser for both streaming and history contexts.
-    Smart tool handling: combines delegation tools into role transitions,
-    detects artifacts, handles normal tool calls/results separately.
+    Smart tool handling: detects artifacts, handles tool calls/results.
     """
     
     def __init__(self, session_id: str, preferred_language: Optional[str] = None):
         self.session_id = session_id
-        self.delegation_tools = {
-            # LangGraph Swarm tools with custom prefix
-            "transfer_to_researcher", "transfer_to_coder", "transfer_to_nutritionist",
-        }
-        self.pending_delegations = {}  # tool_id -> (tool_name, tool_args, timestamp)
         self.pending_calculations = {}  # tool_id -> (expression, timestamp)
         self.pending_ask_user = {}  # tool_id -> {"description": str, "questions": list}
         self.agent_message_counter = 0
@@ -70,7 +64,7 @@ class UnifiedMessageParser:
     
     def reset_state(self):
         """Reset parser state - call this before parsing history to avoid state carryover"""
-        self.pending_delegations = {}
+
         self.pending_calculations = {}
         self.agent_message_counter = 0
         self.current_agent_message_id = None
@@ -131,6 +125,76 @@ class UnifiedMessageParser:
             pass
 
         return None
+
+    def _iter_text_content(self, payload: Any, seen: Optional[Set[int]] = None):
+        """Yield real text content from nested LangGraph/LangChain payloads."""
+        if seen is None:
+            seen = set()
+
+        if payload is None:
+            return
+
+        payload_id = id(payload)
+        if payload_id in seen:
+            return
+        seen.add(payload_id)
+
+        if isinstance(payload, str):
+            yield payload
+            return
+
+        if isinstance(payload, BaseMessage):
+            yield from self._iter_text_content(payload.content, seen)
+            return
+
+        if isinstance(payload, dict):
+            priority_keys = ("content", "update", "messages", "output")
+            for key in priority_keys:
+                if key in payload:
+                    yield from self._iter_text_content(payload[key], seen)
+            for key, value in payload.items():
+                if key in priority_keys:
+                    continue
+                yield from self._iter_text_content(value, seen)
+            return
+
+        if isinstance(payload, (list, tuple, set)):
+            for item in payload:
+                yield from self._iter_text_content(item, seen)
+            return
+
+        for attr in ("content", "update", "messages"):
+            if hasattr(payload, attr):
+                yield from self._iter_text_content(getattr(payload, attr), seen)
+
+    def _extract_primary_text(self, payload: Any) -> str:
+        """Prefer actual nested message text over object repr()."""
+        for content in self._iter_text_content(payload):
+            if isinstance(content, str) and content.strip():
+                return content
+        return str(payload)
+
+    def _extract_file_export_data_from_payload(self, payload: Any) -> List[Dict[str, str]]:
+        """Collect unique file export payloads from nested tool output."""
+        results: List[Dict[str, str]] = []
+        seen_files: Set[Tuple[str, str]] = set()
+
+        for content in self._iter_text_content(payload):
+            file_export_data = self._extract_file_export_data(content)
+            if not file_export_data:
+                continue
+
+            file_key = (
+                file_export_data["filepath"],
+                file_export_data["filename"],
+            )
+            if file_key in seen_files:
+                continue
+
+            seen_files.add(file_key)
+            results.append(file_export_data)
+
+        return results
 
     def _extract_calculation_result(self, content: str) -> Optional[str]:
         """Extract calculation result from calculator tool output"""
@@ -198,14 +262,7 @@ class UnifiedMessageParser:
         return all_results
     
     
-    def _get_delegation_role(self, tool_name: str) -> Optional[str]:
-        """Map delegation tool names to roles"""
-        mapping = {
-            "transfer_to_researcher": "researcher",
-            "transfer_to_coder": "coder", 
-            "transfer_to_nutritionist": "nutritionist",
-        }
-        return mapping.get(tool_name)
+
     
     def _is_analysis_tool(self, tool_name: str) -> str:
         """Check if tool is part of analysis and return tool type"""
@@ -657,11 +714,7 @@ class UnifiedMessageParser:
                             # Don't add individual tool_call messages for formulation tools
                             continue
                         
-                        # Handle delegation tools (store for later combination)
-                        if tool_name in self.delegation_tools:
-                            self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
-                            continue
-                        elif tool_name == "ask_user":
+                        if tool_name == "ask_user":
                             # Store description and questions for later - will be used when processing tool result
                             self.pending_ask_user[tool_id] = {
                                 "description": tool_args.get('description'),
@@ -773,19 +826,6 @@ class UnifiedMessageParser:
                    tool_name in ["create_artifact"]:
                     result.extend(result_for_this_tool)  # Add any file export/artifact events
                     continue  # Skip processing this ToolMessage entirely
-
-                # Check for delegation tool results and handle role transitions
-                if tool_id in self.pending_delegations:
-                    tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
-                    to_role = self._get_delegation_role(tool_name)
-
-                    result.append(create_role_transition_message(
-                        to_role=to_role,
-                        message_id=f"{tool_id}_transition",
-                        timestamp=timestamp,
-                        preferred_language=self.preferred_language,
-                    ))
-                    continue
 
                 # Check for ask_user tool result - render as user message with questions context
                 if tool_name == "ask_user":
@@ -1073,11 +1113,7 @@ class UnifiedMessageParser:
                 return result
             
             # Handle other tool types
-            if tool_name in self.delegation_tools:
-                # Store delegation for later combination
-                self.pending_delegations[tool_id] = (tool_name, tool_args, timestamp)
-                return result  # Return any analysis events but don't add tool call
-            elif tool_name == "ask_user":
+            if tool_name == "ask_user":
                 # Store description and questions for later - will be used when processing tool result
                 self.pending_ask_user[tool_id] = {
                     "description": tool_args.get('description'),
@@ -1118,27 +1154,11 @@ class UnifiedMessageParser:
             tool_name = event.get("name", "")
             tool_id = event.get("run_id", f"tool_{int(timestamp * 1000000)}")
 
-            # Extract content from output (handle both ToolMessage objects and strings)
+            # Prefer actual nested content over repr(Command(...)) stringification.
             output = event["data"].get("output", "")
-            if hasattr(output, 'content'):
-                result_content = str(output.content)
-            else:
-                result_content = str(output)
+            result_content = self._extract_primary_text(output)
             
             
-            # Check if this is a delegation tool result
-            if tool_id in self.pending_delegations:
-                tool_name, tool_args, call_timestamp = self.pending_delegations.pop(tool_id)
-                to_role = self._get_delegation_role(tool_name)
-
-                # Create single role transition bubble
-                return [create_role_transition_message(
-                    to_role=to_role,
-                    message_id=f"{tool_id}_transition",
-                    timestamp=timestamp,
-                    preferred_language=self.preferred_language,
-                )]
-
             # Check if this is ask_user tool result - render as user message with questions context
             if tool_name == "ask_user":
                 ask_user_data = self.pending_ask_user.pop(tool_id, {"description": None, "questions": []})
@@ -1169,14 +1189,17 @@ class UnifiedMessageParser:
             # First, extract any special data and create events
             result = []
             
-            # Check for file export data and create file export event
-            file_export_data = self._extract_file_export_data(result_content)
-            if file_export_data:
+            # Check for file export data and create file export events.
+            # Deduplicate by exported file path/name in case the same nested payload
+            # is discoverable through multiple branches of the output object.
+            file_export_payloads = self._extract_file_export_data_from_payload(output)
+            for index, file_export_data in enumerate(file_export_payloads):
+                message_id = f"{tool_id}_export" if index == 0 else f"{tool_id}_export_{index + 1}"
                 result.append(create_file_export_message(
                     filename=file_export_data['filename'],
                     file_type=file_export_data['file_type'],
                     filepath=file_export_data['filepath'],
-                    message_id=f"{tool_id}_export",
+                    message_id=message_id,
                     timestamp=timestamp,
                     preferred_language=self.preferred_language,
                     description=file_export_data.get('description'),

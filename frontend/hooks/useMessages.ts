@@ -63,6 +63,7 @@ interface AskUserState {
   isActive: boolean
   description?: string | null
   questions: string[]
+  defaultResponse?: string | null
 }
 
 interface UseMessagesReturn {
@@ -434,7 +435,8 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
           setAskUserState({
             isActive: true,
             description: event.data.description || null,
-            questions: event.data.questions || []
+            questions: event.data.questions || [],
+            defaultResponse: event.data.defaultResponse || null
           })
           setIsTyping(false)
           break

@@ -1,6 +1,6 @@
 'use client'
 
-import { Message, ArtifactData, getArtifactMetadata, getRoleTransitionMetadata, getToolMetadata, getFileExportMetadata, getAnalysisMetadata, getFormulationMetadata, getCalculationMetadata } from '@/types/chat'
+import { Message, ArtifactData, getArtifactMetadata, getToolMetadata, getFileExportMetadata, getAnalysisMetadata, getFormulationMetadata, getCalculationMetadata } from '@/types/chat'
 import {
   Settings,
   CheckCircle,
@@ -9,13 +9,12 @@ import {
   ChevronDown,
   User,
   File,
-  CornerDownRight,
   Calculator,
   MessageSquare
 } from 'lucide-react'
 import Image from 'next/image'
 import { formatTimestamp } from '@/utils/formatTime'
-import { getRoleInfo, getToolName } from '@/utils/roleMapping'
+import { getToolName } from '@/utils/roleMapping'
 import MarkdownMessage from './MarkdownMessage'
 import { useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -312,49 +311,6 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
     )
   }
 
-  const renderRoleTransition = () => {
-    const roleTransitionMeta = getRoleTransitionMetadata(message)
-    const roleInfo = getRoleInfo(roleTransitionMeta?.to_role || '')
-    const RoleIcon = roleInfo.icon
-
-    return (
-      <div className="flex justify-start items-start gap-2">
-        <div className="w-8 h-8 flex items-center justify-center">
-          <CornerDownRight className="h-4 w-4 text-gray-500" />
-        </div>
-        <Card
-          className={cn("max-w-[80%] min-w-0 overflow-hidden", !roleInfo.customStyles && roleInfo.bgColor)}
-          style={roleInfo.customStyles ? {
-            backgroundColor: roleInfo.customStyles.backgroundColor,
-            borderColor: roleInfo.customStyles.borderColor,
-            borderWidth: '1px'
-          } : undefined}
-        >
-          <CardContent className="p-3">
-            <div className="flex items-center gap-2">
-              <RoleIcon
-                className={cn("h-4 w-4", !roleInfo.customStyles && roleInfo.color)}
-                style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
-              />
-              <span
-                className={cn("font-medium", !roleInfo.customStyles && roleInfo.color)}
-                style={roleInfo.customStyles ? { color: roleInfo.customStyles.color } : undefined}
-              >
-                {message.content}
-              </span>
-            </div>
-
-            <div
-              className={cn("text-xs mt-1", !roleInfo.customStyles && roleInfo.color.replace('700', '600'))}
-              style={roleInfo.customStyles ? { color: roleInfo.customStyles.color, opacity: 0.7 } : undefined}
-            >
-              {formatTimestamp(message.timestamp)}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
 
   const renderArtifact = () => {
     const artifactMeta = getArtifactMetadata(message)
@@ -795,8 +751,6 @@ export default function MessageBubble({ message, onArtifactOpen, onFileDownload,
       return renderToolCall()
     case 'tool_result':
       return renderToolResult()
-    case 'role_transition':
-      return renderRoleTransition()
     case 'artifact':
       return renderArtifact()
     case 'file_export':

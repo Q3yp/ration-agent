@@ -121,8 +121,6 @@ class StopManager:
     """Singleton stream lifecycle manager with caching and resumability"""
 
     _instance = None
-    _HANDOFF_TOOL_PREFIXES = ("transfer_to_",)
-    _HANDOFF_TOOL_NAMES = set()  # Empty set; all handoffs use prefix-based matching
 
     # Memory-based cache limit (tunable via env vars)
     MAX_CACHE_MEMORY_BYTES = int(os.environ.get("STOP_MANAGER_MAX_CACHE_MB", "2048")) * 1024 * 1024
@@ -164,20 +162,6 @@ class StopManager:
     def get_instance(cls) -> 'StopManager':
         """Get the singleton instance"""
         return cls()
-
-    def _is_handoff_tool(self, tool_name: Any) -> bool:
-        if not isinstance(tool_name, str):
-            return False
-        if any(tool_name.startswith(prefix) for prefix in self._HANDOFF_TOOL_PREFIXES):
-            return True
-        return tool_name in self._HANDOFF_TOOL_NAMES
-
-    def _is_handoff_event(self, event: Dict[str, Any]) -> bool:
-        if not isinstance(event, dict):
-            return False
-        if event.get("event") != "on_tool_end":
-            return False
-        return self._is_handoff_tool(event.get("name"))
 
     def _prune_cache_through_index(self, session_id: str, index: int):
         events = self.active_sessions.get(session_id)
@@ -303,7 +287,7 @@ class StopManager:
                 agent_input,
                 config=config,
                 durability="async",
-                subgraphs=True
+                subgraphs=False
             )
 
             # Track activity for orphan detection
@@ -346,6 +330,7 @@ class StopManager:
                                         "_event_type": "ask_user",
                                         "description": interrupt_value.get("description"),
                                         "questions": interrupt_value.get("questions", []),
+                                        "default_response": interrupt_value.get("default_response"),
                                         "session_id": session_id,
                                         "timestamp": time.time(),
                                     }
@@ -651,7 +636,6 @@ class StopManager:
                     cursor = 0
 
                 if cursor < len(events):
-                    pruned = False
                     for idx, ev in enumerate(events[cursor:], start=cursor):
                         try:
                             # Handle token events (synthesized by producer)
@@ -687,6 +671,7 @@ class StopManager:
                                     "type": "ask_user",
                                     "description": ev.get("description"),
                                     "questions": ev.get("questions", []),
+                                    "default_response": ev.get("default_response"),
                                     "session_id": ev["session_id"],
                                     "timestamp": ev["timestamp"]
                                 }
@@ -717,16 +702,6 @@ class StopManager:
                         except Exception as e:
                             logger.error(f"STOP_MANAGER: Error processing cached event: {e}")
                             continue
-
-                        if self._is_handoff_event(ev):
-                            self._prune_cache_through_index(session_id, idx)
-                            cursor = 0
-                            pruned = True
-                            break
-
-                    if pruned:
-                        idle_heartbeats = 0
-                        continue
 
                     cursor = len(events)
                     idle_heartbeats = 0

@@ -399,6 +399,7 @@ export default function ChatInterface({
             <UserInputRequest
               description={askUserState.description}
               questions={askUserState.questions}
+              defaultResponse={askUserState.defaultResponse}
               onSubmit={resumeChat}
               disabled={isTyping || isStreaming}
             />

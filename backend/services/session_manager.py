@@ -91,6 +91,7 @@ class SessionContext:
     deleted: bool = False
     title: str = "新对话"
     title_generated: bool = False
+    has_files: bool = False  # Whether user has uploaded files in this session
     
     def resolve_file_path(self, filepath: str) -> str:
         """Resolve a relative or absolute file path within the session workspace."""
@@ -468,14 +469,15 @@ class SessionManager:
                         active=row['active'],
                         deleted=row.get('deleted', False),
                         title=metadata.get('title', '新对话'),
-                        title_generated=metadata.get('title_generated', False)
+                        title_generated=metadata.get('title_generated', False),
+                        has_files=metadata.get('has_files', False)
                     )
         except Exception as e:
             logger.error(f"Failed to get session {session_id} from database: {e}")
             return None
     
     async def get_agent_for_session(self, session_id: str):
-        """Get reusable agent based on session's animal type"""
+        """Get reusable agent based on session's animal type and file status"""
         session = await self.get_session_from_db(session_id)
         if not session:
             raise RuntimeError(f"Session '{session_id}' not found")
@@ -483,8 +485,23 @@ class SessionManager:
         # Import here to avoid circular import
         from core.agent import agent_registry
 
-        # Get agent for this animal type (creates on first access, reuses thereafter)
-        return await agent_registry.get_or_create_agent(session.animal_type)
+        # Get agent for this animal type + variant (creates on first access, reuses thereafter)
+        return await agent_registry.get_or_create_agent(session.animal_type, has_files=session.has_files)
+    
+    async def set_session_has_files(self, session_id: str):
+        """Mark a session as having uploaded files. Persists to DB metadata."""
+        if not self._db_pool:
+            return
+        try:
+            async with self._db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "UPDATE user_sessions SET metadata = metadata || %s::jsonb WHERE session_id = %s",
+                        ('{"has_files": true}', session_id)
+                    )
+            logger.info(f"Marked session {session_id} as having files")
+        except Exception as e:
+            logger.error(f"Failed to set has_files for session {session_id}: {e}")
     
     def get_session_parser(self, session_id: str, preferred_language: Optional[str] = None) -> UnifiedMessageParser:
         """Get or create message parser for session - thread-safe"""

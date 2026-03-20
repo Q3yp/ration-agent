@@ -22,10 +22,10 @@ Multi-agent swarm pattern with handoff tools. Session state managed by LangGraph
 
 | Step | Function | File | Lines | Note |
 |------|----------|------|-------|------|
-| 1 | `list_feedbases` | `backend/api/routes.py` | 869-937 | Lists user-created and system default feedbases from the store |
-| 2 | `get_feedbase` | `backend/api/routes.py` | 941-985 | Retrieves full nutrient composition for a specific feedbase |
-| 3 | `update_feedbase` | `backend/api/routes.py` | 989-1025 | Persists modified feedbase data to the PostgreSQL store |
-| 4 | `export_feedbase` | `backend/api/routes.py` | 1069-1175 | Generates downloadable Excel reports of feed compositions and costs |
+| 1 | `list_feedbases` | `backend/api/routes.py` | 872-940 | Lists user-created and system default feedbases from the store |
+| 2 | `get_feedbase` | `backend/api/routes.py` | 944-988 | Retrieves full nutrient composition for a specific feedbase |
+| 3 | `update_feedbase` | `backend/api/routes.py` | 992-1028 | Persists modified feedbase data to the PostgreSQL store |
+| 4 | `export_feedbase` | `backend/api/routes.py` | 1072-1178 | Generates downloadable Excel reports of feed compositions and costs |
 | 5 | `FormulationOptimizer.set_feeds` | `backend/formulation/optimizer.py` | 149-151 | Loads feedbase data into the optimizer for ration formulation |
 
 ### File Management (In-Chat)
@@ -34,9 +34,9 @@ Multi-agent swarm pattern with handoff tools. Session state managed by LangGraph
 
 | Step | Function | File | Lines | Note |
 |------|----------|------|-------|------|
-| 1 | `upload_file` | `backend/api/routes.py` | 691-736 | Uploads user-provided files to the session workspace. |
-| 2 | `download_file` | `backend/api/routes.py` | 773-824 | Retrieves files from the workspace for the user. |
-| 3 | `delete_file` | `backend/api/routes.py` | 742-769 | Removes files from the workspace. |
+| 1 | `upload_file` | `backend/api/routes.py` | 691-739 | Uploads user-provided files to the session workspace. |
+| 2 | `download_file` | `backend/api/routes.py` | 776-827 | Retrieves files from the workspace for the user. |
+| 3 | `delete_file` | `backend/api/routes.py` | 745-772 | Removes files from the workspace. |
 
 ### Formulation Optimization Flow
 
@@ -80,17 +80,17 @@ Multi-agent swarm pattern with handoff tools. Session state managed by LangGraph
 | Step | Function | File | Lines | Note |
 |------|----------|------|-------|------|
 | 1 | `stream_chat` | `backend/api/routes.py` | 538-686 | API entry point: receives message and starts SSE stream |
-| 2 | `StopManager.stream_to_frontend` | `backend/utils/stop_manager.py` | 450-506 | Coordinates background producer and frontend replay |
-| 3 | `StopManager._producer` | `backend/utils/stop_manager.py` | 283-448 | Runs LangGraph agent stream and caches events |
-| 4 | `create_agent_swarm_for_type` | `backend/agents/nodes.py` | 101-125 | Initializes the multi-agent swarm (Nutritionist, Researcher, Coder) |
-| 5 | `MessageProcessor.processSSEEvent` | `frontend/utils/messageProcessor.ts` | 136-279 | Frontend: processes incoming SSE events into UI messages |
+| 2 | `StopManager.stream_to_frontend` | `backend/utils/stop_manager.py` | 435-491 | Coordinates background producer and frontend replay |
+| 3 | `StopManager._producer` | `backend/utils/stop_manager.py` | 267-433 | Runs LangGraph agent stream and caches events |
+| 4 | `create_agent_swarm_for_type` | `backend/agents/nodes.py` |  | Initializes the multi-agent swarm (Nutritionist, Researcher, Coder) |
+| 5 | `MessageProcessor.processSSEEvent` | `frontend/utils/messageProcessor.ts` | 136-280 | Frontend: processes incoming SSE events into UI messages |
 
 ## Directory Tree
 
 ```
 |-- backend
 |   |-- agents
-|   |   `-- nodes.py  # Defines specialized agent nodes (Nutritionist, Researcher, Coder) and the swarm orchestration logic for the multi-agent system.
+|   |   `-- nodes.py  # Single-agent factory function: creates a react agent with conditional tool loading (lite/full variants based on file upload status).
 |   |-- api
 |   |   |-- feedback_routes.py  # API endpoints for user feedback submission and admin-side feedback retrieval.
 |   |   `-- routes.py  # Flask API routes: chat streaming, file downloads, session management.
@@ -103,7 +103,7 @@ Multi-agent swarm pattern with handoff tools. Session state managed by LangGraph
 |   |   |-- schemas.py  # Pydantic data models for authentication workflows; defines standard and admin-specific user schemas, plus SMS verification and login request patterns.
 |   |   `-- sms_service.py  # Asynchronous client for the Ihuyi SMS provider; manages authentication and template IDs.
 |   |-- core
-|   |   `-- agent.py  # LangGraph agent: defines FormulationState and orchestrates tool-calling loop.
+|   |   `-- agent.py  # LangGraph agent: defines FormulationState and AgentRegistry that caches lite/full agent variants per animal type.
 |   |-- formulation
 |   |   `-- optimizer.py  # Implements the feed formulation optimizer using SLSQP. Coordinates nutrient predictions via NASEM and animal performance models to minimize costs/maximize production.
 |   |-- migrations
@@ -211,14 +211,13 @@ Multi-agent swarm pattern with handoff tools. Session state managed by LangGraph
 |   |   |-- formulation_exporter.py  # Tool for exporting formulation results to detailed Excel spreadsheets, including feed composition, cost analysis, nutrient constraints, and NASEM model predictions.
 |   |   |-- formulation_tools.py  # Defines LangGraph tools for ration formulation (formulate_ration, check_feeds, add_feed), orchestrating feedbase access, validation, and optimizer execution.
 |   |   |-- nasem_tools.py  # LangChain-compatible tools for agents; provides high-level interfaces for predicting dairy requirements and evaluating formulated diets via the NASEM model.
-|   |   |-- tools.py  # Registry for all agent tools, grouping them into researcher, coder, and nutritionist toolkits for the swarm system.
+|   |   |-- tools.py  # Consolidated tool registry with a single get_tools() function that conditionally includes file/Excel/bash tools based on session state.
 |   |   |-- usda_client.py  # Reusable wrapper for the USDA FoodData Central API, providing search and retrieval of nutrient information with retry logic.
 |   |   `-- usda_tools.py  # Tools for interacting with USDA databases or related services for feed composition data.
 |   |-- utils
-|   |   |-- deepseek_wrapper.py  # Wrapper for DeepSeek API calls, handling model-specific parameters and response parsing.
 |   |   |-- language.py  # Utilities for handling language labels and locale normalization across the application.
 |   |   |-- message_parser.py  # Unified parser for processing agent messages, handling streaming events, tool calls, and constructing structured messages (user, agent, tool, artifact) for the frontend.
-|   |   |-- model_config.py  # Centralizes configuration and initialization of LLM models (FastChat, OpenAI, LangChain) used across different agents and tasks.
+|   |   |-- model_config.py  # Centralizes LLM model configuration for the nutritionist agent and title generation via OpenRouter.
 |   |   |-- prompt_loader.py  # Loads and renders Markdown-based prompt templates using Jinja2, providing a dynamic way to manage complex agent instructions.
 |   |   |-- stop_manager.py  # Singleton stream lifecycle manager that handles background event caching, real-time token tracking, and unified replaying of cached events for resilient frontend streaming. Uses a global memory-based cache cap (env STOP_MANAGER_MAX_CACHE_MB, default 2GB) with head-trimming eviction on the largest session under memory pressure.
 |   |   `-- system_feedbases.py  # Utility for accessing and listing read-only system default feedbases embedded in the application.
@@ -229,7 +228,12 @@ Multi-agent swarm pattern with handoff tools. Session state managed by LangGraph
 |   |-- formulate_cli.py  # Command-line tool for animal ration formulation; supports custom constraints (CP, NDF, milk production) and connects with the NASEM evaluation service.
 |   |-- main.py  # FastAPI entry point; handles app lifespan, database initialization, and route registration.
 |   |-- pyproject.toml
+|   |-- test_cmd.py
+|   |-- test_command_extractor.py  # Scratch script validating how export content can be extracted from ToolMessage and Command tool outputs.
 |   |-- test_cost_analysis.json
+|   |-- test_extract.py
+|   |-- test_repr_json.py  # Scratch reproduction script showing how Command repr escaping can break FILE_EXPORT JSON parsing in stream mode.
+|   |-- test_stream_file_export_parser.py  # Regression script covering stream-mode export extraction from nested Command payloads and duplicate-file deduplication.
 |   `-- usda_cli.py  # CLI tool for searching and fetching food details from the USDA FoodData Central API.
 |-- frontend
 |   |-- app
@@ -319,9 +323,9 @@ Multi-agent swarm pattern with handoff tools. Session state managed by LangGraph
 
 ## Context Coverage
 
-- **Files**: 146/178 described (82%)
+- **Files**: 148/182 described (81%)
 - **Ignored**: 54 files
-- **Functions**: 2320 extracted, 1644 call edges
+- **Functions**: 2306 extracted, 1621 call edges
 - **Feature Paths**: 6 traced
 
 ---

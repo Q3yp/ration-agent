@@ -255,6 +255,7 @@ export class MessageProcessor {
             data: {
               description: data.description || null,
               questions: data.questions || [],
+              defaultResponse: data.default_response || null,
               sessionId: data.session_id,
               timestamp: data.timestamp
             }

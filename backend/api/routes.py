@@ -724,6 +724,9 @@ async def upload_file(
         with open(file_path, "wb") as f:
             f.write(content)
 
+        # Mark session as having files (switches agent to full variant)
+        await session_manager.set_session_has_files(session_id)
+
         return {
             "message": f"File '{file.filename}' uploaded successfully",
             "filename": file.filename,

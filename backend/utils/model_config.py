@@ -18,16 +18,6 @@ def get_model_config(model_name: str):
             "temperature": float(os.getenv("NUTRITIONIST_TEMPERATURE", "0")),
             "streaming": True
         },
-        "researcher": {
-            "model": os.getenv("RESEARCHER_MODEL", os.getenv("OPENROUTER_MODEL")),
-            "temperature": float(os.getenv("RESEARCHER_TEMPERATURE", "0")),
-            "streaming": True
-        },
-        "coder": {
-            "model": os.getenv("CODER_MODEL", os.getenv("OPENROUTER_MODEL")),
-            "temperature": float(os.getenv("CODER_TEMPERATURE", "0")),
-            "streaming": True
-        },
         "title_generation": {
             "model": os.getenv("TITLE_GENERATION_MODEL", os.getenv("OPENROUTER_MODEL")),
             "temperature": float(os.getenv("TITLE_GENERATION_TEMPERATURE", "0.3")),

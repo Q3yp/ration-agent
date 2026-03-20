@@ -2,8 +2,6 @@ import os
 import asyncio
 from typing import Annotated, Optional, Dict, Any
 from langgraph.prebuilt.chat_agent_executor import AgentState
-from langgraph_swarm import SwarmState
-from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from psycopg_pool import AsyncConnectionPool
@@ -45,33 +43,14 @@ logger = logging.getLogger(__name__)
 
 
 class FormulationState(AgentState):
-    """Enhanced state for LangGraph Swarm multi-agent system using AgentState"""
+    """Agent state for single-agent formulation system"""
     # Task context
     task_context: dict = {}
     
-    # Artifacts (accumulate results) - using named functions for serialization
+    # Artifacts (accumulate results)
     artifacts: Annotated[list, add_messages] = []
     
     # Feed formulation state (core business logic)
-    current_formulation: Annotated[dict, replace_dict] = {}  # Last formulation result
-    formulation_constraints: Annotated[list, replace_list] = []  # Nutritional constraints used in optimization
-    feed_constraints: Annotated[dict, replace_dict] = {}  # Feed inclusion constraints
-    
-    # Feedbase references for export tool (store coordination)
-    current_feedbase_name: Annotated[str, replace_string] = ""  # Current feedbase used
-    current_user_id: Annotated[str, replace_string] = ""  # User ID for store access
-    
-    # Animal parameters for NASEM predictions (dairy cow)
-    animal_params: Annotated[dict, replace_dict] = {}  # body_weight, milk_prod, dim, parity, bcs, etc.
-    
-    # Task delegation context for swarm agents
-    task_description: Annotated[str, replace_string] = ""
-
-
-class FormulationSwarmState(SwarmState):
-    """Custom swarm state with formulation fields for persistence"""
-    
-    # Feed formulation state (core business logic) 
     current_formulation: Annotated[dict, replace_dict] = {}  # Last formulation result
     formulation_constraints: Annotated[list, replace_list] = []  # Nutritional constraints used in optimization
     feed_constraints: Annotated[dict, replace_dict] = {}  # Feed inclusion constraints
@@ -151,46 +130,54 @@ _connection_manager = SharedConnectionManager()
 
 
 class AgentRegistry:
-    """Registry of reusable agents per animal type"""
+    """Registry of reusable agents per animal type, with lite and full variants.
+    
+    Cache keys: "{animal_type}_lite" and "{animal_type}_full"
+    """
 
     def __init__(self):
-        self._agents: Dict[str, Any] = {}  # {animal_type: compiled_graph}
+        self._agents: Dict[str, Any] = {}  # {cache_key: compiled_graph}
         self._lock = asyncio.Lock()
 
     async def initialize_all_agents(self):
-        """Initialize all 4 animal type agents at startup"""
-        logger.info("Initializing all agent types...")
+        """Initialize lite agents for all 4 animal types at startup"""
+        logger.info("Initializing all agent types (lite)...")
         for animal_type in ["dairy_cow", "beef_cow", "cat", "dog"]:
-            await self.get_or_create_agent(animal_type)
-        logger.info(f"✓ Initialized {len(self._agents)} agent types")
+            await self.get_or_create_agent(animal_type, has_files=False)
+        logger.info(f"✓ Initialized {len(self._agents)} agent variants")
 
-    async def get_or_create_agent(self, animal_type: str):
-        """Get cached agent or create new one for the animal type"""
-        if animal_type not in self._agents:
+    async def get_or_create_agent(self, animal_type: str, has_files: bool = False):
+        """Get cached agent or create new one for the animal type + variant.
+        
+        Args:
+            animal_type: Animal type (dairy_cow, beef_cow, cat, dog)
+            has_files: Whether user has uploaded files (selects full vs lite)
+        """
+        variant = "full" if has_files else "lite"
+        cache_key = f"{animal_type}_{variant}"
+
+        if cache_key not in self._agents:
             async with self._lock:
                 # Double-check after acquiring lock
-                if animal_type not in self._agents:
-                    logger.info(f"Creating new agent for animal_type: {animal_type}")
+                if cache_key not in self._agents:
+                    logger.info(f"Creating {variant} agent for animal_type: {animal_type}")
 
                     # Get shared pool and store
                     pool = await _connection_manager.get_shared_pool()
                     store = await _connection_manager.get_shared_store()
                     checkpointer = AsyncPostgresSaver(pool)
 
-                    # Import swarm creation function from nodes module
-                    from agents.nodes import create_agent_swarm_for_type
+                    from agents.nodes import create_agent
 
-                    # Create the swarm workflow for this animal type
-                    swarm_workflow = await create_agent_swarm_for_type(animal_type)
-
-                    # Compile with checkpointer and store
-                    self._agents[animal_type] = swarm_workflow.compile(
+                    self._agents[cache_key] = await create_agent(
+                        animal_type,
+                        include_file_tools=has_files,
                         checkpointer=checkpointer,
-                        store=store
+                        store=store,
                     )
-                    logger.info(f"✓ Agent created for {animal_type}")
+                    logger.info(f"✓ Agent created: {cache_key}")
 
-        return self._agents[animal_type]
+        return self._agents[cache_key]
 
 
 # Global agent registry

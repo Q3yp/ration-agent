@@ -15,24 +15,14 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
-from duckduckgo_search import DDGS
 from .excel_tools import get_excel_tools
 from .formulation_tools import create_formulation_tools
-from .usda_tools import get_usda_tools
 
 try:
     import bleach
     BLEACH_AVAILABLE = True
 except ImportError:
     BLEACH_AVAILABLE = False
-
-try:
-    from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
-    CRAWL4AI_AVAILABLE = True
-except ImportError:
-    CRAWL4AI_AVAILABLE = False
-    AsyncWebCrawler = None
-    CrawlerRunConfig = None
 import logging
 
 logger = logging.getLogger(__name__)
@@ -545,254 +535,42 @@ def get_file_management_tools():
     return []
 
 
-# Search tools
-@tool
-def duckduckgo_search(query: str, max_results: int = 10) -> str:
-    """Search the web using DuckDuckGo with enhanced results"""
-    try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
-            
-            formatted_results = []
-            for i, result in enumerate(results, 1):
-                formatted_results.append(
-                    f"{i}. **{result.get('title', 'No title')}**\n"
-                    f"   URL: {result.get('href', 'No URL')}\n"
-                    f"   {result.get('body', 'No description')}\n"
-                )
-            
-            return f"DuckDuckGo search results for '{query}':\n\n" + "\n".join(formatted_results)
-    except Exception as e:
-        logger.error(f"DuckDuckGo search failed: {e}")
-        return f"DuckDuckGo search failed: {str(e)}"
+# --- Consolidated tool registry ---
 
-@tool
-def duckduckgo_news_search(query: str, max_results: int = 5) -> str:
-    """Search for recent news using DuckDuckGo"""
-    try:
-        with DDGS() as ddgs:
-            results = list(ddgs.news(query, max_results=max_results))
-            
-            formatted_results = []
-            for i, result in enumerate(results, 1):
-                formatted_results.append(
-                    f"{i}. **{result.get('title', 'No title')}**\n"
-                    f"   Source: {result.get('source', 'Unknown')}\n"
-                    f"   Date: {result.get('date', 'Unknown date')}\n"
-                    f"   URL: {result.get('url', 'No URL')}\n"
-                    f"   {result.get('body', 'No description')}\n"
-                )
-            
-            return f"DuckDuckGo news search results for '{query}':\n\n" + "\n".join(formatted_results)
-    except Exception as e:
-        logger.error(f"DuckDuckGo news search failed: {e}")
-        return f"DuckDuckGo news search failed: {str(e)}"
+async def get_tools(animal_type: str = "dairy_cow", include_file_tools: bool = False):
+    """Get the full tool list for a single agent.
 
-@tool
-async def crawl_website(url: str, extract_content: bool = True) -> str:
-    """Crawl and extract content from a specific website using Crawl4AI"""
-    if not CRAWL4AI_AVAILABLE:
-        return "Crawl4AI is not available. Please install it with: pip install crawl4ai"
-    
-    try:
-        async with AsyncWebCrawler() as crawler:
-            config = CrawlerRunConfig(
-                cache_mode="bypass",
-                verbose=False
-            )
-            result = await crawler.arun(url=url, config=config)
-            
-            if not result.success:
-                return f"Failed to crawl {url}: {result.error_message or 'Unknown error'}"
-            
-            if extract_content and result.markdown:
-                # Return cleaned markdown content (truncated if too long)
-                content = result.markdown[:4000] if len(result.markdown) > 4000 else result.markdown
-                return f"Successfully crawled {url}:\n\n{content}"
-            else:
-                # Return basic info
-                return f"Successfully crawled {url}:\n- Status: {result.status_code}\n- Content length: {len(result.html)} characters\n- Title: {getattr(result, 'title', 'N/A')}"
-    
-    except Exception as e:
-        logger.error(f"Website crawling failed: {e}")
-        return f"Website crawling failed: {str(e)}"
+    Args:
+        animal_type: Animal type (dairy_cow, beef_cow, cat, dog)
+        include_file_tools: If True, include Excel, bash, artifact tools
 
-@tool
-async def crawl_multiple_urls(urls: List[str]) -> str:
-    """Crawl multiple URLs and aggregate the results"""
-    if not CRAWL4AI_AVAILABLE:
-        return "Crawl4AI is not available. Please install it with: pip install crawl4ai"
-    
-    try:
-        results = []
-        
-        async with AsyncWebCrawler() as crawler:
-            config = CrawlerRunConfig(
-                cache_mode="bypass",
-                verbose=False
-            )
-            
-            for url in urls[:5]:  # Limit to 5 URLs to prevent timeout
-                try:
-                    result = await crawler.arun(url=url, config=config)
-                    
-                    if result.success and result.markdown:
-                        content = result.markdown[:1500] if len(result.markdown) > 1500 else result.markdown
-                        results.append(f"**{url}:**\n{content}\n")
-                    else:
-                        results.append(f"**{url}:** Failed to crawl\n")
-                        
-                except Exception as e:
-                    results.append(f"**{url}:** Error - {str(e)}\n")
-        
-        return f"Crawled {len(urls)} URLs:\n\n" + "\n".join(results)
-        
-    except Exception as e:
-        logger.error(f"Multiple URL crawling failed: {e}")
-        return f"Multiple URL crawling failed: {str(e)}"
-
-@tool
-def research_topic_comprehensive(topic: str) -> str:
-    """Conduct comprehensive research on a topic using multiple search strategies"""
-    try:
-        results = []
-        
-        # 1. General web search
-        with DDGS() as ddgs:
-            web_results = list(ddgs.text(f"{topic} overview guide", max_results=5))
-            if web_results:
-                results.append("**General Web Search Results:**")
-                for result in web_results:
-                    results.append(f"- {result.get('title', 'No title')}: {result.get('body', 'No description')}")
-                results.append("")
-        
-        # 2. News search
-        with DDGS() as ddgs:
-            news_results = list(ddgs.news(f"{topic} latest news", max_results=3))
-            if news_results:
-                results.append("**Recent News:**")
-                for result in news_results:
-                    results.append(f"- {result.get('title', 'No title')} ({result.get('date', 'Unknown date')})")
-                results.append("")
-        
-        # 3. Specific searches for different aspects
-        aspects = ["best practices", "examples", "trends 2024", "guide"]
-        for aspect in aspects:
-            with DDGS() as ddgs:
-                aspect_results = list(ddgs.text(f"{topic} {aspect}", max_results=2))
-                if aspect_results:
-                    results.append(f"**{aspect.title()} Search:**")
-                    for result in aspect_results:
-                        results.append(f"- {result.get('title', 'No title')}: {result.get('body', 'No description')[:200]}...")
-                    results.append("")
-        
-        return f"Comprehensive research on '{topic}':\n\n" + "\n".join(results)
-    except Exception as e:
-        logger.error(f"Comprehensive research failed: {e}")
-        return f"Comprehensive research failed: {str(e)}"
-
-@tool
-async def search_and_crawl(query: str, max_search_results: int = 3) -> str:
-    """Search for URLs then crawl the top results for detailed content"""
-    if not CRAWL4AI_AVAILABLE:
-        return "Crawl4AI is not available. Please install it with: pip install crawl4ai"
-    
-    try:
-        # First, search for relevant URLs
-        with DDGS() as ddgs:
-            search_results = list(ddgs.text(query, max_results=max_search_results))
-        
-        if not search_results:
-            return f"No search results found for '{query}'"
-        
-        # Extract URLs
-        urls = [result.get('href') for result in search_results if result.get('href')]
-        
-        if not urls:
-            return f"No valid URLs found in search results for '{query}'"
-        
-        # Search summary
-        results = [f"Search and crawl results for '{query}':\n"]
-        results.append("=== SEARCH RESULTS ===\n")
-        
-        for i, result in enumerate(search_results, 1):
-            title = result.get('title', 'No Title')
-            url = result.get('href', 'No URL')
-            body = result.get('body', 'No description')
-            results.append(f"{i}. **{title}**\n   URL: {url}\n   Description: {body}\n")
-        
-        results.append("\n=== DETAILED CONTENT ===\n")
-        
-        # Crawl the URLs
-        async with AsyncWebCrawler() as crawler:
-            config = CrawlerRunConfig(
-                cache_mode="bypass",
-                verbose=False
-            )
-            
-            for i, url in enumerate(urls, 1):
-                try:
-                    crawl_result = await crawler.arun(url=url, config=config)
-                    if crawl_result.success and crawl_result.markdown:
-                        content = crawl_result.markdown[:1500] if len(crawl_result.markdown) > 1500 else crawl_result.markdown
-                        results.append(f"\n--- Content from {search_results[i-1].get('title', 'No title')} ---\n{content}\n")
-                    else:
-                        results.append(f"\n--- Failed to crawl {search_results[i-1].get('title', 'No title')} ---\n")
-                except Exception as e:
-                    results.append(f"\n--- Error crawling {search_results[i-1].get('title', 'No title')}: {str(e)} ---\n")
-        
-        return "\n".join(results)
-        
-    except Exception as e:
-        logger.error(f"Search and crawl failed: {e}")
-        return f"Search and crawl failed: {str(e)}"
-
-
-def get_search_tools():
-    """Get search-specific tools for the search worker"""
-    search_tools = [
-        duckduckgo_search,
-        crawl_website
-    ]
-
-    return search_tools
-
-
-
-async def get_nutritionist_tools(animal_type: str = "dairy_cow"):
-    """Get nutritionist-specific tools"""
+    Returns:
+        List of LangChain tools
+    """
     from tools.ask_user_tool import ask_user
-    
-    # Add all formulation tools to nutritionist toolkit (includes add_feed, check_feeds, formulate_ration)
+
+    # Core formulation tools (always included)
     formulation_tools = create_formulation_tools(animal_type)
-    
+
     # Base tools for all animal types
-    tools = formulation_tools + get_usda_tools() + [calculate, ask_user]
-    
+    tools = formulation_tools + [calculate, ask_user]
+
     # Add NASEM tools for dairy cows only
     if animal_type == "dairy_cow":
         try:
             from tools.nasem_tools import get_nasem_tools
             nasem_tools = get_nasem_tools()
             tools.extend(nasem_tools)
-            logger.info(f"Added {len(nasem_tools)} NASEM tools for dairy_cow nutritionist")
+            logger.info(f"Added {len(nasem_tools)} NASEM tools for dairy_cow")
         except ImportError as e:
             logger.warning(f"Could not load NASEM tools: {e}")
-    
+
+    # File/Excel/code tools (only when user has uploaded files)
+    if include_file_tools:
+        excel_tools = get_excel_tools()
+        tools.extend([bash_command, create_artifact] + excel_tools)
+        logger.info(f"Added file tools (bash, artifact, {len(excel_tools)} excel tools)")
+
+    logger.info(f"get_tools({animal_type}, file_tools={include_file_tools}): {len(tools)} tools total")
     return tools
 
-async def get_coder_tools(animal_type: str = "dairy_cow"):
-    """Get all available tools for a session (code worker tools)."""
-    # Get file management tools
-    file_tools = get_file_management_tools()
-
-    # Get Excel tools
-    excel_tools = get_excel_tools()
-
-    # Get specific formulation tools for coder (add_feed, check_feeds, list_feed_bases only)
-    all_formulation_tools = create_formulation_tools(animal_type)
-    feed_tools = [tool for tool in all_formulation_tools if tool.name in ['add_feed', 'check_feeds', 'list_feed_bases']]
-
-    usda_tools = get_usda_tools()
-
-    return [bash_command, create_artifact] + file_tools + excel_tools + feed_tools + usda_tools

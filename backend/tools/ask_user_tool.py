@@ -5,7 +5,7 @@ from langgraph.types import interrupt
 
 
 @tool
-def ask_user(description: Optional[str], questions: List[str]) -> str:
+def ask_user(description: Optional[str], questions: List[str], default_response: Optional[str] = None) -> str:
     """Pause execution and request information from the user.
 
     Args:
@@ -13,9 +13,11 @@ def ask_user(description: Optional[str], questions: List[str]) -> str:
                      Displayed as header text above the questions.
         questions: List of questions to present to the user. Each question should be a 
                    separate item - do NOT combine multiple questions into one string.
+        default_response: Optional default text pre-filled in a general text input field.
+                          Use this to suggest a reasonable default the user can accept or edit.
     
     Returns:
         The user's text response
     """
-    response = interrupt({"description": description, "questions": questions})
+    response = interrupt({"description": description, "questions": questions, "default_response": default_response})
     return response

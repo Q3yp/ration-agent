@@ -5,7 +5,6 @@ export type MessageType =
   | 'thinking'       // DeepSeek reasoning content (streamable, collapsible)
   | 'tool_call'      // Tool execution indicator
   | 'tool_result'    // Tool execution result
-  | 'role_transition' // Agent handoff/routing (single expandable bubble)
   | 'artifact'       // HTML artifacts for visualization (clickable)
   | 'file_export'    // File export with download capability
   | 'analysis_start' // Start of Excel analysis block
@@ -45,12 +44,6 @@ export function getToolMetadata(message: Message) {
   return message.metadata as {
     tool_name?: string
     tool_args?: Record<string, any>
-  } | undefined
-}
-
-export function getRoleTransitionMetadata(message: Message) {
-  return message.metadata as {
-    to_role?: string
   } | undefined
 }
 
