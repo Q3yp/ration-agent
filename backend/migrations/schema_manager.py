@@ -275,17 +275,24 @@ class SchemaManager:
             
         result = await conn.execute(text("SELECT COUNT(*) FROM users WHERE is_superuser = TRUE"))
         if result.scalar() == 0:
-            logger.info("Creating default admin user...")
+            admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com")
+            admin_username = os.environ.get("ADMIN_USERNAME", "admin")
+            admin_raw_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+            
+            if admin_raw_password == "admin123":
+                logger.warning("⚠️  Using default admin password! Set ADMIN_PASSWORD in .env for production.")
+            
+            logger.info(f"Creating admin user '{admin_username}'...")
             try:
                 # Use FastAPI-Users' PasswordHelper (argon2id) for consistency
                 from fastapi_users.password import PasswordHelper
                 password_helper = PasswordHelper()
-                admin_password = password_helper.hash("admin123")
+                admin_password = password_helper.hash(admin_raw_password)
             except ImportError:
                 # Fallback to passlib with same argon2id scheme
                 from passlib.context import CryptContext
                 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
-                admin_password = pwd_context.hash("admin123")
+                admin_password = pwd_context.hash(admin_raw_password)
             
             admin_id = uuid.uuid4()
             now = datetime.utcnow()
@@ -295,8 +302,8 @@ class SchemaManager:
                 VALUES (:id, :email, :username, :password, TRUE, TRUE, TRUE, 'admin', :full_name, :preferred_language, :created_at, :updated_at)
             """), {
                 "id": admin_id,
-                "email": "admin@example.com",
-                "username": "admin",
+                "email": admin_email,
+                "username": admin_username,
                 "password": admin_password,
                 "full_name": "Administrator",
                 "preferred_language": "zh-CN",
