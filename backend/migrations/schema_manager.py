@@ -307,7 +307,7 @@ class SchemaManager:
                 "password": admin_password,
                 "full_name": "Administrator",
                 "preferred_language": "zh-CN",
-                "tier": "admin",
+                "tier": "paid",
                 "created_at": now,
                 "updated_at": now
             })

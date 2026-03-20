@@ -9,8 +9,7 @@ services:
       POSTGRES_DB: ration_agent
       POSTGRES_USER: ration_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "5433:5432"
+    # Port 5432 is NOT exposed externally in production.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -96,8 +95,8 @@ services:
       - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-ration-agent-docker}
-    ports:
-      - "8000:8000"
+    # Port 8000 is NOT exposed externally — frontend proxies all
+    # backend requests via Next.js rewrites over the Docker network.
     volumes:
       - backend_files:/app/files
     depends_on:
