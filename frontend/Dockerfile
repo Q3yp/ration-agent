@@ -21,9 +21,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies (include dev for building TypeScript/Next)
+# Install all dependencies (dev deps needed for TypeScript/Next build)
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev
+    npm ci
 
 # Copy source code
 COPY . .
