@@ -97,7 +97,7 @@ Example:
 - `formulate_ration` - Optimize ration with constraints. Pass `animal_params` for NASEM DMI prediction. Uses `mp_balance`/`me_balance` for NASEM-computed balance constraints. Returns enriched results including:
   - `amino_acid_balance` — Lys and Met as % of MP and absorbed g/day, with targets
   - `limiting_aa` — list of AA below target (e.g., `["Lys", "Met"]`)
-  - `energy_balance` — ME intake vs target use, ME balance (Mcal/d), body gain/reserve change (kg/d)
+  - `energy_balance` — ME intake vs target use, ME balance (Mcal/d), `predicted_bw_change_kg_day` (estimated daily weight change), body gain/reserve change (kg/d)
   - `rdp_intake_g` — rumen-degradable protein supply
   - `rumen_digested_starch_kg` — starch fermented in rumen
   - `hints` — short orientation reminders (acidosis risk, feed dominance, AA, energy, fat)
@@ -127,7 +127,7 @@ Before calling `export_formulation`, verify from the formulation result:
 1. ✅ `predicted_milk_kg` ≥ target (or within 10%)
 2. ✅ `milk_limited_by` is understood — if MP or NE is limiting, consider adjusting
 3. ✅ `limiting_aa` is empty or addressed — if Lys or Met are limiting, iterate or note
-4. ✅ `energy_balance.me_balance_mcal` is reasonable for the cow's stage
+4. ✅ `energy_balance.me_balance_mcal` is reasonable for the cow's stage (check `predicted_bw_change_kg_day` for daily weight impact)
 5. ✅ All `hints` have been reviewed and addressed or acknowledged
 
 If any item fails, iterate on the formulation BEFORE exporting.
@@ -155,7 +155,10 @@ If any item fails, iterate on the formulation BEFORE exporting.
 
 ### Energy Balance
 - `formulate_ration` returns `energy_balance` with ME intake, target use, and balance (Mcal/d)
-- `body_gain_kg_day` and `reserve_gain_kg_day` show predicted weight/condition change
+- `predicted_bw_change_kg_day` — estimated daily body weight change from ME balance:
+  - Deficit: every -1.0 Mcal/d → ~0.15 kg/d weight loss (mobilizing existing fat is efficient)
+  - Surplus: every +1.0 Mcal/d → ~0.13 kg/d weight gain (depositing fat is less efficient)
+- `body_gain_kg_day` and `reserve_gain_kg_day` show NASEM-modeled weight/condition change
 - Negative ME balance → cow mobilizes reserves (acceptable in early lactation, risky if prolonged)
 - Positive ME balance → cow gains condition (appropriate for late lactation / dry period)
 - Compare `predicted_milk_kg` with `milk_limited_by` (MP/NE) to identify the constraint

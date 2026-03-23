@@ -374,13 +374,23 @@ class NASEMService:
                     if me_maint is not None:
                         enrichment["energy_balance"]["me_maintenance_mcal"] = round(float(me_maint), 2)
                     
-                    # Body reserve change
+                    # Body reserve change from NASEM
                     rsrv_gain = output.get_value("Rsrv_Gain_empty")
                     body_gain = output.get_value("Body_Gain_empty")
                     if body_gain is not None:
                         enrichment["energy_balance"]["body_gain_kg_day"] = round(float(body_gain), 3)
                     if rsrv_gain is not None:
                         enrichment["energy_balance"]["reserve_gain_kg_day"] = round(float(rsrv_gain), 3)
+                    
+                    # Predicted BW change from ME balance (simple linear estimate)
+                    # Mobilizing fat is thermodynamically more efficient than depositing it:
+                    #   Deficit:  -1.0 Mcal/d → ~0.15 kg/d loss  (factor 0.15)
+                    #   Surplus:  +1.0 Mcal/d → ~0.13 kg/d gain   (factor 0.13)
+                    if me_balance < 0:
+                        predicted_bw_change = me_balance * 0.15  # negative → weight loss
+                    else:
+                        predicted_bw_change = me_balance * 0.13  # positive → weight gain
+                    enrichment["energy_balance"]["predicted_bw_change_kg_day"] = round(predicted_bw_change, 3)
             except Exception as e:
                 logger.warning(f"Failed to extract energy balance: {e}")
             

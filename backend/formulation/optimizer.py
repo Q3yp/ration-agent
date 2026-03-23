@@ -902,6 +902,8 @@ class FormulationOptimizer:
 
         feed_cost_per_day = self._calculate_feed_cost_per_day(feed_percentages, selected_feeds, predicted_dmi)
         base_objective = self._build_objective(selected_feeds, optimization_goal)
+
+        # --- Core result (always included) ---
         result_dict = {
             "status": "success" if all_constraints_satisfied else "compromised",
             "solution_mode": solution_mode,
@@ -915,39 +917,33 @@ class FormulationOptimizer:
             "cost_per_kg_dm": round(float(total_cost), 3),
             "feed_cost_per_day": round(float(feed_cost_per_day), 2),
             "nutrient_analysis": nutrient_analysis,
-            "optimization_method": "SLSQP (strict-first with compromise fallback)",
-            "strict_solver_status": "success" if bool(getattr(strict_result, "success", False)) else "failed",
-            "strict_solver_message": str(getattr(strict_result, "message", "")),
-            "all_nutritional_constraints_satisfied": all_constraints_satisfied,
-            "constraint_summary": {
-                "total_constraints": constraint_summary["total_constraints"],
-                "satisfied_constraints": constraint_summary["satisfied_constraints"],
-                "violated_constraints": constraint_summary["violated_constraints"],
-                "all_constraints_satisfied": constraint_summary["all_constraints_satisfied"],
-                "total_penalty": round(float(constraint_summary["total_penalty"]), 6),
-                "max_severity_percent": round(float(constraint_summary["max_severity_percent"]), 3),
-            },
-            "constraint_details": constraint_details,
-            "violated_constraints": violated_constraints,
             "constraint_satisfaction": self._format_constraint_summary(constraint_summary, solution_mode),
-            "objective_value": round(float(base_objective(feed_percentages)), 6),
-            "total_penalty": round(float(constraint_summary["total_penalty"]), 6),
         }
+
+        # --- Compromise-only: compact violation details ---
+        if not all_constraints_satisfied:
+            compact_violations = []
+            for v in violated_constraints:
+                entry = {
+                    "constraint": v.get("constraint_label"),
+                    "direction": v.get("violation_direction"),
+                    "violation_amount": round(v.get("violation_amount", 0), 3),
+                    "actual": round(v["actual"], 3) if isinstance(v.get("actual"), (int, float)) else v.get("actual"),
+                    "unit": v.get("unit"),
+                }
+                # Include supply/requirement for balance constraints
+                if v.get("supply") is not None:
+                    entry["supply"] = round(v["supply"], 2)
+                    entry["requirement"] = round(v.get("requirement", 0), 2)
+                    entry["supply_pct_of_req"] = v.get("supply_pct_of_req")
+                compact_violations.append(entry)
+            result_dict["violations"] = compact_violations
 
         if optimization_goal == "maximize_profit":
             milk_price = self.animal_params.get("milk_price_per_kg", 3.0) if self.animal_params else 3.0
             milk_revenue = predicted_milk * milk_price
             result_dict["milk_revenue_per_day"] = round(float(milk_revenue), 2)
             result_dict["profit_per_day"] = round(float(milk_revenue - feed_cost_per_day), 2)
-
-        if fallback_result is not None:
-            result_dict["fallback_solver_status"] = "success" if bool(getattr(fallback_result, "success", False)) else "failed"
-            result_dict["fallback_solver_message"] = str(getattr(fallback_result, "message", ""))
-
-        if self.animal_params:
-            result_dict["animal_params_used"] = self.animal_params
-        if self.dmi_override:
-            result_dict["dmi_override_kg"] = self.dmi_override
 
         # --- Post-optimization enrichment (one final NASEM run) ---
         if self.animal_params is not None and (all_constraints_satisfied or solution_mode in ("fallback_feasible", "strict")):
@@ -1029,15 +1025,19 @@ class FormulationOptimizer:
         # Energy balance / body condition
         energy = result.get("energy_balance", {})
         me_balance = energy.get("me_balance_mcal")
+        bw_change = energy.get("predicted_bw_change_kg_day")
         if me_balance is not None:
+            bw_text = ""
+            if bw_change is not None:
+                bw_text = f" (~{abs(bw_change):.2f} kg/d {'loss' if bw_change < 0 else 'gain'})"
             if me_balance < -3:
                 hints.append(
-                    f"ME balance is {me_balance:+.1f} Mcal/d — cow will "
+                    f"ME balance is {me_balance:+.1f} Mcal/d{bw_text} — cow will "
                     f"mobilize body reserves. Check if BCS loss is acceptable."
                 )
             elif me_balance > 5:
                 hints.append(
-                    f"ME balance is {me_balance:+.1f} Mcal/d — excess energy, "
+                    f"ME balance is {me_balance:+.1f} Mcal/d{bw_text} — excess energy, "
                     f"cow may gain condition. Verify this is appropriate for stage."
                 )
 

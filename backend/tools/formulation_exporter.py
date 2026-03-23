@@ -591,10 +591,31 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                     nasem_summary_rows.append([texts["nasem_rdp_intake"], round(rdp_intake, 1) if rdp_intake else "N/A"])
                     nasem_summary_rows.append(["", ""])
                     
-                    # Other Key Metrics
+                    # Extract AA data for summary + detailed sheet
+                    AA_TARGETS = {"Lys": 7.2, "Met": 2.5}  # NASEM 2021 targets (% of MP)
+                    aa_lys_pct = None
+                    aa_met_pct = None
+                    aa_limiting_str = "N/A"
+                    try:
+                        abs_aa_mpp = model_output.get_value("Abs_AA_MPp")
+                        if abs_aa_mpp is not None:
+                            aa_lys_pct = round(float(abs_aa_mpp.get("Lys", 0)), 2)
+                            aa_met_pct = round(float(abs_aa_mpp.get("Met", 0)), 2)
+                            limiting = []
+                            for aa, tgt in AA_TARGETS.items():
+                                if float(abs_aa_mpp.get(aa, 0)) < tgt:
+                                    limiting.append(aa)
+                            aa_limiting_str = ", ".join(limiting) if limiting else texts["nasem_aa_none_limiting"]
+                    except Exception as e:
+                        logger.warning(f"Failed to extract AA summary: {e}")
+                    
+                    # Other Key Metrics (includes compact AA summary)
                     nasem_summary_rows.append([texts["nasem_other_metrics"], ""])
                     dcad = model_output.get_value("An_DCADmeq")
                     nasem_summary_rows.append([texts["nasem_dcad"], round(dcad, 1) if dcad else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_lys_mp"], f"{aa_lys_pct}% (≥7.2%)" if aa_lys_pct is not None else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_met_mp"], f"{aa_met_pct}% (≥2.5%)" if aa_met_pct is not None else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_aa_limiting"], aa_limiting_str])
                 
                 # Determine max rows needed
                 max_rows = max(len(main_rows), len(profit_rows), constraints_start_row + len(nasem_summary_rows))
@@ -719,6 +740,55 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                         except Exception as e:
                             logger.warning(f"Failed to export NASEM {category_name}: {e}")
                             continue
+                    
+                    # ==================== NASEM-AA Detailed Sheet ====================
+                    try:
+                        abs_aa_g = model_output.get_value("Abs_AA_g")       # pd.Series: AA → g/day
+                        abs_aa_mpp = model_output.get_value("Abs_AA_MPp")   # pd.Series: AA → % of MP
+                        trg_abs_aa = model_output.get_value("Trg_AbsAA_g")  # pd.Series: AA → target g/day
+                        
+                        if abs_aa_g is not None and abs_aa_mpp is not None:
+                            aa_sheet_name = texts.get("nasem_aa_sheet", "NASEM-AA")
+                            aa_tab_data = []
+                            aa_tab_data.append([aa_sheet_name, "", "", "", "", ""])
+                            aa_tab_data.append([f"{texts['date']}:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "", "", "", ""])
+                            aa_tab_data.append(["", "", "", "", "", ""])
+                            
+                            # Table header
+                            aa_tab_data.append([
+                                texts["nasem_aa_name"],
+                                texts["nasem_aa_absorbed"],
+                                texts["nasem_aa_target"],
+                                texts["nasem_aa_pct_mp"],
+                                texts["nasem_aa_target_pct"],
+                                texts["nasem_aa_status"]
+                            ])
+                            
+                            # All essential AAs
+                            EAA_LIST = ["Arg", "His", "Ile", "Leu", "Lys", "Met", "Phe", "Thr", "Trp", "Val"]
+                            for aa_name in EAA_LIST:
+                                absorbed_g = round(float(abs_aa_g.get(aa_name, 0)), 1)
+                                pct_mp = round(float(abs_aa_mpp.get(aa_name, 0)), 2)
+                                target_g = round(float(trg_abs_aa.get(aa_name, 0)), 1) if trg_abs_aa is not None else ""
+                                
+                                # Target % only for Lys/Met (NASEM 2021 benchmarks)
+                                target_pct = AA_TARGETS.get(aa_name, "")
+                                target_pct_str = f"{target_pct}%" if target_pct else ""
+                                
+                                # Status: only evaluate for AAs with targets
+                                if aa_name in AA_TARGETS:
+                                    is_limiting = pct_mp < AA_TARGETS[aa_name]
+                                    status = texts["nasem_aa_deficient"] if is_limiting else texts["nasem_aa_adequate"]
+                                else:
+                                    status = ""
+                                
+                                aa_tab_data.append([aa_name, absorbed_g, target_g, f"{pct_mp}%", target_pct_str, status])
+                            
+                            # Write the AA sheet
+                            aa_df = pd.DataFrame(aa_tab_data)
+                            aa_df.to_excel(writer, sheet_name=aa_sheet_name[:31], index=False, header=False)
+                    except Exception as e:
+                        logger.warning(f"Failed to export NASEM-AA sheet: {e}")
                 
 
                 # Apply formatting
@@ -998,6 +1068,56 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                             # Label rows (ending with :)
                             elif first_value.endswith(":"):
                                 first_cell.font = label_font
+                
+                # ==================== FORMAT NASEM-AA Sheet ====================
+                aa_sheet_name = texts.get("nasem_aa_sheet", "NASEM-AA")
+                if aa_sheet_name in workbook.sheetnames:
+                    ws = workbook[aa_sheet_name]
+                    
+                    # Column widths for 6-column table
+                    ws.column_dimensions['A'].width = 18  # AA Name
+                    ws.column_dimensions['B'].width = 16  # Absorbed
+                    ws.column_dimensions['C'].width = 16  # Target
+                    ws.column_dimensions['D'].width = 14  # % MP
+                    ws.column_dimensions['E'].width = 14  # Target %
+                    ws.column_dimensions['F'].width = 16  # Status
+                    
+                    for row_num in range(1, ws.max_row + 1):
+                        first_cell = ws.cell(row=row_num, column=1)
+                        first_value = str(first_cell.value or "")
+                        
+                        # Title row
+                        if first_value == aa_sheet_name:
+                            first_cell.font = title_font
+                            first_cell.fill = title_fill
+                            ws.merge_cells(f'A{row_num}:F{row_num}')
+                        
+                        # Header row (AA Name column)
+                        elif first_value == texts["nasem_aa_name"]:
+                            for col in range(1, 7):
+                                cell = ws.cell(row=row_num, column=col)
+                                if cell.value:
+                                    cell.font = header_font
+                                    cell.fill = header_fill
+                                    cell.alignment = Alignment(horizontal="center")
+                        
+                        # Data rows - format status column with pass/fail colors
+                        elif first_value in ["Arg", "His", "Ile", "Leu", "Lys", "Met", "Phe", "Thr", "Trp", "Val"]:
+                            status_cell = ws.cell(row=row_num, column=6)
+                            status_val = str(status_cell.value or "")
+                            if texts["nasem_aa_adequate"] in status_val:
+                                status_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                                status_cell.font = Font(color="006100")
+                            elif texts["nasem_aa_deficient"] in status_val:
+                                status_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                                status_cell.font = Font(color="9C0006")
+                            # Center-align data cells
+                            for col in range(2, 7):
+                                ws.cell(row=row_num, column=col).alignment = Alignment(horizontal="center")
+                        
+                        # Date row
+                        elif first_value.endswith(":"):
+                            first_cell.font = label_font
             
 
 
