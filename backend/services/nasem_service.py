@@ -286,6 +286,126 @@ class NASEMService:
             logger.error(f"Error evaluating diet: {e}")
             return {"status": "error", "error": str(e)}
     
+    def enrich_formulation(
+        self,
+        feedbase: Dict[str, Any],
+        diet_composition: Dict[str, float],
+        animal_input: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run NASEM once and extract enrichment data for a formulation result.
+        
+        Extracts information the optimizer doesn't surface on its own:
+        - Amino acid balance (Lys, Met as % of MP and absorbed g)
+        - Energy balance (ME intake vs use → weight gain/loss implication)
+        - RDP status
+        - Starch-related rumen data
+        
+        Args:
+            feedbase: Feedbase dict OR direct feeds dict {feed_key: {...}}
+            diet_composition: {feed_key: kg_dm_per_day}
+            animal_input: Animal input dict (from build_animal_input)
+        
+        Returns:
+            Dict with enrichment data, or empty dict on failure.
+        """
+        try:
+            # Handle both feedbase format and direct feeds dict
+            if "feeds" not in feedbase:
+                feedbase = {"feeds": feedbase}
+            feeds = feedbase["feeds"]
+            
+            user_diet = pd.DataFrame({
+                "Feedstuff": [feeds[k].get("nasem_name", k) for k in diet_composition.keys()],
+                "kg_user": list(diet_composition.values())
+            })
+            feed_library = self.build_feed_library(feedbase, list(diet_composition.keys()))
+            
+            output = nasem(
+                user_diet=user_diet,
+                animal_input=animal_input,
+                equation_selection=self.DEFAULT_EQUATION_SELECTION,
+                feed_library=feed_library,
+                infusion_input=self.DEFAULT_INFUSION_INPUT
+            )
+            
+            enrichment: Dict[str, Any] = {}
+            
+            # --- Amino Acid Balance ---
+            AA_TARGETS = {"Lys": 7.2, "Met": 2.5}  # NASEM 2021 targets (% of MP)
+            try:
+                abs_aa_mpp = output.get_value("Abs_AA_MPp")   # pd.Series: AA → % of MP
+                abs_aa_g = output.get_value("Abs_AA_g")       # pd.Series: AA → g/day
+                trg_abs_aa = output.get_value("Trg_AbsAA_g")  # pd.Series: AA → target g/day
+                
+                if abs_aa_mpp is not None and abs_aa_g is not None:
+                    aa_status = {}
+                    limiting_aa = []
+                    for aa, target_pct in AA_TARGETS.items():
+                        pct_mp = round(float(abs_aa_mpp.get(aa, 0)), 2)
+                        absorbed_g = round(float(abs_aa_g.get(aa, 0)), 1)
+                        target_g = round(float(trg_abs_aa.get(aa, 0)), 1) if trg_abs_aa is not None else None
+                        aa_status[aa.lower()] = {
+                            "pct_mp": pct_mp,
+                            "target_pct_mp": target_pct,
+                            "absorbed_g": absorbed_g,
+                        }
+                        if target_g is not None:
+                            aa_status[aa.lower()]["target_g"] = target_g
+                        if pct_mp < target_pct:
+                            limiting_aa.append(aa)
+                    enrichment["amino_acid_balance"] = aa_status
+                    enrichment["limiting_aa"] = limiting_aa
+            except Exception as e:
+                logger.warning(f"Failed to extract AA data: {e}")
+            
+            # --- Energy Balance ---
+            try:
+                me_intake = output.get_value("An_MEIn")       # Mcal/day
+                me_target = output.get_value("Trg_MEuse")     # Mcal/day (target total use)
+                me_maint = output.get_value("An_MEmUse")      # Mcal/day (maintenance)
+                
+                if me_intake is not None and me_target is not None:
+                    me_balance = float(me_intake) - float(me_target)
+                    enrichment["energy_balance"] = {
+                        "me_intake_mcal": round(float(me_intake), 2),
+                        "me_target_use_mcal": round(float(me_target), 2),
+                        "me_balance_mcal": round(me_balance, 2),
+                    }
+                    if me_maint is not None:
+                        enrichment["energy_balance"]["me_maintenance_mcal"] = round(float(me_maint), 2)
+                    
+                    # Body reserve change
+                    rsrv_gain = output.get_value("Rsrv_Gain_empty")
+                    body_gain = output.get_value("Body_Gain_empty")
+                    if body_gain is not None:
+                        enrichment["energy_balance"]["body_gain_kg_day"] = round(float(body_gain), 3)
+                    if rsrv_gain is not None:
+                        enrichment["energy_balance"]["reserve_gain_kg_day"] = round(float(rsrv_gain), 3)
+            except Exception as e:
+                logger.warning(f"Failed to extract energy balance: {e}")
+            
+            # --- RDP Status ---
+            try:
+                rdp_intake = output.get_value("An_RDPIn_g")
+                if rdp_intake is not None:
+                    enrichment["rdp_intake_g"] = round(float(rdp_intake), 0)
+            except Exception:
+                pass
+            
+            # --- Rumen Starch ---
+            try:
+                rum_dig_st = output.get_value("Rum_DigStIn")
+                if rum_dig_st is not None:
+                    enrichment["rumen_digested_starch_kg"] = round(float(rum_dig_st), 2)
+            except Exception:
+                pass
+            
+            return enrichment
+            
+        except Exception as e:
+            logger.warning(f"Formulation enrichment failed: {e}")
+            return {}
+    
     def calculate_values(
         self,
         feedbase: Dict[str, Any],

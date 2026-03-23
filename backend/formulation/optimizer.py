@@ -127,6 +127,8 @@ class FormulationOptimizer:
     Supports:
     - concentration: nutrient % of dry matter
     - daily_total: absolute daily nutrient intake (including mp, me, dmi)
+    - daily_total with mp_balance/me_balance: balance-based constraints
+      where tolerance is expressed as % of NASEM-computed requirement
     - ratio: ratios between nutrients
     - inclusion: feed inclusion limits
     
@@ -134,6 +136,7 @@ class FormulationOptimizer:
     - Predict DMI from diet composition using NASEM equation 9
     - Calculate MP supply from diet for MP constraints (g/day)
     - Calculate ME supply from diet for ME constraints (Mcal/day)
+    - Compute MP/ME balance (supply - requirement) for balance constraints
     """
     
     def __init__(self):
@@ -276,6 +279,8 @@ class FormulationOptimizer:
         all_params = [
             "An_MPIn_g",          # MP supply
             "An_MEIn",            # ME supply  
+            "An_MPuse_g_Trg",     # MP requirement (for balance)
+            "An_MEuse",           # ME requirement (for balance)
             "Mlk_Prod_MPalow",    # MP-allowable milk
             "Mlk_Prod_NEalow",    # NE-allowable milk
         ]
@@ -317,16 +322,38 @@ class FormulationOptimizer:
             return result
     
     # Convenience methods for single-value constraints
-    def _get_nasem_mp(self, feed_percentages: np.ndarray, selected_feeds: List[str]) -> float:
-        """Get MP from NASEM. Returns An_MPIn_g in g/day."""
-        result = self._get_nasem_values(feed_percentages, selected_feeds, ["An_MPIn_g"])
-        return result.get("An_MPIn_g", 0.0)
-    
-    def _get_nasem_me(self, feed_percentages: np.ndarray, selected_feeds: List[str]) -> float:
-        """Get ME from NASEM. Returns An_MEIn in Mcal/day."""
-        result = self._get_nasem_values(feed_percentages, selected_feeds, ["An_MEIn"])
-        return result.get("An_MEIn", 0.0)
-    
+    def _get_nasem_mp_balance(
+        self, feed_percentages: np.ndarray, selected_feeds: List[str]
+    ) -> Tuple[float, float, float]:
+        """Get MP supply, requirement, and balance from NASEM.
+        
+        Returns:
+            (supply_g, requirement_g, balance_g) where balance = supply - requirement
+        """
+        result = self._get_nasem_values(
+            feed_percentages, selected_feeds,
+            ["An_MPIn_g", "An_MPuse_g_Trg"]
+        )
+        supply = result.get("An_MPIn_g", 0.0)
+        requirement = result.get("An_MPuse_g_Trg", 0.0)
+        return supply, requirement, supply - requirement
+
+    def _get_nasem_me_balance(
+        self, feed_percentages: np.ndarray, selected_feeds: List[str]
+    ) -> Tuple[float, float, float]:
+        """Get ME supply, requirement, and balance from NASEM.
+        
+        Returns:
+            (supply_mcal, requirement_mcal, balance_mcal)
+        """
+        result = self._get_nasem_values(
+            feed_percentages, selected_feeds,
+            ["An_MEIn", "An_MEuse"]
+        )
+        supply = result.get("An_MEIn", 0.0)
+        requirement = result.get("An_MEuse", 0.0)
+        return supply, requirement, supply - requirement
+
     def _get_nasem_milk_prod(self, feed_percentages: np.ndarray, selected_feeds: List[str]) -> float:
         """Get predicted milk production using least-constraint approach.
         
@@ -553,24 +580,62 @@ class FormulationOptimizer:
                 })
                 return self._sanitize_constraint_detail(detail)
 
-            if target is not None:
+            # --- Balance-based constraints (mp_balance, me_balance) ---
+            if attribute == "mp_balance":
+                supply, requirement, balance = self._get_nasem_mp_balance(
+                    feed_percentages, selected_feeds
+                )
+                tol_min = float(constraint.get("tolerance_min_pct", -tolerance_pct))
+                tol_max = float(constraint.get("tolerance_max_pct", tolerance_pct))
+                min_allowed = tol_min / 100 * requirement  # e.g. -5% of req
+                max_allowed = tol_max / 100 * requirement  # e.g. +5% of req
+                detail.update({
+                    "actual": balance,
+                    "target": 0.0,
+                    "min_allowed": min_allowed,
+                    "max_allowed": max_allowed,
+                    "tolerance_min_pct": tol_min,
+                    "tolerance_max_pct": tol_max,
+                    "supply": supply,
+                    "requirement": requirement,
+                    "supply_pct_of_req": round(
+                        supply / requirement * 100, 1
+                    ) if requirement > 0 else None,
+                    "unit": "g/day (balance)",
+                })
+            elif attribute == "me_balance":
+                supply, requirement, balance = self._get_nasem_me_balance(
+                    feed_percentages, selected_feeds
+                )
+                tol_min = float(constraint.get("tolerance_min_pct", -tolerance_pct))
+                tol_max = float(constraint.get("tolerance_max_pct", tolerance_pct))
+                min_allowed = tol_min / 100 * requirement
+                max_allowed = tol_max / 100 * requirement
+                detail.update({
+                    "actual": balance,
+                    "target": 0.0,
+                    "min_allowed": min_allowed,
+                    "max_allowed": max_allowed,
+                    "tolerance_min_pct": tol_min,
+                    "tolerance_max_pct": tol_max,
+                    "supply": supply,
+                    "requirement": requirement,
+                    "supply_pct_of_req": round(
+                        supply / requirement * 100, 1
+                    ) if requirement > 0 else None,
+                    "unit": "Mcal/day (balance)",
+                })
+            elif target is not None:
                 detail["min_allowed"] = target * (1 - tolerance_pct / 100)
                 detail["max_allowed"] = target * (1 + tolerance_pct / 100)
 
-            if attribute in ("dmi", "Fd_DM"):
+            # Set actual value for non-balance attributes
+            if attribute in ("mp_balance", "me_balance"):
+                pass  # already set above
+            elif attribute in ("dmi", "Fd_DM"):
                 detail.update({
                     "actual": self._get_dmi(feed_percentages, selected_feeds),
                     "unit": "kg/day",
-                })
-            elif attribute == "mp":
-                detail.update({
-                    "actual": self._get_nasem_mp(feed_percentages, selected_feeds),
-                    "unit": "g/day",
-                })
-            elif attribute == "me":
-                detail.update({
-                    "actual": self._get_nasem_me(feed_percentages, selected_feeds),
-                    "unit": "Mcal/day",
                 })
             else:
                 is_mineral = str(attribute).lower() in (
@@ -884,7 +949,107 @@ class FormulationOptimizer:
         if self.dmi_override:
             result_dict["dmi_override_kg"] = self.dmi_override
 
+        # --- Post-optimization enrichment (one final NASEM run) ---
+        if self.animal_params is not None and (all_constraints_satisfied or solution_mode in ("fallback_feasible", "strict")):
+            try:
+                from services.nasem_service import get_nasem_service
+                nasem_service = get_nasem_service()
+                
+                dmi = predicted_dmi
+                diet = self._build_diet_for_nasem(feed_percentages, selected_feeds, dmi)
+                animal_input = nasem_service.build_animal_input(
+                    body_weight_kg=self.animal_params.get("body_weight", 650.0),
+                    days_in_milk=self.animal_params.get("dim", 90),
+                    parity=self.animal_params.get("parity", 2),
+                    target_milk_kg=self.animal_params.get("milk_prod", 35.0),
+                    target_dmi_kg=dmi,
+                    bcs=self.animal_params.get("bcs", 3.0),
+                )
+                
+                enrichment = nasem_service.enrich_formulation(
+                    self.feeds, diet, animal_input
+                )
+                if enrichment:
+                    result_dict.update(enrichment)
+            except Exception as e:
+                logger.warning(f"Post-optimization enrichment failed: {e}")
+
+        # --- Orientation hints ---
+        hints = self._build_orientation_hints(result_dict, formulation, selected_feeds)
+        if hints:
+            result_dict["hints"] = hints
+
         return result_dict
+
+    def _build_orientation_hints(
+        self,
+        result: Dict[str, Any],
+        formulation: Dict[str, Dict],
+        selected_feeds: List[str],
+    ) -> List[str]:
+        """Build short orientation reminders for the agent.
+
+        These are NOT warnings or analyses — just quick nudges so the agent
+        remembers to check important nutritional aspects.
+        """
+        hints: List[str] = []
+
+        # Acidosis risk — diet starch level
+        nutrient_analysis = result.get("nutrient_analysis", {})
+        starch_pct = nutrient_analysis.get("Fd_St", 0)
+        if starch_pct > 28:
+            hints.append(
+                f"Diet starch is {starch_pct:.1f}% DM — review acidosis risk "
+                f"(NDF adequacy, forage particle size, starch source)."
+            )
+        elif starch_pct > 24:
+            hints.append(
+                f"Diet starch is {starch_pct:.1f}% DM — moderate level, "
+                f"verify NDF is adequate for rumen health."
+            )
+
+        # Feed dominance — any single feed > 50% of ration
+        for feed_name, feed_data in formulation.items():
+            pct = feed_data.get("percentage_dm", 0)
+            if pct > 50:
+                hints.append(
+                    f"'{feed_name}' makes up {pct:.0f}% of the ration — "
+                    f"check if this over-reliance is intentional."
+                )
+
+        # AA reminder
+        limiting_aa = result.get("limiting_aa", [])
+        if limiting_aa:
+            names = ", ".join(limiting_aa)
+            hints.append(
+                f"Limiting amino acid(s): {names}. "
+                f"Consider rumen-protected AA supplements if formulation allows."
+            )
+
+        # Energy balance / body condition
+        energy = result.get("energy_balance", {})
+        me_balance = energy.get("me_balance_mcal")
+        if me_balance is not None:
+            if me_balance < -3:
+                hints.append(
+                    f"ME balance is {me_balance:+.1f} Mcal/d — cow will "
+                    f"mobilize body reserves. Check if BCS loss is acceptable."
+                )
+            elif me_balance > 5:
+                hints.append(
+                    f"ME balance is {me_balance:+.1f} Mcal/d — excess energy, "
+                    f"cow may gain condition. Verify this is appropriate for stage."
+                )
+
+        # Fat level
+        fat_pct = nutrient_analysis.get("Fd_FA", 0)
+        if fat_pct > 6:
+            hints.append(
+                f"Diet fat is {fat_pct:.1f}% DM — above 6% may depress "
+                f"fiber digestion."
+            )
+
+        return hints
     
     def optimize(
         self,
@@ -969,40 +1134,59 @@ class FormulationOptimizer:
                         # Already handled above as DMI override
                         continue
                     
-                    if target is None:
+                    # Balance constraints don't need a target
+                    if attribute in ("mp_balance", "me_balance"):
+                        pass  # handled below
+                    elif target is None:
                         continue
                     
-                    target_min = target * (1 - tolerance_pct / 100)
-                    target_max = target * (1 + tolerance_pct / 100)
+                    if attribute == "mp_balance":
+                        # MP balance constraint: supply - requirement as % of requirement
+                        # tolerance_min_pct/tolerance_max_pct define allowed balance range
+                        tol_min_pct = float(constraint.get("tolerance_min_pct", -tolerance_pct))
+                        tol_max_pct = float(constraint.get("tolerance_max_pct", tolerance_pct))
+                        
+                        def mp_bal_min(x, tmin_pct=tol_min_pct):
+                            supply, req, balance = self._get_nasem_mp_balance(x, selected_feeds)
+                            if req <= 0:
+                                return 0.0
+                            return balance - (tmin_pct / 100 * req)
+                        
+                        def mp_bal_max(x, tmax_pct=tol_max_pct):
+                            supply, req, balance = self._get_nasem_mp_balance(x, selected_feeds)
+                            if req <= 0:
+                                return 0.0
+                            return (tmax_pct / 100 * req) - balance
+                        
+                        ineq_constraints.append({"type": "ineq", "fun": mp_bal_min})
+                        ineq_constraints.append({"type": "ineq", "fun": mp_bal_max})
                     
-                    if attribute == "mp":
-                        # Metabolizable Protein constraint using full NASEM model
-                        def mp_min(x, tmin=target_min):
-                            mp_supply = self._get_nasem_mp(x, selected_feeds)
-                            return mp_supply - tmin
+                    elif attribute == "me_balance":
+                        # ME balance constraint: supply - requirement as % of requirement
+                        tol_min_pct = float(constraint.get("tolerance_min_pct", -tolerance_pct))
+                        tol_max_pct = float(constraint.get("tolerance_max_pct", tolerance_pct))
                         
-                        def mp_max(x, tmax=target_max):
-                            mp_supply = self._get_nasem_mp(x, selected_feeds)
-                            return tmax - mp_supply
+                        def me_bal_min(x, tmin_pct=tol_min_pct):
+                            supply, req, balance = self._get_nasem_me_balance(x, selected_feeds)
+                            if req <= 0:
+                                return 0.0
+                            return balance - (tmin_pct / 100 * req)
                         
-                        ineq_constraints.append({"type": "ineq", "fun": mp_min})
-                        ineq_constraints.append({"type": "ineq", "fun": mp_max})
-                    
-                    elif attribute == "me":
-                        # Metabolizable Energy constraint using full NASEM model (Mcal/day)
-                        def me_min(x, tmin=target_min):
-                            me_supply = self._get_nasem_me(x, selected_feeds)
-                            return me_supply - tmin
+                        def me_bal_max(x, tmax_pct=tol_max_pct):
+                            supply, req, balance = self._get_nasem_me_balance(x, selected_feeds)
+                            if req <= 0:
+                                return 0.0
+                            return (tmax_pct / 100 * req) - balance
                         
-                        def me_max(x, tmax=target_max):
-                            me_supply = self._get_nasem_me(x, selected_feeds)
-                            return tmax - me_supply
-                        
-                        ineq_constraints.append({"type": "ineq", "fun": me_min})
-                        ineq_constraints.append({"type": "ineq", "fun": me_max})
+                        ineq_constraints.append({"type": "ineq", "fun": me_bal_min})
+                        ineq_constraints.append({"type": "ineq", "fun": me_bal_max})
                     
                     else:
-                        # Regular nutrient daily total
+                        # Regular nutrient daily total (minerals, etc.)
+                        # These still require a target value
+                        target_min = target * (1 - tolerance_pct / 100)
+                        target_max = target * (1 + tolerance_pct / 100)
+                        
                         # Determine if target is in g/day (minerals) or based on % concentration
                         is_mineral = attribute.lower() in (
                             "fd_ca", "fd_p", "fd_mg", "fd_k", "fd_s", "fd_na", "fd_cl",

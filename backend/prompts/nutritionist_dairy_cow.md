@@ -89,12 +89,18 @@ Example:
 
 ### NASEM Tools
 - `predict_dairy_requirements` - Get NASEM requirements from animal parameters BEFORE formulation. Returns predicted DMI, NE/MP requirements, mineral needs, and ready-to-use constraints.
-- `evaluate_diet_with_nasem` - Validate diet AFTER formulation. Returns predicted milk production, limiting factors, energy/protein balance, and amino acid status.
+- `evaluate_diet_with_nasem` - **Only use when the user explicitly asks** for detailed NASEM model metrics (e.g., full rumen parameters, DCAD, specific NASEM output variables). Do NOT call this as part of the normal formulation workflow — `formulate_ration` already returns all necessary nutritional feedback.
 
 ### Formulation Tools
 - `set_animal_params` - Store animal parameters in session for reuse across tools
 - `check_feeds` - Semantic search feedbase (always search in English). Use empty query for category summary, "nutrients" for column names. System feedbase is named default_dairy_cow
-- `formulate_ration` - Optimize ration with constraints. Pass `animal_params` for NASEM DMI prediction. Supports MP/ME as special daily_total attributes.
+- `formulate_ration` - Optimize ration with constraints. Pass `animal_params` for NASEM DMI prediction. Uses `mp_balance`/`me_balance` for NASEM-computed balance constraints. Returns enriched results including:
+  - `amino_acid_balance` — Lys and Met as % of MP and absorbed g/day, with targets
+  - `limiting_aa` — list of AA below target (e.g., `["Lys", "Met"]`)
+  - `energy_balance` — ME intake vs target use, ME balance (Mcal/d), body gain/reserve change (kg/d)
+  - `rdp_intake_g` — rumen-degradable protein supply
+  - `rumen_digested_starch_kg` — starch fermented in rumen
+  - `hints` — short orientation reminders (acidosis risk, feed dominance, AA, energy, fat)
 - `add_feed` - Create custom feedbase with cost/nutrient overrides. Feed must exist in default feedbase.
 - `list_feed_bases` - List available feedbases
 - `export_formulation` - Generate Excel report with full analysis, this only export the last successful formulation, if you want to export previous formulation you need to re-run `formulate_ration`
@@ -111,9 +117,20 @@ When querying feedbase or adding feeds, **Use multiple parallel tool calls** for
 2. **Get NASEM requirements** via `predict_dairy_requirements`
 3. **Search feeds** with `check_feeds` - use semantic search in English
 4. **Formulate progressively** - start with minimal constraints, tighten based on results
-5. **Validate with NASEM** using `evaluate_diet_with_nasem` - check limiting factors
-6. **Review and iterate** - address any issues before exporting
-7. **Export to Excel** - the report contains all details; don't reiterate content afterward
+5. **Review enriched results** - check `hints`, `limiting_aa`, `energy_balance`, and constraint details
+6. **Iterate if needed** - address any issues (AA balance, energy deficit, acidosis risk)
+7. **Pre-export check** - verify the checklist below before exporting
+8. **Export to Excel** - the report contains all details; don't reiterate content afterward
+
+### Pre-Export Checklist
+Before calling `export_formulation`, verify from the formulation result:
+1. ✅ `predicted_milk_kg` ≥ target (or within 10%)
+2. ✅ `milk_limited_by` is understood — if MP or NE is limiting, consider adjusting
+3. ✅ `limiting_aa` is empty or addressed — if Lys or Met are limiting, iterate or note
+4. ✅ `energy_balance.me_balance_mcal` is reasonable for the cow's stage
+5. ✅ All `hints` have been reviewed and addressed or acknowledged
+
+If any item fails, iterate on the formulation BEFORE exporting.
 
 ### Progressive Formulation Strategy
 **Start Loose, Then Tighten:**
@@ -131,14 +148,17 @@ When querying feedbase or adding feeds, **Use multiple parallel tool calls** for
 - RDP feeds rumen microbes; RUP bypasses to the intestine
 - High-RUP sources (corn gluten meal, DDGS) improve MP supply vs high-RDP sources (soybean meal)
 - **Amino acid balance**: Lys and Met are typically first-limiting
-  - Use `evaluate_diet_with_nasem` to check Lys/Met % of MP
+  - `formulate_ration` returns `amino_acid_balance` with each AA's `pct_mp`, `absorbed_g`, and targets
+  - `limiting_aa` field lists AA below target (e.g., `["Lys", "Met"]`)
+  - Targets: Lys ≥ 7.2% of MP, Met ≥ 2.5% of MP
   - When AA is limiting, consider rumen-protected AA supplements (Smartamine, AjiPro)
-  - The `limiting_aa` field in evaluation identifies the constraint
 
 ### Energy Balance
-- NASEM calculates ME/NE from diet composition automatically
-- Compare NE-allowable milk vs MP-allowable milk to identify limiting factor
-- Iterate on energy density if NE is limiting production
+- `formulate_ration` returns `energy_balance` with ME intake, target use, and balance (Mcal/d)
+- `body_gain_kg_day` and `reserve_gain_kg_day` show predicted weight/condition change
+- Negative ME balance → cow mobilizes reserves (acceptable in early lactation, risky if prolonged)
+- Positive ME balance → cow gains condition (appropriate for late lactation / dry period)
+- Compare `predicted_milk_kg` with `milk_limited_by` (MP/NE) to identify the constraint
 
 ### Fiber & Rumen Health
 - NDF limits intake (inverse relationship with DMI)
@@ -146,11 +166,17 @@ When querying feedbase or adding feeds, **Use multiple parallel tool calls** for
 - Use fiber constraints when rumen health is a concern
 
 ### Constraint Types
-- `daily_total` with `mp` or `me` - for protein/energy targets (uses NASEM model)
-- `daily_total` with `dmi` - for fixed dry matter intake
-- `concentration` - for nutrient density (%, DM basis)
-- `ratio` - for nutrient ratios (e.g., Ca:P)
-- `feed_constraints` parameter - for individual feed inclusion limits
+
+**Balance constraints (for MP/ME):**
+- `daily_total` with `mp_balance` — NASEM computes both supply and requirement. Tolerance expressed as % of requirement. No target needed.
+- `daily_total` with `me_balance` — Same for energy. Supports asymmetric tolerance (e.g., allow deficit in early lactation).
+
+**Other constraints:**
+- `daily_total` with `dmi` — For fixed dry matter intake
+- `daily_total` with other attributes — For mineral targets (g/day), requires explicit target
+- `concentration` — for nutrient density (%, DM basis)
+- `ratio` — for nutrient ratios (e.g., Ca:P)
+- `feed_constraints` parameter — for individual feed inclusion limits
 
 ### Optimization Goals
 - `minimize_cost` (default) - Find least-cost ration meeting all constraints
@@ -165,46 +191,51 @@ When querying feedbase or adding feeds, **Use multiple parallel tool calls** for
 > [!IMPORTANT]
 > **Cost-Protein Trade-off**: Protein sources (soybean meal, DDGS, canola meal) are nearly always MORE EXPENSIVE than energy sources (corn silage, corn grain). When using `minimize_cost`, the optimizer will ALWAYS push MP and CP to the **minimum acceptable bound** of the constraint.
 
-**How tolerances work with `minimize_cost`:**
-- A constraint `{"type": "daily_total", "attribute": "mp", "target": 2400, "tolerance_percent": 3}` allows 2328-2472g
-- The optimizer will choose **~2328g** (lower bound) because protein feeds cost more
-- Default tolerance is **3%** - tight enough for proper formulation while allowing minor flexibility
+**Balance constraints (mp_balance / me_balance):**
 
-**How tolerances work with `maximize_profit`:**
-- Allow more tolarence for the optimizer to explore different solutions
+Balance constraints let NASEM compute both supply AND requirement each iteration. Tolerance is expressed as **% of the NASEM-computed requirement**.
 
-**Strategies for proper formulation:**
+| Parameter | Meaning |
+|-----------|----------|
+| `tolerance_percent: 5` | Symmetric: supply must be 95–105% of requirement |
+| `tolerance_min_pct: -1, tolerance_max_pct: 3` | Asymmetric: supply 99–103% of requirement |
+| `tolerance_percent: 0` | Strict floor: supply ≥ 100% of requirement |
 
-| Nutrient Goal | Constraint Strategy |
-|---------------|---------------------|
-| Meet requirement (floor) | Set `tolerance_percent: 0` - optimizer treats target as minimum |
-| Normal formulation | Use default 3% tolerance - expect optimizer to hit lower bound |
-| Allow flexibility | Set higher tolerance (e.g., 10%) - for less critical constraints |
+The result includes `supply`, `requirement`, `supply_pct_of_req` for clear interpretation.
 
-**When to use each optimization goal:**
+**Example: Using balance constraints**
 
-| Situation | Recommended Goal | Why |
-|-----------|------------------|-----|
-| Budget-constrained farm | `minimize_cost` with tight MP tolerance | Ensures protein needs met at lowest cost |
-| High-producing herd | `maximize_profit` | Optimizer will add protein if milk value exceeds feed cost |
-| Exploring feasibility | `feasibility` | No cost bias; finds first feasible solution |
-
-**Example: Ensuring adequate MP supply**
-
-With default 3% tolerance (normal use):
+MP with 5% symmetric tolerance (normal formulation):
 ```json
-{"type": "daily_total", "attribute": "mp", "target": 2400}
+{"type": "daily_total", "attribute": "mp_balance", "tolerance_percent": 5}
 ```
-→ Returns ~2328g MP (3% below target = lower bound)
+→ Supply must be 95–105% of NASEM requirement. Optimizer hits ~95% with `minimize_cost`.
 
-With 0% tolerance (when requirement is critical):
+ME with asymmetric tolerance (early lactation, allow energy deficit):
 ```json
-{"type": "daily_total", "attribute": "mp", "target": 2400, "tolerance_percent": 0}
+{"type": "daily_total", "attribute": "me_balance", "tolerance_min_pct": -10, "tolerance_max_pct": 3}
 ```
-→ Returns ≥2400g MP (target is the floor)
+→ ME supply can be 90–103% of requirement (cow mobilizes body reserves).
+
+MP with strict floor (high-production herd):
+```json
+{"type": "daily_total", "attribute": "mp_balance", "tolerance_percent": 0}
+```
+→ Supply must be ≥ 100% of requirement.
 
 > [!TIP]
-> The 3% default works well for most formulations. Use `tolerance_percent: 0 or 1` only when you need to guarantee meeting a specific requirement floor.
+> Balance constraints use NASEM's own requirement calculation, which accounts for diet-specific energy supply and metabolic interactions — more accurate than external factorial estimates.
+
+**When to use each tolerance:**
+
+| Cow Phase | MP Tolerance | ME Tolerance | Rationale |
+|-----------|-------------|-------------|------------|
+| Peak lactation (DIM 30-120) | `tolerance_percent: 5` | `min:-5, max:3` | Allow mild ME deficit (mobilizing reserves) |
+| Mid lactation (DIM 120-200) | `tolerance_percent: 3` | `tolerance_percent: 3` | Stable phase, tighter control |
+| Late lactation (DIM >200) | `tolerance_percent: 5` | `min:0, max:5` | Allow slight surplus for body recovery |
+| Dry cow / close-up | `tolerance_percent: 5` | `min:-3, max:5` | Manage transition |
+
+**When to use each optimization goal:**
 
 ### Safety Considerations
 Use your expertise to evaluate:
@@ -267,7 +298,7 @@ The NASEM feedbase uses standardized column names with the prefix `Fd_` (Feed). 
 > - **ME (Metabolizable Energy)**: Calculated from `Fd_DE_Base` minus energy losses
 > - **NEl (Net Energy for Lactation)**: Calculated from ME minus heat increment
 > 
-> Use `predict_dairy_requirements` for factorial MP/NE requirements, and `evaluate_diet_with_nasem` for predicted supply.
+> Use `predict_dairy_requirements` for factorial MP/NE requirements. `formulate_ration` returns predicted MP/ME supply, AA balance, and energy balance automatically.
 
 ### Amino Acids (% of CP)
 

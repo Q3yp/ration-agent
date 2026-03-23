@@ -141,6 +141,16 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
   const isConnected = useMemo(() => state.connectionState === 'connected', [state.connectionState])
 
   /**
+   * Handle 401 unauthorized responses by clearing auth and redirecting to login
+   */
+  const handleUnauthorized = useCallback(() => {
+    localStorage.removeItem('auth_token')
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login'
+    }
+  }, [])
+
+  /**
    * Update state with validation - supports both object updates and functional updates
    */
   const updateState = useCallback((updates: Partial<MessageProcessorState> | ((prevState: MessageProcessorState) => Partial<MessageProcessorState>)) => {
@@ -461,6 +471,10 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
         throw new Error(`Failed to load session history: ${response.statusText}`)
       }
 
@@ -511,6 +525,10 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
         throw new Error(`History stream failed: HTTP ${response.status}`)
       }
       if (!response.body) {
@@ -611,6 +629,10 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
 
@@ -697,6 +719,10 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
         throw new Error(`Failed to stop: ${response.statusText}`)
       }
 
@@ -758,6 +784,10 @@ export function useMessages(config: UseMessagesConfig): UseMessagesReturn {
       })
 
       if (!fetchResponse.ok) {
+        if (fetchResponse.status === 401) {
+          handleUnauthorized()
+          return
+        }
         throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`)
       }
 

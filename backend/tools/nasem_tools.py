@@ -297,8 +297,8 @@ async def predict_dairy_requirements(
             "notes": [
                 "DMI predicted using NASEM equation 8 (animal factors only)",
                 "Actual DMI will vary based on diet NDF content",
-                "Use formulate_ration with animal_params for diet-adjusted DMI",
-                "Use evaluate_diet_with_nasem for final validation after formulation"
+                "Use mp_balance/me_balance constraints in formulate_ration for NASEM-computed supply vs requirement",
+                "MP/ME values shown here are factorial estimates; balance constraints use NASEM's full model"
             ]
         }
         
@@ -352,7 +352,9 @@ async def evaluate_diet_with_nasem(
         - mp_allowable_milk_kg, ne_allowable_milk_kg: Milk allowed by each nutrient
         - me_intake_mcal, me_required_mcal: Energy balance
         - mp_intake_g, mp_required_g, rdp_intake_g: Protein balance
-        - dmi_kg, lys_percent_mp, met_percent_mp, dcad_meq
+        - dmi_kg, dcad_meq
+        - amino_acid_status: {lys_pct_mp, met_pct_mp, lys_target, met_target, lys_absorbed_g, met_absorbed_g}
+        - limiting_aa: list of AA names below target (e.g. ["Lys", "Met"])
         - diet_summary: {total_fresh_intake_kg, feed_count}
     """
     try:
@@ -440,13 +442,45 @@ async def evaluate_diet_with_nasem(
             service.evaluate_diet,
             feedbase=feedbase,
             diet_composition=diet_composition,
-            animal_input=animal_input
+            animal_input=animal_input,
+            return_full_output=True
         )
         
         # Add diet info to result for transparency
         if result.get("status") == "success":
             result["diet_used"] = diet_composition
             result["feedbase_used"] = feedbase_name
+            
+            # Extract amino acid status from full model output
+            model_output = result.pop("model_output", None)
+            
+            if model_output is not None:
+                # AA targets (NASEM 2021 recommendations)
+                AA_TARGETS = {"Lys": 7.2, "Met": 2.5}  # % of MP
+                
+                try:
+                    # Abs_AA_MPp: pd.Series indexed by AA name, values = % of MP
+                    abs_aa_mpp = model_output.get_value("Abs_AA_MPp")
+                    # Abs_AA_g: pd.Series indexed by AA name, values = g/day
+                    abs_aa_g = model_output.get_value("Abs_AA_g")
+                    
+                    if abs_aa_mpp is not None and abs_aa_g is not None:
+                        aa_status = {}
+                        limiting_aa = []
+                        
+                        for aa, target_pct in AA_TARGETS.items():
+                            pct_mp = round(float(abs_aa_mpp.get(aa, 0)), 2)
+                            absorbed_g = round(float(abs_aa_g.get(aa, 0)), 1)
+                            aa_status[f"{aa.lower()}_pct_mp"] = pct_mp
+                            aa_status[f"{aa.lower()}_absorbed_g"] = absorbed_g
+                            aa_status[f"{aa.lower()}_target_pct_mp"] = target_pct
+                            if pct_mp < target_pct:
+                                limiting_aa.append(aa)
+                        
+                        result["amino_acid_status"] = aa_status
+                        result["limiting_aa"] = limiting_aa
+                except Exception as e:
+                    logger.warning(f"Failed to extract AA data: {e}")
             
             # Check if predicted yields are constraint factors (>5% below target)
             warnings = []

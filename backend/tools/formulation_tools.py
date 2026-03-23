@@ -520,12 +520,17 @@ milk_price_per_kg: Optional[float] = None,
                     Required: nutrient (str), min/max (float)
                     
                 "daily_total" - Set target daily intake amount with tolerance
-                    Required: attribute (str), target (float)
+                    Required: attribute (str), target (float) — except for balance attributes
                     Optional: tolerance_percent (default 10%)
                     Special attributes (dairy cow only):
                       - "dmi": Sets fixed DMI (overrides prediction)
-                      - "mp": Metabolizable protein target (g/day, uses NASEM)
-                      - "me": Metabolizable energy target (Mcal/day, uses NASEM)
+                      - "mp_balance": MP balance constraint (supply − requirement ≥ 0)
+                        No target needed. Uses tolerance_percent for symmetric range
+                        (e.g., 5 means 95-105% of requirement), or tolerance_min_pct
+                        and tolerance_max_pct for asymmetric range.
+                      - "me_balance": ME balance constraint (same as mp_balance)
+                        Supports asymmetric tolerance, e.g. tolerance_min_pct: -10,
+                        tolerance_max_pct: 3 to allow deficit in early lactation.
                     
                 "ratio" - Set min/max ratio between two nutrients
                     Required: numerator (str), denominator (str), min/max (float)
@@ -589,7 +594,9 @@ milk_price_per_kg: Optional[float] = None,
                         return Command(
                             update={"messages": [ToolMessage(f"Error: Daily total constraint {i} missing 'attribute' field", tool_call_id=tool_call_id)]}
                         )
-                    if "target" not in constraint:
+                    attr = constraint.get("attribute", "")
+                    # Balance constraints don't need a target (NASEM computes both sides)
+                    if attr not in ("mp_balance", "me_balance") and "target" not in constraint:
                         return Command(
                             update={"messages": [ToolMessage(f"Error: Daily total constraint {i} missing 'target' field", tool_call_id=tool_call_id)]}
                         )
@@ -597,7 +604,9 @@ milk_price_per_kg: Optional[float] = None,
             # Check if animal_params required for dairy cow MP/ME constraints or maximize_profit
             if animal_type == "dairy_cow":
                 has_mp_me_constraint = any(
-                    c.get("type") == "daily_total" and c.get("attribute") in ("mp", "me")
+                    c.get("type") == "daily_total" and c.get("attribute") in (
+                        "mp_balance", "me_balance"
+                    )
                     for c in nutritional_constraints
                 )
                 needs_milk_prod = optimization_goal == "maximize_profit"

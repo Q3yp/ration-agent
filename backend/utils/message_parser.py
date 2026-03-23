@@ -688,7 +688,8 @@ class UnifiedMessageParser:
                             }
                         
                         # Check if we should start new formulation
-                        if self._is_formulation_tool(tool_name) and not self.active_formulation:
+                        # export_formulation is terminal - it ends a formulation but should NOT start a new one
+                        if self._is_formulation_tool(tool_name) and not self.active_formulation and tool_name != "export_formulation":
                             formulation_message_id = f"{self.session_id}_history_formulation_{int(timestamp * 1000000)}"
                             self.active_formulation = {
                                 "message_id": formulation_message_id,
@@ -1068,7 +1069,8 @@ class UnifiedMessageParser:
                 ))
             
             # Check if we should start new formulation
-            if self._is_formulation_tool(tool_name) and not self.active_formulation:
+            # export_formulation is terminal - it ends a formulation but should NOT start a new one
+            if self._is_formulation_tool(tool_name) and not self.active_formulation and tool_name != "export_formulation":
                 formulation_message_id = f"{self.session_id}_formulation_{int(timestamp * 1000000)}"
                 self.active_formulation = {
                     "message_id": formulation_message_id,
