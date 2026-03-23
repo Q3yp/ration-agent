@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Request
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 import pandas as pd
 from models import (
     ChatRequest, ResumeRequest, FileUploadResponse, FileDeleteResponse,
@@ -613,29 +613,9 @@ async def stream_chat(
             "recursion_limit": agent_config["recursion_limit"]
         }
 
-        # Add user message to appropriate thread based on workflow stage
-        from langchain_core.messages import SystemMessage
-
-        language_label = get_language_label(preferred_language)
-        system_instruction = SystemMessage(
-            content=(
-                f"The user interface language is {language_label} ({preferred_language}). "
-                f"Respond exclusively in {language_label}, including tables, units, and explanations."
-            )
-        )
+        # Add user message (language instruction is now in the system prompt template)
         user_msg = HumanMessage(content=user_message, additional_kwargs={"preferred_language": preferred_language})
-
-        # Get current state to check workflow_stage
-        try:
-            current_state = await session_agent.aget_state(config)
-            workflow_stage = current_state.values.get("workflow_stage") if current_state.values else None
-            logger.info(f"ROUTES: Current workflow_stage: {workflow_stage}")
-
-            # Add to main messages - pre_model_hook will route to appropriate thread
-            agent_input = {"messages": [system_instruction, user_msg]}
-        except Exception as e:
-            logger.error(f"ROUTES: Failed to get state, defaulting to messages: {e}")
-            agent_input = {"messages": [system_instruction, user_msg]}
+        agent_input = {"messages": [user_msg]}
 
         # Use StopManager as true middleware - direct streaming to frontend
         stop_manager = StopManager.get_instance()

@@ -116,7 +116,7 @@ def _add_cache_control_to_message(msg: Any) -> Any:
     return msg
 
 
-def apply_prompt_template(prompt_name: str, state: FormulationState, animal_type: str = "dairy_cow") -> list:
+def apply_prompt_template(prompt_name: str, state: FormulationState, animal_type: str = "dairy_cow", config: dict | None = None) -> list:
     """
     Apply template variables to a prompt template and return formatted messages with role isolation.
 
@@ -124,10 +124,18 @@ def apply_prompt_template(prompt_name: str, state: FormulationState, animal_type
         prompt_name: Name of the prompt template to use (nutritionist, researcher, coder)
         state: Current agent state containing variables to substitute
         animal_type: Animal type for nutritionist prompt selection (default: dairy_cow)
+        config: LangGraph RunnableConfig with configurable.preferred_language
 
     Returns:
         List of messages with the system prompt as the first message and agent-specific message history
     """
+    from utils.language import get_language_label, normalize_locale
+
+    # Extract preferred_language from config
+    configurable = (config or {}).get("configurable", {})
+    preferred_language = normalize_locale(configurable.get("preferred_language"))
+    target_language = get_language_label(preferred_language)
+
     # Convert state to dict for template rendering
     state_vars = {
         "CURRENT_TIME": datetime.now().strftime("%a %b %d %Y %H:%M:%S"),
@@ -137,6 +145,7 @@ def apply_prompt_template(prompt_name: str, state: FormulationState, animal_type
         "search_findings": state.get("search_findings", []),
         "code_results": state.get("code_results", []),
         "task_context": state.get("task_context", {}),
+        "target_language": target_language,
         **state,
     }
     

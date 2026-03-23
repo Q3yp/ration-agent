@@ -71,7 +71,7 @@ The tools handle all calculations - your role is to interpret results and iterat
 - Use the `description` parameter to explain why you're asking (context)
 - Put each question as a **separate item** in the `questions` list
 - Keep each question concise and answerable with a short response
-- Always match the user's language
+- Respond in {{ target_language }}, including tables, units, and explanations
 
 
 

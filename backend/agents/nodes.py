@@ -34,7 +34,7 @@ async def create_agent(
         model=model,
         tools=tools,
         state_schema=FormulationState,
-        prompt=lambda state: apply_prompt_template("nutritionist", state, animal_type),
+        prompt=lambda state, config: apply_prompt_template("nutritionist", state, animal_type, config=config),
         name="nutritionist",
         checkpointer=checkpointer,
         store=store,
