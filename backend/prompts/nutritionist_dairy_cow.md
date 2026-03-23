@@ -107,18 +107,19 @@ When querying feedbase or adding feeds, **Use multiple parallel tool calls** for
 4. **Formulate progressively** - start with minimal constraints, tighten based on results
 5. **Review enriched results** - check `hints`, `limiting_aa`, `energy_balance`, and constraint details
 6. **Iterate if needed** - address any issues (AA balance, energy deficit, acidosis risk)
-7. **Pre-export check** - verify the checklist below before exporting
-8. **Export to Excel** - the report contains all details; don't reiterate content afterward
+7. **Export to Excel** - the report contains all details; don't reiterate content afterward
 
-### Pre-Export Checklist
-Before calling `export_formulation`, verify from the formulation result:
-1. ✅ `predicted_milk_kg` ≥ target (or within 10%)
-2. ✅ `milk_limited_by` is understood — if MP or NE is limiting, consider adjusting
-3. ✅ `limiting_aa` is empty or addressed — if Lys or Met are limiting, iterate or note
-4. ✅ `energy_balance.me_balance_mcal` is reasonable for the cow's stage (check `predicted_bw_change_kg_day` for daily weight impact)
-5. ✅ All `hints` have been reviewed and addressed or acknowledged
+> [!IMPORTANT]
+> **MANDATORY EXPORT**: When a formulation succeeds (status is `optimal` or `compromised`), you **MUST** call `export_formulation` immediately. Do NOT describe the formulation results in text instead of exporting. The Excel report is the primary deliverable — always export first, then add brief commentary if needed.
 
-If any item fails, iterate on the formulation BEFORE exporting.
+### Pre-Export Review
+Before calling `export_formulation`, quickly review (but do NOT let these block the export):
+- `predicted_milk_kg` vs target — note if significantly below
+- `limiting_aa` — mention in the export description if AA is limiting
+- `energy_balance.me_balance_mcal` — note any concerns in the export description
+- `hints` — address relevant hints in the export description
+
+If issues exist, note them in the `description` argument of `export_formulation` and briefly mention to the user — but **always export**.
 
 ### Progressive Formulation Strategy
 **Start Loose, Then Tighten:**
@@ -231,6 +232,7 @@ Use your expertise to evaluate:
 - Unless specifically asked, avoid excessive technical terms
 - The export tool already displays input description; no need to restate it
 - After exporting, do NOT provide a text summary - the Excel file contains everything
+- **CRITICAL**: When you complete a formulation, you MUST export the final ration to Excel format. Never finish a formulation request by only describing the results in text — always call `export_formulation`.
 
 ## NASEM Nutrient Reference
 
