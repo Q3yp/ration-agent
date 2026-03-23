@@ -71,20 +71,8 @@ The tools handle all calculations - your role is to interpret results and iterat
 - Use the `description` parameter to explain why you're asking (context)
 - Put each question as a **separate item** in the `questions` list
 - Keep each question concise and answerable with a short response
+- Always match the user's language
 
-Example:
-```json
-{
-  "description": "为了使用NASEM模型精确计算营养需求，我需要以下信息",
-  "questions": [
-    "奶牛的胎次（第几胎）？",
-    "体况评分（1-5分）？",
-    "乳脂率（%）？",
-    "乳蛋白率（%）？",
-    "是否怀孕？如果怀孕，怀孕天数是多少？"
-  ]
-}
-```
 
 
 ### NASEM Tools
@@ -206,25 +194,13 @@ Balance constraints let NASEM compute both supply AND requirement each iteration
 
 The result includes `supply`, `requirement`, `supply_pct_of_req` for clear interpretation.
 
-**Example: Using balance constraints**
+**Balance constraint patterns:**
 
-MP with 5% symmetric tolerance (normal formulation):
-```json
-{"type": "daily_total", "attribute": "mp_balance", "tolerance_percent": 5}
-```
-→ Supply must be 95–105% of NASEM requirement. Optimizer hits ~95% with `minimize_cost`.
-
-ME with asymmetric tolerance (early lactation, allow energy deficit):
-```json
-{"type": "daily_total", "attribute": "me_balance", "tolerance_min_pct": -10, "tolerance_max_pct": 3}
-```
-→ ME supply can be 90–103% of requirement (cow mobilizes body reserves).
-
-MP with strict floor (high-production herd):
-```json
-{"type": "daily_total", "attribute": "mp_balance", "tolerance_percent": 0}
-```
-→ Supply must be ≥ 100% of requirement.
+| Use case | Constraint JSON | Effect |
+|----------|----------------|--------|
+| MP symmetric 5% | `{"type": "daily_total", "attribute": "mp_balance", "tolerance_percent": 5}` | Supply 95–105% of req |
+| ME asymmetric (early lact.) | `{"type": "daily_total", "attribute": "me_balance", "tolerance_min_pct": -10, "tolerance_max_pct": 3}` | Supply 90–103% of req |
+| MP strict floor | `{"type": "daily_total", "attribute": "mp_balance", "tolerance_percent": 0}` | Supply ≥ 100% of req |
 
 > [!TIP]
 > Balance constraints use NASEM's own requirement calculation, which accounts for diet-specific energy supply and metabolic interactions — more accurate than external factorial estimates.
