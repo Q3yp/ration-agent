@@ -197,7 +197,7 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                             result["nutrient"] = "MP"
                             result["unit"] = "g/day"
                             
-                            if predicted_mp_g is not None:
+                            if predicted_mp_g is not None and target is not None:
                                 achieved = predicted_mp_g
                                 result["actual"] = round(achieved, 0)
                                 
@@ -218,7 +218,7 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                             result["nutrient"] = "ME"
                             result["unit"] = "Mcal/day"
                             
-                            if predicted_me_mcal is not None:
+                            if predicted_me_mcal is not None and target is not None:
                                 achieved = predicted_me_mcal
                                 result["actual"] = round(achieved, 2)
                                 
@@ -239,7 +239,7 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                             result["nutrient"] = attribute
                             result["unit"] = texts["con_daily"] # Daily Intake
                             
-                            if daily_intake_kg:
+                            if daily_intake_kg and target is not None:
                                 nutrient_percent = nutrient_analysis.get(attribute, 0.0)
                                 achieved = (nutrient_percent / 100) * daily_intake_kg
                                 result["actual"] = round(achieved, 2)
@@ -1025,6 +1025,6 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
         except Exception as e:
             logger.error(f"Export formulation error: {e}")
             return Command(
-                update={"messages": [ToolMessage(texts["export_fail"].format(error=str(e)), tool_call_id=tool_call_id)]}
+                update={"messages": [ToolMessage(texts["fail"].format(error=str(e)), tool_call_id=tool_call_id)]}
             )
     return export_formulation
