@@ -191,21 +191,24 @@ export default function LandingPage() {
       title: t('landing.capabilityConversationTitle'),
       description: t('landing.capabilityConversationDescription'),
       color: "text-teal-600",
-      bgColor: "bg-teal-50"
+      bgColor: "bg-teal-50",
+      accentColor: "bg-gradient-to-r from-teal-400 to-teal-500"
     },
     {
       icon: ModelIcon,
       title: t('landing.capabilityModelTitle'),
       description: t('landing.capabilityModelDescription'),
       color: "text-indigo-600",
-      bgColor: "bg-indigo-50"
+      bgColor: "bg-indigo-50",
+      accentColor: "bg-gradient-to-r from-indigo-400 to-indigo-500"
     },
     {
       icon: OptimizeIcon,
       title: t('landing.capabilityWorkflowTitle'),
       description: t('landing.capabilityWorkflowDescription'),
       color: "text-amber-600",
-      bgColor: "bg-amber-50"
+      bgColor: "bg-amber-50",
+      accentColor: "bg-gradient-to-r from-amber-400 to-amber-500"
     },
   ]
 
@@ -216,10 +219,12 @@ export default function LandingPage() {
       {/* ── Nav ── */}
       <nav className="border-b border-slate-200/60 bg-white/70 backdrop-blur-md fixed w-full top-0 z-50 transition-all">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded border border-slate-300 bg-white flex items-center justify-center shadow-sm">
-              <ModelIcon className="w-5 h-5 text-slate-700" />
-            </div>
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/logo.svg"
+              alt={t('common.appName')}
+              className="w-8 h-8 rounded-lg shadow-sm"
+            />
             <span className="text-base font-serif font-medium text-slate-800 tracking-wide">
               {t('common.appName')}
             </span>
@@ -234,9 +239,9 @@ export default function LandingPage() {
       </nav>
 
       {/* ── Hero ── */}
-      <section className="pt-40 sm:pt-52 pb-20 sm:pb-32 px-4 sm:px-6 flex-1 flex flex-col items-center justify-start relative z-10">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100/80 border border-slate-200 text-xs font-medium text-slate-600 tracking-wider uppercase mb-8 shadow-sm backdrop-blur-sm">
+      <section className="pt-32 sm:pt-40 pb-16 sm:pb-24 px-4 sm:px-6 flex-1 flex flex-col items-center justify-start relative z-10">
+        <div className="max-w-6xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100/80 border border-slate-200 text-xs font-medium text-slate-600 tracking-wider uppercase mb-6 shadow-sm backdrop-blur-sm">
             <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
             NASEM 2021 Implementation
           </div>
@@ -244,10 +249,10 @@ export default function LandingPage() {
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-serif font-bold leading-[1.15] text-slate-900 tracking-tight">
             {t('landing.heroTitle')}
           </h1>
-          <p className="mt-8 text-lg sm:text-xl text-slate-600 leading-relaxed max-w-2xl mx-auto font-light">
+          <p className="mt-6 text-lg sm:text-xl text-slate-600 leading-relaxed max-w-4xl mx-auto font-light">
             {t('landing.heroSubtitle')}
           </p>
-          <div className="mt-12 flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center items-center">
             <Button onClick={handleEnter} size="lg" className="px-8 h-12 text-base font-medium shadow-md hover:shadow-lg transition-all duration-300 bg-slate-900 hover:bg-slate-800 text-white border-transparent">
               {t('landing.enterSystem')}
             </Button>
@@ -263,16 +268,25 @@ export default function LandingPage() {
         </div>
 
         {/* ── Capabilities ── */}
-        <div className="mt-32 w-full max-w-5xl mx-auto">
-          <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent mb-16" />
-          <div className="grid md:grid-cols-3 gap-8 sm:gap-12 relative">
-            {capabilities.map(({ icon: Icon, title, description, color, bgColor }, i) => (
-              <div key={title} className="group relative text-left p-8 rounded-2xl bg-white/60 border border-slate-200/60 shadow-sm backdrop-blur-sm hover:shadow-md hover:bg-white transition-all duration-300">
-                <div className={`mb-6 w-14 h-14 rounded-xl flex items-center justify-center ${bgColor} ${color} ring-1 ring-inset ring-slate-900/5`}>
-                  <Icon className="w-7 h-7" />
+        <div className="mt-20 w-full max-w-7xl mx-auto">
+          <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent mb-10" />
+          <div className="grid md:grid-cols-3 gap-6 sm:gap-8 relative">
+            {capabilities.map(({ icon: Icon, title, description, color, bgColor, accentColor }, i) => (
+              <div key={title} className="group relative text-left rounded-2xl bg-white/60 border border-slate-200/60 shadow-sm backdrop-blur-sm hover:shadow-lg hover:bg-white hover:-translate-y-1 transition-all duration-300 overflow-hidden">
+                {/* Accent top bar */}
+                <div className={`h-1 w-full ${accentColor}`} />
+                <div className="p-7 sm:p-8">
+                  <div className="flex items-start gap-4 mb-5">
+                    <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${bgColor} ${color} ring-1 ring-inset ring-slate-900/5 group-hover:scale-105 transition-transform duration-300`}>
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <div className="pt-0.5">
+                      <span className="text-[11px] font-mono font-medium text-slate-400 uppercase tracking-widest">0{i + 1}</span>
+                      <h3 className="text-base font-serif font-semibold text-slate-900 mt-0.5 leading-snug">{title}</h3>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-600 leading-relaxed font-light">{description}</p>
                 </div>
-                <h3 className="text-lg font-serif font-semibold text-slate-900 mb-3">{title}</h3>
-                <p className="text-sm text-slate-600 leading-relaxed font-light">{description}</p>
               </div>
             ))}
           </div>
