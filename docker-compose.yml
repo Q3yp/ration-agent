@@ -74,7 +74,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       
       # Agent Behavior
-      - THINKING_MODE=${THINKING_MODE:-true}
+      - THINKING_LEVEL=${THINKING_LEVEL:-}
       - RESEARCH_MODE=${RESEARCH_MODE:-true}
       
       # LangGraph Configuration

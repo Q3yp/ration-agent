@@ -151,7 +151,7 @@ export const userGuideCopy: Record<Locale, UserGuideCopy> = {
     ]
   },
   'en-US': {
-    title: 'Huitu Nutrition Copilot – User Guide',
+    title: 'Wuitu Nutrition Copilot – User Guide',
     subtitle: 'An AI-driven formulation system for dairy, beef, and companion animals, delivering accurate feed plans end to end.',
     quickStartHeading: 'Getting started',
     quickSteps: [

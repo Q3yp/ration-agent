@@ -50,7 +50,7 @@ export default function FeedbaseManager() {
   const [isEditing, setIsEditing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [animalTypeFilter, setAnimalTypeFilter] = useState<string>('all')
+  const [animalTypeFilter, setAnimalTypeFilter] = useState<string>('dairy_cow')
   const [feedbaseToDelete, setFeedbaseToDelete] = useState<string | null>(null)
   const placeholderNames = useMemo(() => new Set([...PLACEHOLDER_NAMES, copy.manager.newFeedbaseName]), [copy.manager.newFeedbaseName])
   const isFreeTier = user?.tier === 'free'

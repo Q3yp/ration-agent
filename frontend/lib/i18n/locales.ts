@@ -293,7 +293,7 @@ export const translations: Record<Locale, TranslationTree> = {
       capabilityWorkflowDescription: 'SLSQP-based diet optimization with configurable objectives (cost minimization, nutrient constraints). Results exportable as detailed reports.',
     },
     auth: {
-      loginTitle: 'Log in to Huitu Nutrition Copilot',
+      loginTitle: 'Log in to Wuitu Nutrition Copilot',
       emailPlaceholder: 'Email address',
       usernamePlaceholder: 'Username',
       passwordPlaceholder: 'Password',

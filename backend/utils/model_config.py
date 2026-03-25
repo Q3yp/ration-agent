@@ -8,7 +8,7 @@ def get_model_config(model_name: str):
     Returns ChatOpenRouter configured for the appropriate model.
     
     ChatOpenRouter reads OPENROUTER_API_KEY from env automatically.
-    For thinking/reasoning models, set THINKING_MODE=true to enable reasoning output.
+    For thinking/reasoning models, set THINKING_LEVEL=low|medium|high to enable reasoning output.
     """
     
     # Model and temperature mapping
@@ -30,8 +30,8 @@ def get_model_config(model_name: str):
     
     config = model_configs[model_name]
     
-    # Check if thinking mode is enabled
-    enable_thinking = os.getenv("THINKING_MODE", "false").lower() == "true"
+    # Check thinking level (low | medium | high); anything else disables reasoning
+    thinking_level = os.getenv("THINKING_LEVEL", "").lower()
     
     kwargs = {
         "model": config["model"],
@@ -41,8 +41,8 @@ def get_model_config(model_name: str):
     }
     
     # Use native reasoning parameter for thinking models
-    if enable_thinking:
-        kwargs["reasoning"] = {"effort": "high"}
+    if thinking_level in ("low", "medium", "high"):
+        kwargs["reasoning"] = {"effort": thinking_level}
     
     return ChatOpenRouter(**kwargs)
 

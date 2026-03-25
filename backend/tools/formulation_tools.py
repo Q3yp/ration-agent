@@ -509,41 +509,49 @@ milk_price_per_kg: Optional[float] = None,
         """
         Formulate optimal ration using linear/non-linear programming optimization.
         
+        REQUIRED: nutritional_constraints must always be provided as a non-empty list.
+        Call set_animal_params first so animal parameters are available in session state.
+        
         For dairy cows: Uses NASEM DMI prediction model to calculate DMI from diet 
         composition. MP and ME supply are calculated from diet composition using NASEM.
         
         Args:
             feed_base_name: Name of the feedbase to use for formulation
-            nutritional_constraints: List of constraint dictionaries with these types:
+            nutritional_constraints: REQUIRED. List of constraint dicts. Must not be empty.
+                Supported types:
             
                 "concentration" - Set min/max % of nutrient in ration (DM basis)
-                    Required: nutrient (str), min/max (float)
+                    Required fields: type, nutrient (str), at least one of min/max (float)
                     
                 "daily_total" - Set target daily intake amount with tolerance
-                    Required: attribute (str), target (float) — except for balance attributes
+                    Required fields: type, attribute (str), target (float)
+                      — except balance attributes which do NOT need a target
                     Optional: tolerance_percent (default 10%)
-                    Special attributes (dairy cow only):
-                      - "dmi": Sets fixed DMI (overrides prediction)
-                      - "mp_balance": MP balance constraint (supply − requirement ≥ 0)
-                        No target needed. Uses tolerance_percent for symmetric range
-                        (e.g., 5 means 95-105% of requirement), or tolerance_min_pct
-                        and tolerance_max_pct for asymmetric range.
-                      - "me_balance": ME balance constraint (same as mp_balance)
-                        Supports asymmetric tolerance, e.g. tolerance_min_pct: -10,
-                        tolerance_max_pct: 3 to allow deficit in early lactation.
+                    Special attributes (dairy cow only, require set_animal_params first):
+                      - "dmi": Sets fixed DMI (overrides NASEM prediction)
+                      - "mp_balance": NASEM-computed MP balance (supply vs requirement).
+                        No target needed. Use tolerance_percent for symmetric range,
+                        or tolerance_min_pct / tolerance_max_pct for asymmetric.
+                      - "me_balance": Same as mp_balance but for metabolizable energy.
+                        Asymmetric tolerance is useful for early lactation (allow deficit).
                     
                 "ratio" - Set min/max ratio between two nutrients
-                    Required: numerator (str), denominator (str), min/max (float)
+                    Required fields: type, numerator (str), denominator (str),
+                    at least one of min/max (float)
                     
             selected_feeds: List of feed names to include in optimization
-            feed_constraints: Optional inclusion limits per feed as % of ration DM
+            feed_constraints: Optional dict keyed by feed name, each value a dict with
+                optional "min" and/or "max" keys specifying inclusion bounds as % of
+                ration DM. Format: {"<feed_name>": {"min": <float>, "max": <float>}}.
+                NOT a list — must be a dict.
             optimization_goal: Optimization objective:
                 - "minimize_cost" (default): Find least-cost ration
                 - "feasibility": Find any ration satisfying constraints (no cost optimization)
                 - "maximize_profit": Maximize milk_revenue - feed_cost
             animal_params: For dairy cows, NASEM model parameters. If not provided,
                 uses parameters from session state (set via set_animal_params).
-                Keys: milk_prod, body_weight, dim, parity, bcs, milk_fat_pct, milk_protein_pct, milk_price_per_kg
+                Keys: milk_prod, body_weight, dim, parity, bcs, milk_fat_pct,
+                milk_protein_pct, milk_price_per_kg
             
         Returns:
             Formulation result with:

@@ -223,7 +223,57 @@ Use your expertise to evaluate:
 - **Metabolic disorders**: Acidosis (low fiber), milk fat depression
 - **Practical feeding**: Palatability, TMR mixing feasibility, ingredient availability
 
+### Sodium and Mineral Balance Guide (NASEM 2021)
 
+#### DCAD (Dietary Cation-Anion Difference)
+
+DCAD (mEq/kg DM) = (Na/23 + K/39 − Cl/35.5 − S/16) × 10,000
+
+| Production Stage | Target DCAD (mEq/kg DM) | Primary Goal |
+|-----------------|------------------------|--------------|
+| Lactating cow | +250 to +380 | Maximize DMI, milk yield, and milk fat |
+| Far-off dry (>21d prepartum) | +50 to +150 | Neutral; minimize intervention |
+| Close-up dry (<21d prepartum) | −50 to −200 | Prevent hypocalcemia (milk fever) |
+
+- **Lactating cows**: DCAD minimum ~175 mEq/kg; optimal response near +380 mEq/kg for peak production
+- **Pre-calving anionic diet**: Implement at least 21 days before calving; reduces clinical and subclinical hypocalcemia
+- **Anionic salts** (CaCl₂, MgSO₄, MgCl₂, ammonium sulfate) are used to drive DCAD negative pre-calving
+- **High-K forages** (lush pasture, alfalfa) make negative DCAD hard to achieve — prefer low-K hay or straw in close-up period
+- **Monitoring**: Measure urine pH to confirm acidification: Holstein target 5.8–6.8; Jersey target 5.8–6.3
+
+#### Calcium (Ca)
+
+- NASEM 2021 updates: maintenance requirement now based on DMI (not BW), so high-producing cows have higher maintenance Ca needs
+- Absorption coefficients for Ca supplements reduced to **45–60%** (was 70–95% in NRC 2001) — account for this when formulating
+- Close-up diet Ca: **0.4–0.6% DM** when DCAD is neutral/positive; can increase to **1.5–1.7% DM** with a fully acidogenic (negative DCAD) diet
+- High dietary Ca (>1.5% DM) + negative DCAD has been shown to significantly reduce milk fever incidence
+- Lactating cow: balance with P (Ca:P ratio ~1.5:1 to 2:1); avoid excess P (environmental concern)
+
+#### Magnesium (Mg)
+
+> [!IMPORTANT]
+> NASEM 2021 doubled the Mg maintenance requirement vs. NRC 2001. Dry cow Mg needs are ~1.5–2× higher than previously thought. Do not underestimate Mg in dry cow diets.
+
+- **Dry cows**: target **0.40–0.45% Mg** in diet DM (~30–40 g/day for a 600 kg cow at 10 kg DMI)
+- **Lactating cows**: target **0.25–0.30% Mg** in diet DM
+- Mg is not stored effectively — must be supplied daily
+- High dietary K reduces Mg absorption (NASEM adjusts `Fd_acMg_input` based on diet K); when forage K >2%, increase Mg supplementation
+- **Grass tetany risk**: occurs when pasture K is high and Mg is low; supplement Mg oxide 20–30 g/day during high-risk grazing periods
+- Common sources: MgO (lower bioavailability), MgSO₄, MgCl₂ (better bioavailability for pre-calving acidogenic diets)
+
+#### Sodium (Na), Chloride (Cl), and Potassium (K)
+
+- **Na**: NASEM 2021 raised maintenance requirement, reduced lactation requirement; absorption coefficient set to 1.0 (up from 0.90); milk Na = 0.40 g/kg (reduced from 0.65 g/kg in NRC 2001). Typical dietary target: 0.18–0.25% DM for lactating cows
+- **K**: Typical lactating cow target 1.0–1.5% DM; forages often supply 2–3% — excess K suppresses Mg absorption and raises DCAD, complicating close-up ration formulation
+- **Cl**: Main anionic driver; 0.25–0.35% DM in lactating diets; increased to drive DCAD negative pre-calving
+- **S**: Secondary anion for DCAD; target 0.20–0.25% DM; excess S (>0.40%) causes polio/PEM risk — do not over-supplement
+
+#### Practical Mineral Formulation Notes
+
+- Use `evaluate_diet_with_nasem` if the user wants the modeled DCAD value from the current diet
+- When the user mentions transition cow, dry cow, or pre-calving, proactively flag DCAD and Mg as key targets
+- For lactating cows with high-K forages, remind user that Mg supplementation may need to be increased beyond standard recommendations
+- Forage analysis for Ca, P, K, Mg, Na, Cl, S is strongly recommended before formulating mineral programs
 
 
 ## User Interaction

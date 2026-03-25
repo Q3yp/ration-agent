@@ -47,6 +47,10 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
         """
         Export current formulation to Excel with multi-tab layout.
 
+        PREREQUISITE: formulate_ration must have been called successfully in this session
+        before calling this tool. It reads the formulation and animal parameters from
+        session state — there is nothing to export if no successful formulation exists yet.
+
         Uses stored animal_params from set_animal_params for NASEM evaluation.
         No need to re-enter animal parameters - they are retrieved from session state.
 
@@ -55,7 +59,7 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
         - NASEM-Intakes, NASEM-Requirements, NASEM-Production, etc. (dairy_cow only)
 
         Args:
-            description: Detailed formulation description and recommendations (supports multi-line text)
+            description: Formulation description and recommendations (supports multi-line text)
             filename: Optional custom filename (default: formulation_export_TIMESTAMP.xlsx)
 
         Returns:
@@ -601,22 +605,40 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                     nasem_summary_rows.append([texts["nasem_milk_protein"], round(milk_protein, 4) if milk_protein else "N/A"])
                     nasem_summary_rows.append(["", ""])
                     
-                    # Energy Balance
+                    # Energy vs Target
                     nasem_summary_rows.append([texts["nasem_energy_balance"], ""])
                     me_intake = model_output.get_value("An_MEIn")
                     me_required = model_output.get_value("Trg_MEuse")
+                    me_actual_use = model_output.get_value("An_MEuse")
                     try:
                         me_balance = round(float(me_intake) - float(me_required), 2)
                         me_balance_str = f"+{me_balance}" if me_balance >= 0 else str(me_balance)
                     except:
                         me_balance_str = "N/A"
+                    try:
+                        me_actual_balance = round(float(me_intake) - float(me_actual_use), 2)
+                        me_actual_balance_str = f"+{me_actual_balance}" if me_actual_balance >= 0 else str(me_actual_balance)
+                    except:
+                        me_actual_balance_str = "N/A"
                     
                     nasem_summary_rows.append([texts["nasem_me_intake"], round(me_intake, 2) if me_intake else "N/A"])
                     nasem_summary_rows.append([texts["nasem_me_required"], round(me_required, 2) if me_required else "N/A"])
                     nasem_summary_rows.append([texts["nasem_me_balance"], me_balance_str])
+                    nasem_summary_rows.append([texts["nasem_me_actual_use"], round(me_actual_use, 2) if me_actual_use else "N/A"])
+                    nasem_summary_rows.append([texts["nasem_me_actual_balance"], me_actual_balance_str])
+                    
+                    # Body Condition (derived from actual ME balance)
+                    nasem_summary_rows.append([texts["nasem_body_condition"], ""])
+                    try:
+                        me_bal = float(me_intake) - float(me_actual_use)
+                        bw_change = round(me_bal * 0.15 if me_bal < 0 else me_bal * 0.13, 3)
+                        bw_change_str = f"+{bw_change}" if bw_change >= 0 else str(bw_change)
+                    except:
+                        bw_change_str = "N/A"
+                    nasem_summary_rows.append([texts["nasem_body_gain"], bw_change_str])
                     nasem_summary_rows.append(["", ""])
                     
-                    # Protein Balance
+                    # Protein vs Target
                     nasem_summary_rows.append([texts["nasem_protein_balance"], ""])
                     mp_intake = model_output.get_value("An_MPIn_g")
                     mp_required = model_output.get_value("An_MPuse_g_Trg")

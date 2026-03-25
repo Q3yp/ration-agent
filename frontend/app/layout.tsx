@@ -6,7 +6,7 @@ import { I18nProvider } from '@/contexts/I18nContext'
 import { defaultLocale, Locale, supportedLocales, detectLocaleFromHeader } from '@/lib/i18n/locales'
 
 export const metadata: Metadata = {
-  title: 'Huitu Nutrition Copilot',
+  title: 'Wuitu Nutrition Copilot',
   description: 'AI nutrition copilot for dairy, beef, and companion animals powered by LangGraph and Claude.',
 }
 
