@@ -873,10 +873,12 @@ class FormulationOptimizer:
         nasem_results = self._get_nasem_values(
             feed_percentages,
             selected_feeds,
-            ["An_MPIn_g", "An_MEIn", "Mlk_Prod_MPalow", "Mlk_Prod_NEalow"]
+            ["An_MPIn_g", "An_MEIn", "An_MPuse_g_Trg", "An_MEuse", "Mlk_Prod_MPalow", "Mlk_Prod_NEalow"]
         )
         predicted_mp = nasem_results.get("An_MPIn_g", 0.0)
         predicted_me = nasem_results.get("An_MEIn", 0.0)
+        predicted_mp_req = nasem_results.get("An_MPuse_g_Trg", 0.0)
+        predicted_me_req = nasem_results.get("An_MEuse", 0.0)
         mp_milk = nasem_results.get("Mlk_Prod_MPalow", 0.0)
         ne_milk = nasem_results.get("Mlk_Prod_NEalow", 0.0)
 
@@ -911,7 +913,9 @@ class FormulationOptimizer:
             "formulation": formulation,
             "predicted_dmi_kg": round(predicted_dmi, 2),
             "predicted_mp_g": round(predicted_mp, 0),
+            "predicted_mp_requirement_g": round(predicted_mp_req, 0),
             "predicted_me_mcal": round(predicted_me, 2),
+            "predicted_me_requirement_mcal": round(predicted_me_req, 2),
             "predicted_milk_kg": round(predicted_milk, 2),
             "milk_limited_by": limiting_factor,
             "cost_per_kg_dm": round(float(total_cost), 3),

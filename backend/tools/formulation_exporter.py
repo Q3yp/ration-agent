@@ -233,6 +233,48 @@ def create_export_formulation_tool(animal_type: str = "dairy_cow"):
                                 satisfied = False
                                 
                             result["satisfaction"] = texts["satisfied"] if satisfied else texts["unsatisfied"]
+                        elif attribute == "mp_balance":
+                            # MP balance constraint: supply - requirement >= 0
+                            mp_supply = current_formulation.get("predicted_mp_g")
+                            mp_req = current_formulation.get("predicted_mp_requirement_g")
+                            result["type"] = texts["con_daily"]
+                            result["nutrient"] = "MP Balance"
+                            result["unit"] = "g/day"
+                            if mp_supply is not None and mp_req is not None:
+                                balance = round(float(mp_supply) - float(mp_req), 1)
+                                tol_min = float(constraint.get("tolerance_min_pct", -tolerance_percent))
+                                tol_max = float(constraint.get("tolerance_max_pct", tolerance_percent))
+                                min_allowed = tol_min / 100 * float(mp_req)
+                                max_allowed = tol_max / 100 * float(mp_req)
+                                result["actual"] = f"{balance:+.1f} (supply {mp_supply:.0f}, req {mp_req:.0f})"
+                                result["condition"] = f"{tol_min:+.0f}% to {tol_max:+.0f}% of req ({min_allowed:.0f} to {max_allowed:.0f} g/d)"
+                                satisfied = min_allowed <= balance <= max_allowed
+                            else:
+                                result["actual"] = texts["cannot_calculate"]
+                                result["condition"] = texts["cannot_calculate"]
+                                satisfied = False
+                            result["satisfaction"] = texts["satisfied"] if satisfied else texts["unsatisfied"]
+                        elif attribute == "me_balance":
+                            # ME balance constraint: supply - requirement >= 0
+                            me_supply = current_formulation.get("predicted_me_mcal")
+                            me_req = current_formulation.get("predicted_me_requirement_mcal")
+                            result["type"] = texts["con_daily"]
+                            result["nutrient"] = "ME Balance"
+                            result["unit"] = "Mcal/day"
+                            if me_supply is not None and me_req is not None:
+                                balance = round(float(me_supply) - float(me_req), 2)
+                                tol_min = float(constraint.get("tolerance_min_pct", -tolerance_percent))
+                                tol_max = float(constraint.get("tolerance_max_pct", tolerance_percent))
+                                min_allowed = tol_min / 100 * float(me_req)
+                                max_allowed = tol_max / 100 * float(me_req)
+                                result["actual"] = f"{balance:+.2f} (supply {me_supply:.2f}, req {me_req:.2f})"
+                                result["condition"] = f"{tol_min:+.0f}% to {tol_max:+.0f}% of req ({min_allowed:.2f} to {max_allowed:.2f} Mcal/d)"
+                                satisfied = min_allowed <= balance <= max_allowed
+                            else:
+                                result["actual"] = texts["cannot_calculate"]
+                                result["condition"] = texts["cannot_calculate"]
+                                satisfied = False
+                            result["satisfaction"] = texts["satisfied"] if satisfied else texts["unsatisfied"]
                         else:
                             # Nutrient daily total constraint
                             result["type"] = texts["con_daily"]
