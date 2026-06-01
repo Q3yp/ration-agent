@@ -2,6 +2,8 @@
 
 AI-powered dairy cattle nutrition formulation system. Multi-agent LangGraph swarm coordinates a Nutritionist, Researcher, and Coder to formulate optimal rations backed by the NASEM 2021 model.
 
+**Live demo:** [ration.moueasy.fan](https://ration.moueasy.fan/)
+
 ## Features
 
 - **NASEM 2021 Nutrient Predictions** -- MP, ME, amino acids, minerals, milk yield, DMI
