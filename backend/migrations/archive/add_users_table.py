@@ -106,7 +106,12 @@ async def run_migration():
                 pwd_context = None
             
             admin_id = uuid.uuid4()
-            admin_password = pwd_context.hash("admin123") if pwd_context else "admin123"  # Default admin password
+            admin_raw_password = os.environ.get("ADMIN_PASSWORD")
+            if not admin_raw_password:
+                print("Skipping admin user creation: ADMIN_PASSWORD not set")
+                return
+            
+            admin_password = pwd_context.hash(admin_raw_password) if pwd_context else admin_raw_password
             
             now_ts = datetime.utcnow()
             await conn.execute(text("""
@@ -125,8 +130,6 @@ async def run_migration():
             print(f"Created default admin user:")
             print(f"  Email: admin@example.com")
             print(f"  Username: admin")
-            print(f"  Password: admin123")
-            print(f"  Please change the password after first login!")
     
     await engine.dispose()
     print("Migration completed successfully!")

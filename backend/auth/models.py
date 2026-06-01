@@ -87,8 +87,8 @@ class SMSVerification(Base):
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     """User manager for FastAPI-Users"""
     
-    reset_password_token_secret = os.getenv("JWT_SECRET", "your-super-secret-jwt-key-change-this-in-production-use-at-least-32-characters")
-    verification_token_secret = os.getenv("JWT_SECRET", "your-super-secret-jwt-key-change-this-in-production-use-at-least-32-characters")
+    reset_password_token_secret = os.getenv("JWT_SECRET")
+    verification_token_secret = os.getenv("JWT_SECRET")
 
     async def on_after_register(self, user: User, request=None):
         print(f"User {user.id} has registered.")

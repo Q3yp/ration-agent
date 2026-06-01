@@ -15,10 +15,12 @@ from .models import User, UserManager, get_user_db
 load_dotenv()
 
 # JWT Configuration
-SECRET = os.getenv(
-    "JWT_SECRET",
-    "your-super-secret-jwt-key-change-this-in-production-use-at-least-32-characters",
-)
+SECRET = os.getenv("JWT_SECRET")
+if not SECRET or SECRET == "your-super-secret-jwt-key-change-this-in-production-use-at-least-32-characters":
+    raise ValueError(
+        "JWT_SECRET environment variable is required. "
+        "Generate a secure secret: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+    )
 
 GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
 GOOGLE_OAUTH_ENABLED = bool(GOOGLE_OAUTH_CLIENT_ID)

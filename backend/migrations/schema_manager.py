@@ -277,10 +277,12 @@ class SchemaManager:
         if result.scalar() == 0:
             admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com")
             admin_username = os.environ.get("ADMIN_USERNAME", "admin")
-            admin_raw_password = os.environ.get("ADMIN_PASSWORD", "admin123")
-            
-            if admin_raw_password == "admin123":
-                logger.warning("⚠️  Using default admin password! Set ADMIN_PASSWORD in .env for production.")
+            admin_raw_password = os.environ.get("ADMIN_PASSWORD")
+            if not admin_raw_password:
+                raise ValueError(
+                    "ADMIN_PASSWORD environment variable is required for admin user creation. "
+                    "Set a secure password in your .env file."
+                )
             
             logger.info(f"Creating admin user '{admin_username}'...")
             try:
