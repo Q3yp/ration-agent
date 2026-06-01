@@ -71,7 +71,7 @@ services:
       # Admin User (created on first startup)
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       
       # Agent Behavior
       - THINKING_LEVEL=${THINKING_LEVEL:-}
